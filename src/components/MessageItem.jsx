@@ -6,7 +6,7 @@ import Icon from './Icon';
 import Avatar from './Avatar';
 import { fetchThreadReplies, getThreadReplyCount, fetchMessageWithUserInfo } from '@siteweave/core-logic';
 
-function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar = true, showTimestamp = false, isLastInChannel = false, onReply, onThreadExpand }) {
+function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar = true, showTimestamp = false, isLastInChannel = false, onReply, onThreadExpand, onReport, onBlock, currentUserId }) {
     const { i18n } = useTranslation();
     const { state } = useAppContext();
     const { addToast } = useToast();
@@ -94,7 +94,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
 
         setLoadingThread(true);
         try {
-            const replies = await fetchThreadReplies(supabaseClient, messageWithUser.id);
+            const replies = await fetchThreadReplies(supabaseClient, messageWithUser.id, currentUserId || state.user?.id);
             setThreadReplies(replies);
             setShowThread(true);
             if (onThreadExpand) onThreadExpand(messageWithUser.id);
@@ -239,7 +239,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
 
                             {/* Message Actions */}
                             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <div className="flex gap-1 bg-black/20 rounded-lg p-1">
+                                <div className={`flex gap-1 rounded-lg p-1 ${isCurrentUser ? 'bg-black/20' : 'bg-white shadow-sm border border-gray-200'}`}>
                                     <button
                                         onClick={() => onReply && onReply(messageWithUser)}
                                         className="p-1 hover:bg-white/20 rounded"
@@ -247,6 +247,24 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                                     >
                                         <Icon path="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.488.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 006 21c1.282 0 2.47-.492 3.337-1.313.379-.38.708-.796.924-1.22a4.801 4.801 0 001.923-1.22 4.705 4.705 0 00.334-1.785c0-.6-.154-1.194-.432-1.641A8.98 8.98 0 0012 20.25z" className="w-4 h-4" />
                                     </button>
+                                    {!isCurrentUser && onReport && (
+                                        <button
+                                            onClick={() => onReport(messageWithUser)}
+                                            className="p-1 hover:bg-white/20 rounded text-amber-200 hover:text-amber-100"
+                                            title="Report message"
+                                        >
+                                            <Icon path="M3 3v1.5M3 16.5V18M7.5 3h1.5m-7.5 7.5h1.5M16.5 3h1.5M12 3H12.75M3 7.5v1.5m13.5-1.5v1.5M7.5 12h1.5m-7.5 3.75h1.5M16.5 12h1.5M12 16.5h1.5m-4.5 0h1.5m4.5-7.5v1.5m-7.5 3.75v1.5" className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                    {!isCurrentUser && onBlock && (
+                                        <button
+                                            onClick={() => onBlock(messageWithUser)}
+                                            className="p-1 hover:bg-white/20 rounded text-red-300 hover:text-red-200"
+                                            title="Block user"
+                                        >
+                                            <Icon path="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" className="w-4 h-4" />
+                                        </button>
+                                    )}
                                     {isCurrentUser && (
                                         <>
                                             <button
@@ -307,6 +325,9 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                                         message={reply} 
                                         isGrouped={false}
                                         showAvatar={true}
+                                        onReport={onReport}
+                                        onBlock={onBlock}
+                                        currentUserId={currentUserId}
                                     />
                                 ))}
                             </div>

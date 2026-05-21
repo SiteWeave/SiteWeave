@@ -65,6 +65,8 @@ serve(async (req) => {
       .insert({
         name: companyName,
         slug: slug,
+        workspace_type: 'business',
+        max_projects: null,
         // Invited owner claims org on invite accept (see InviteAcceptPage); not the super admin
         created_by_user_id: null
       })

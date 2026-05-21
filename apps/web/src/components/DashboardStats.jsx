@@ -36,10 +36,30 @@ function getTaskAssigneeLabel(task, contactById) {
     return 'Unassigned';
 }
 
+function groupTasksByProject(tasks, projects) {
+    const projectById = new Map((projects || []).map((project) => [String(project.id), project]));
+    const grouped = new Map();
+    (tasks || []).forEach((task) => {
+        const key = String(task.project_id || 'unassigned');
+        const project = projectById.get(key);
+        if (!grouped.has(key)) {
+            grouped.set(key, {
+                projectName: project?.name || 'No project',
+                items: [],
+            });
+        }
+        grouped.get(key).items.push(task);
+    });
+    return Array.from(grouped.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
+}
+
 const DashboardStats = memo(function DashboardStats() {
     const { state } = useAppContext();
     const [showOverdueModal, setShowOverdueModal] = useState(false);
+    const [showCompletedModal, setShowCompletedModal] = useState(false);
 
+    const projects = state.projects || [];
+    const tasks = state.tasks || [];
     const contacts = state.contacts || [];
     const contactById = useMemo(() => {
         const m = new Map();
@@ -48,37 +68,26 @@ const DashboardStats = memo(function DashboardStats() {
         });
         return m;
     }, [contacts]);
-    
-    // Calculate statistics
-    const totalProjects = state.projects.length;
-    const activeProjects = state.projects.filter(p => p.status !== 'completed').length;
-    const totalTasks = state.tasks.length;
-    const completedTasks = state.tasks.filter(t => t.completed).length;
-    const overdueTasks = state.tasks.filter(task => {
+
+    const activeProjects = projects.filter(p => p.status !== 'completed').length;
+    const completedTasks = tasks.filter(t => t.completed).length;
+    const overdueTasks = tasks.filter(task => {
         if (!task.due_date || task.completed) return false;
         return new Date(task.due_date) < new Date();
     }).length;
     const overdueGroups = useMemo(() => {
-        const overdueItems = (state.tasks || []).filter((task) => {
+        const overdueItems = tasks.filter((task) => {
             if (!task.due_date || task.completed) return false;
             return new Date(task.due_date) < new Date();
         });
-        const projectById = new Map((state.projects || []).map((project) => [String(project.id), project]));
-        const grouped = new Map();
-        overdueItems.forEach((task) => {
-            const key = String(task.project_id || 'unassigned');
-            const project = projectById.get(key);
-            if (!grouped.has(key)) {
-                grouped.set(key, {
-                    projectName: project?.name || 'No project',
-                    items: [],
-                });
-            }
-            grouped.get(key).items.push(task);
-        });
-        return Array.from(grouped.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
-    }, [state.tasks, state.projects]);
-    
+        return groupTasksByProject(overdueItems, projects);
+    }, [tasks, projects]);
+
+    const completedGroups = useMemo(() => {
+        const completedItems = tasks.filter((task) => task.completed);
+        return groupTasksByProject(completedItems, projects);
+    }, [tasks, projects]);
+
     const stats = [
         {
             title: 'Active Projects',
@@ -102,7 +111,7 @@ const DashboardStats = memo(function DashboardStats() {
             icon: 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
         }
     ];
-    
+
     const getColorClasses = (color) => {
         const colors = {
             blue: 'bg-blue-50 text-blue-600 border-blue-200',
@@ -113,7 +122,7 @@ const DashboardStats = memo(function DashboardStats() {
         };
         return colors[color] || colors.gray;
     };
-    
+
     return (
         <>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -121,14 +130,22 @@ const DashboardStats = memo(function DashboardStats() {
                 <button
                     key={index}
                     type="button"
-                    disabled={stat.title !== 'Overdue Tasks' || stat.value <= 0}
+                    disabled={
+                        (stat.title === 'Overdue Tasks' && stat.value <= 0)
+                        || (stat.title === 'Tasks Completed' && stat.value <= 0)
+                    }
                     onClick={() => {
                         if (stat.title === 'Overdue Tasks' && stat.value > 0) {
                             setShowOverdueModal(true);
                         }
+                        if (stat.title === 'Tasks Completed' && stat.value > 0) {
+                            setShowCompletedModal(true);
+                        }
                     }}
                     className={`app-card-soft p-5 border text-left w-full ${
-                        stat.title === 'Overdue Tasks' && stat.value > 0 ? 'cursor-pointer hover:shadow-md transition-shadow' : 'cursor-default'
+                        (stat.title === 'Overdue Tasks' || stat.title === 'Tasks Completed') && stat.value > 0
+                            ? 'cursor-pointer hover:shadow-md transition-shadow'
+                            : 'cursor-default'
                     } ${getColorClasses(stat.color)}`}
                 >
                     <div className="flex items-center justify-between">
@@ -181,6 +198,41 @@ const DashboardStats = memo(function DashboardStats() {
                                                 >
                                                     {formatOverdueDueDate(task.due_date)}
                                                 </time>
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        )}
+        {showCompletedModal && (
+            <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
+                <div className="w-full max-w-3xl bg-white rounded-xl shadow-xl border border-gray-200 max-h-[80vh] overflow-hidden">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                        <h3 className="text-lg font-semibold text-gray-900">Completed Tasks by Project</h3>
+                        <button
+                            type="button"
+                            onClick={() => setShowCompletedModal(false)}
+                            className="text-sm text-gray-600 hover:text-gray-900"
+                        >
+                            Close
+                        </button>
+                    </div>
+                    <div className="p-5 overflow-y-auto max-h-[65vh] space-y-4">
+                        {completedGroups.length === 0 ? (
+                            <p className="text-sm text-gray-500">No completed tasks.</p>
+                        ) : completedGroups.map((group) => (
+                            <div key={group.projectName} className="border border-gray-100 rounded-lg p-3">
+                                <p className="text-sm font-semibold text-gray-800 mb-2">{group.projectName}</p>
+                                <ul className="space-y-1">
+                                    {group.items.map((task) => (
+                                        <li key={task.id} className="text-sm text-gray-700">
+                                            <span className="font-medium text-gray-800">{task.text}</span>
+                                            <span className="mt-0.5 block text-xs text-gray-500">
+                                                Assigned to {getTaskAssigneeLabel(task, contactById)}
                                             </span>
                                         </li>
                                     ))}

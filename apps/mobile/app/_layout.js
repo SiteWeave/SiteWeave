@@ -9,6 +9,7 @@ function RootLayoutNav() {
     loading,
     activeOrganization,
     organizationError,
+    isProjectCollaborator,
     pendingNotificationRoute,
     clearPendingNotificationRoute,
   } = useAuth();
@@ -20,13 +21,14 @@ function RootLayoutNav() {
     if (loading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    const onProjectInvite = segments[0] === 'project-invite';
 
     // Only redirect if we're certain about the auth state
     // Add a small delay to prevent race conditions with session checks
     const timer = setTimeout(() => {
-      if (!user && !inAuthGroup) {
+      if (!user && !inAuthGroup && !onProjectInvite) {
         router.replace('/(auth)/login');
-      } else if (user && inAuthGroup) {
+      } else if (user && inAuthGroup && !onProjectInvite) {
         router.replace('/(tabs)');
       }
     }, 100); // Small delay to ensure session is fully checked
@@ -41,8 +43,9 @@ function RootLayoutNav() {
     }
   }, [loading, user, pendingNotificationRoute, router, clearPendingNotificationRoute]);
 
-  // Show no organization screen if user is logged in but has no organization
-  if (!loading && user && !activeOrganization && organizationError) {
+  const hasWorkspaceAccess = activeOrganization || isProjectCollaborator;
+
+  if (!loading && user && !hasWorkspaceAccess && organizationError) {
     return <NoOrganizationScreen />;
   }
 
@@ -50,6 +53,7 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false, animation: 'none' }}>
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="project-invite" options={{ headerShown: false }} />
     </Stack>
   );
 }

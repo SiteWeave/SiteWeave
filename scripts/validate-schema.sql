@@ -12,11 +12,17 @@ DECLARE
         'roles',
         'profiles',
         'project_collaborators',
+        'project_access_invites',
         'projects',
         'contacts',
         'tasks',
+        'task_comments',
+        'project_stream_posts',
+        'project_stream_replies',
         'files',
-        'invitations'
+        'invitations',
+        'progress_report_schedules',
+        'content_reports'
     ];
     tbl TEXT;
 BEGIN
@@ -58,7 +64,13 @@ DECLARE
         'project_phases',
         'tasks',
         'activity_log',
-        'invitations'
+        'invitations',
+        'project_access_invites',
+        'project_stream_posts',
+        'project_stream_replies',
+        'task_comments',
+        'progress_report_schedules',
+        'progress_report_history'
     ];
     tbl TEXT;
 BEGIN
@@ -105,7 +117,23 @@ DECLARE
         'project_phases',
         'tasks',
         'activity_log',
-        'invitations'
+        'invitations',
+        'project_access_invites',
+        'project_stream_posts',
+        'project_stream_replies',
+        'task_comments',
+        'schedule_import_templates',
+        'progress_report_schedules',
+        'progress_report_recipients',
+        'progress_report_history',
+        'organization_branding',
+        'content_reports',
+        'blocked_users',
+        'terms_of_service_acceptances',
+        'sms_phone_consent',
+        'task_notification_guest_shares',
+        'user_notifications',
+        'notification_action_history'
     ];
     tbl TEXT;
 BEGIN

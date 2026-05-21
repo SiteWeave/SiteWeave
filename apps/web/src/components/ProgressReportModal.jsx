@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import ProgressReportBuilder from './ProgressReportBuilder';
@@ -14,15 +15,20 @@ import {
 } from '@siteweave/core-logic';
 import { saveProgressReportPdf } from '../utils/saveProgressReportPdf';
 import { defaultProgressReportPdfFilename } from '../utils/progressReportPdfFilename';
+import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
+import UpgradeRequiredModal from './UpgradeRequiredModal';
+import { isExportFeatureLockedError } from '@siteweave/core-logic';
 
 /**
  * Progress Report Modal Component
  * Project-level report management modal
  */
 function ProgressReportModal({ projectId, onClose }) {
-  const locale = typeof navigator !== 'undefined' ? navigator.language : 'en-US';
+  const { i18n } = useTranslation();
   const { state } = useAppContext();
   const { addToast } = useToast();
+  const { canExport } = useWorkspaceTier();
+  const [showExportUpgrade, setShowExportUpgrade] = useState(false);
   const [schedules, setSchedules] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showBuilder, setShowBuilder] = useState(false);
@@ -113,6 +119,10 @@ function ProgressReportModal({ projectId, onClose }) {
   };
 
   const handleExportPDF = async (scheduleId) => {
+    if (!canExport) {
+      setShowExportUpgrade(true);
+      return;
+    }
     try {
       const result = await exportReportToPDF(supabaseClient, scheduleId);
       if (!result?.html) {
@@ -136,6 +146,10 @@ function ProgressReportModal({ projectId, onClose }) {
         addToast('PDF downloaded.', 'success');
       }
     } catch (error) {
+      if (isExportFeatureLockedError(error)) {
+        setShowExportUpgrade(true);
+        return;
+      }
       addToast('Error exporting PDF: ' + error.message, 'error');
     }
   };
@@ -187,6 +201,7 @@ function ProgressReportModal({ projectId, onClose }) {
   }
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-[min(1440px,96vw)] max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
@@ -249,10 +264,10 @@ function ProgressReportModal({ projectId, onClose }) {
                           {' · '}
                           {formatFrequencyLabel ? formatFrequencyLabel(schedule.frequency, schedule.frequency_value) : schedule.frequency}
                           {schedule.next_send_at && (
-                            <span> · Next {new Date(schedule.next_send_at).toLocaleDateString(locale)}</span>
+                            <span> · Next {new Date(schedule.next_send_at).toLocaleDateString(i18n.language)}</span>
                           )}
                           {schedule.last_sent_at && (
-                            <span className="ml-1 text-gray-400">· Sent {new Date(schedule.last_sent_at).toLocaleDateString(locale)}</span>
+                            <span className="ml-1 text-gray-400">· Sent {new Date(schedule.last_sent_at).toLocaleDateString(i18n.language)}</span>
                           )}
                         </p>
                         <p className="text-xs text-gray-400 mt-0.5">
@@ -354,7 +369,7 @@ function ProgressReportModal({ projectId, onClose }) {
                           <li key={record.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg text-sm">
                             <div>
                               <p className="font-medium text-gray-900">
-                                {new Date(record.sent_at).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })}
+                                {new Date(record.sent_at).toLocaleString(i18n.language, { dateStyle: 'medium', timeStyle: 'short' })}
                               </p>
                               <p className="text-xs text-gray-500 mt-0.5">
                                 {Array.isArray(record.recipient_emails) ? record.recipient_emails.length : 0} recipient(s)
@@ -380,6 +395,12 @@ function ProgressReportModal({ projectId, onClose }) {
         </div>
       </div>
     </div>
+    <UpgradeRequiredModal
+      isOpen={showExportUpgrade}
+      onClose={() => setShowExportUpgrade(false)}
+      feature="exports"
+    />
+    </>
   );
 }
 

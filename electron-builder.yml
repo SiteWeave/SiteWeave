@@ -29,11 +29,11 @@ mac:
   artifactName: ${productName}-${version}-${arch}.${ext}
 # AppX target for MSIX/Store (build with: npm run build:win:appx)
 appx:
-  applicationId: com.siteweave.app
+  applicationId: SiteWeaveLLC.SiteWeave
   displayName: SiteWeave
-  publisherDisplayName: SiteWeave
-  identityName: com.siteweave.app
-  publisher: CN=SiteWeave
+  publisherDisplayName: Site Weave LLC
+  identityName: SiteWeaveLLC.SiteWeave
+  publisher: CN=068B28E9-7E32-44B0-8497-76E29332ECEA
   backgroundColor: "#FFFFFF"
 nsis:
   artifactName: ${productName}-Setup-${version}.${ext}

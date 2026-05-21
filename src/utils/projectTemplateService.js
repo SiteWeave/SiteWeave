@@ -14,11 +14,9 @@
  */
 export async function saveProjectAsTemplate(supabase, projectId, organizationId, userId, templateName, templateDescription = '') {
   try {
-    const [projectRes, phasesRes, tasksRes] = await Promise.all([
-      supabase.from('projects').select('dependency_scheduling_mode').eq('id', projectId).single(),
+    const [phasesRes, tasksRes] = await Promise.all([
       supabase.from('project_phases').select('name, order').eq('project_id', projectId).order('order', { ascending: true }),
-      supabase.from('tasks').select('id, text, due_date, start_date, duration_days, is_milestone, priority, percent_complete')
-      .eq('project_id', projectId).order('created_at', { ascending: true })
+      supabase.from('tasks').select('id, text, due_date, start_date, duration_days, is_milestone, priority').eq('project_id', projectId).order('created_at', { ascending: true })
     ]);
     const phases = phasesRes.data || [];
     const tasks = tasksRes.data || [];
@@ -40,9 +38,6 @@ export async function saveProjectAsTemplate(supabase, projectId, organizationId,
         lag_days: d.lag_days ?? 0
       }));
     const structure = {
-      settings: {
-        dependency_scheduling_mode: projectRes.data?.dependency_scheduling_mode || 'auto',
-      },
       phases: phases.map(p => ({ name: p.name, order: p.order })),
       tasks: tasks.map(t => ({
         text: t.text,
@@ -50,8 +45,7 @@ export async function saveProjectAsTemplate(supabase, projectId, organizationId,
         start_date: t.start_date,
         duration_days: t.duration_days,
         is_milestone: t.is_milestone ?? false,
-        priority: t.priority,
-        percent_complete: t.percent_complete ?? null
+        priority: t.priority
       })),
       dependencies
     };
@@ -98,13 +92,17 @@ function shiftDate(date, days) {
  */
 export async function createProjectFromTemplate(supabase, templateId, organizationId, userId, projectName, address, projectNumber, startDate) {
   try {
+    const { canCreateProject } = await import('@siteweave/core-logic');
+    const allowed = await canCreateProject(supabase, organizationId);
+    if (!allowed) return { success: false, error: 'PROJECT_LIMIT_REACHED' };
+
     const { data: template, error: tErr } = await supabase
       .from('project_templates')
       .select('structure')
       .eq('id', templateId)
       .single();
     if (tErr || !template) return { success: false, error: 'Template not found' };
-    const { settings = {}, phases = [], tasks = [], dependencies = [] } = template.structure || {};
+    const { phases = [], tasks = [], dependencies = [] } = template.structure || {};
     if (!tasks.length) return { success: false, error: 'Template has no tasks' };
 
     let referenceStart = null;
@@ -127,8 +125,7 @@ export async function createProjectFromTemplate(supabase, templateId, organizati
         project_number: projectNumber || null,
         status: 'Planning',
         organization_id: organizationId,
-        created_by_user_id: userId,
-        dependency_scheduling_mode: settings.dependency_scheduling_mode || 'auto',
+        created_by_user_id: userId
       })
       .select('id')
       .single();
@@ -154,8 +151,7 @@ export async function createProjectFromTemplate(supabase, templateId, organizati
       duration_days: t.duration_days,
       is_milestone: t.is_milestone ?? false,
       priority: t.priority,
-      percent_complete: t.percent_complete != null ? t.percent_complete : null,
-      completed: (t.percent_complete != null ? t.percent_complete >= 100 : false),
+      completed: false,
       organization_id: organizationId
     }));
     const { data: insertedTasks, error: tasksErr } = await supabase
@@ -176,12 +172,6 @@ export async function createProjectFromTemplate(supabase, templateId, organizati
         }));
       if (newDeps.length > 0) await supabase.from('task_dependencies').insert(newDeps);
     }
-
-    await supabase.from('message_channels').insert({
-      project_id: newProject.id,
-      name: `${newProject.name} Discussion`,
-      organization_id: organizationId
-    });
 
     return { success: true, projectId: newProject.id };
   } catch (e) {

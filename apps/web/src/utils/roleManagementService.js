@@ -3,6 +3,21 @@
  * Handles CRUD operations for dynamic roles
  */
 
+import { canUseCustomRoles, CUSTOM_ROLES_LOCKED_ERROR } from '@siteweave/core-logic';
+
+async function assertCustomRolesAllowed(supabase, organizationId) {
+  const { data: org, error } = await supabase
+    .from('organizations')
+    .select('workspace_type')
+    .eq('id', organizationId)
+    .maybeSingle();
+  if (error || !org) throw new Error('Organization not found');
+  if (!canUseCustomRoles(org)) {
+    const err = new Error(CUSTOM_ROLES_LOCKED_ERROR);
+    throw err;
+  }
+}
+
 /**
  * Get all roles for an organization
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
@@ -57,6 +72,7 @@ export async function getRole(supabase, roleId) {
  */
 export async function createRole(supabase, organizationId, name, permissions) {
   try {
+    await assertCustomRolesAllowed(supabase, organizationId);
     const { data, error } = await supabase
       .from('roles')
       .insert({
@@ -89,6 +105,12 @@ export async function updateRole(supabase, roleId, updates) {
     if (!roleId) {
       return { success: false, error: 'Role ID is required' };
     }
+
+    const existing = await getRole(supabase, roleId);
+    if (!existing?.organization_id) {
+      return { success: false, error: 'Role not found' };
+    }
+    await assertCustomRolesAllowed(supabase, existing.organization_id);
 
     const updateData = {
       ...updates,
@@ -130,6 +152,10 @@ export async function updateRole(supabase, roleId, updates) {
  */
 export async function deleteRole(supabase, roleId) {
   try {
+    const existing = await getRole(supabase, roleId);
+    if (existing?.organization_id) {
+      await assertCustomRolesAllowed(supabase, existing.organization_id);
+    }
     const { error } = await supabase
       .from('roles')
       .delete()
@@ -152,6 +178,7 @@ export async function reassignOrganizationMembersAndDeleteRole(
   fromRoleId,
   toRoleId,
 ) {
+  await assertCustomRolesAllowed(supabase, organizationId);
   const { count, error: countError } = await supabase
     .from('profiles')
     .select('id', { count: 'exact', head: true })

@@ -390,9 +390,10 @@ export async function markMessageAsRead(supabase, messageId, userId) {
  * Fetch thread replies for a message
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} parentMessageId - Parent message ID
+ * @param {string|null} [userId] - Current user ID; filters replies from blocked users
  * @returns {Promise<Array>} Array of thread replies
  */
-export async function fetchThreadReplies(supabase, parentMessageId) {
+export async function fetchThreadReplies(supabase, parentMessageId, userId = null) {
   const { data, error } = await supabase
     .from('messages')
     .select('*')
@@ -402,13 +403,23 @@ export async function fetchThreadReplies(supabase, parentMessageId) {
   if (error) throw error;
   
   if (!data || data.length === 0) return [];
+
+  let filteredData = data;
+  if (userId) {
+    const { getBlockedUsers } = await import('./moderationService.js');
+    const blockedUserIds = await getBlockedUsers(supabase, userId);
+    if (blockedUserIds.length > 0) {
+      const blockedSet = new Set(blockedUserIds);
+      filteredData = data.filter((msg) => !blockedSet.has(msg.user_id));
+    }
+  }
   
   // Fetch user info for all reply authors
-  const userIds = [...new Set(data.map(m => m.user_id).filter(Boolean))];
+  const userIds = [...new Set(filteredData.map(m => m.user_id).filter(Boolean))];
   const userInfo = await fetchUserInfo(supabase, userIds);
   
   // Return messages with user info (reactions removed for MVP)
-  return data.map(message => ({
+  return filteredData.map(message => ({
     ...message,
     user: userInfo[message.user_id] || null
   }));

@@ -7,6 +7,7 @@ import {
   GenerateProgressReportError,
 } from '../_shared/generateProgressReportClient.ts'
 import { defaultProgressReportPdfFilename } from '../_shared/progressReportPdf.ts'
+import { assertCanExportProfessionalDocs, EXPORT_FEATURE_LOCKED_ERROR } from '../_shared/workspaceTier.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -132,6 +133,17 @@ serve(async (req) => {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       })
+    }
+
+    const exportTierCheck = await assertCanExportProfessionalDocs(supabase, schedule.organization_id)
+    if (!exportTierCheck.ok) {
+      return new Response(
+        JSON.stringify({
+          error: EXPORT_FEATURE_LOCKED_ERROR,
+          message: 'PDF export is available on the business plan. Contact sales to upgrade.',
+        }),
+        { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      )
     }
 
     if (!signedAccess) {

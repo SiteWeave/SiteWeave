@@ -9,7 +9,6 @@ import {
   fetchUserProjectsWithProgress,
   completeTask,
   updateTask,
-  fetchProjectIssues,
   computeWeightedProjectProgressPercent,
   uploadTaskPhotoSet,
 } from '@siteweave/core-logic';
@@ -20,6 +19,7 @@ import ProjectTeamModal from '../../../components/ProjectTeamModal';
 import PressableWithFade from '../../../components/PressableWithFade';
 import { enqueueOfflineAction, processOfflineQueue } from '../../../utils/offlineQueue';
 import TaskDetailModal from '../../../components/TaskDetailModal';
+import ProjectCollaborationPanel from '../../../components/ProjectCollaborationPanel';
 
 export default function ProjectDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -29,7 +29,6 @@ export default function ProjectDetailScreen() {
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [phases, setPhases] = useState([]);
-  const [issues, setIssues] = useState([]);
   const [activeTab, setActiveTab] = useState('tasks');
   const [loading, setLoading] = useState(true);
   const [showTeamModal, setShowTeamModal] = useState(false);
@@ -67,7 +66,7 @@ export default function ProjectDetailScreen() {
         loadProjectData();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_issues', filter: `project_id=eq.${id}` }, () => {
-        if (activeTab === 'issues') loadIssues();
+        if (activeTab === 'updates') loadProjectData();
       })
       .subscribe();
 
@@ -114,26 +113,6 @@ export default function ProjectDetailScreen() {
     };
     resolveCurrentUser();
   }, [supabase]);
-
-  useEffect(() => {
-    if (activeTab === 'issues' && id && supabase) {
-      loadIssues();
-    }
-  }, [activeTab, id, supabase]);
-
-  const loadIssues = async () => {
-    if (!id || !supabase) return;
-    try {
-      const issuesData = await fetchProjectIssues(supabase, id, 'open').catch(err => {
-        console.error('Error fetching issues:', err);
-        return [];
-      });
-      setIssues(issuesData || []);
-    } catch (error) {
-      console.error('Error loading issues:', error);
-      setIssues([]);
-    }
-  };
 
   const loadProjectData = async () => {
     if (!id || !supabase || !activeOrganization) {
@@ -594,21 +573,21 @@ export default function ProjectDetailScreen() {
             </Text>
           </PressableWithFade>
           <PressableWithFade
+            style={[styles.tab, activeTab === 'updates' && styles.tabActive]}
+            onPress={() => setActiveTab('updates')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.tabText, activeTab === 'updates' && styles.tabTextActive]}>
+              Updates
+            </Text>
+          </PressableWithFade>
+          <PressableWithFade
             style={[styles.tab, activeTab === 'details' && styles.tabActive]}
             onPress={() => setActiveTab('details')}
             activeOpacity={0.7}
           >
             <Text style={[styles.tabText, activeTab === 'details' && styles.tabTextActive]}>
               Details
-            </Text>
-          </PressableWithFade>
-          <PressableWithFade
-            style={[styles.tab, activeTab === 'issues' && styles.tabActive]}
-            onPress={() => setActiveTab('issues')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.tabText, activeTab === 'issues' && styles.tabTextActive]}>
-              Issues
             </Text>
           </PressableWithFade>
         </View>
@@ -637,6 +616,14 @@ export default function ProjectDetailScreen() {
             </View>
           )}
 
+          {activeTab === 'updates' && project && (
+            <ProjectCollaborationPanel
+              project={project}
+              supabase={supabase}
+              currentUserId={currentUserId}
+            />
+          )}
+
           {activeTab === 'details' && (
             <View>
               {phases.length > 0 ? (
@@ -656,22 +643,6 @@ export default function ProjectDetailScreen() {
             </View>
           )}
 
-          {activeTab === 'issues' && (
-            <View>
-              {issues.length > 0 ? (
-                <FlatList
-                  data={issues}
-                  keyExtractor={(item) => item.id}
-                  renderItem={renderIssueItem}
-                  scrollEnabled={false}
-                />
-              ) : (
-                <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No open issues for this project.</Text>
-                </View>
-              )}
-            </View>
-          )}
         </View>
       </ScrollView>
 
@@ -683,6 +654,10 @@ export default function ProjectDetailScreen() {
       <TaskDetailModal
         visible={showTaskModal}
         task={selectedTask}
+        project={project}
+        supabase={supabase}
+        currentUserId={currentUserId}
+        viewerOrgId={activeOrganization?.id}
         onClose={() => {
           setShowTaskModal(false);
           setSelectedTask(null);

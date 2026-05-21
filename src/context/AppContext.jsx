@@ -125,6 +125,7 @@ const getInitialState = () => {
     organizationLoading: false, // Loading state for organization check
     isProjectCollaborator: false, // User is a guest collaborator
     collaborationProjects: [], // Projects user can access as collaborator
+    accountIntent: 'workspace_owner',
     // Lazy loading flags
     tasksLoaded: false,
     filesLoaded: false,
@@ -287,11 +288,13 @@ function appReducer(state, action) {
     case 'SET_MUST_CHANGE_PASSWORD': return { ...state, mustChangePassword: action.payload };
     case 'SET_ORGANIZATION_ERROR': return { ...state, organizationError: action.payload };
     case 'SET_ORGANIZATION_LOADING': return { ...state, organizationLoading: action.payload };
-    case 'SET_COLLABORATOR_STATUS': return { 
-      ...state, 
+    case 'SET_COLLABORATOR_STATUS': return {
+      ...state,
       isProjectCollaborator: action.payload.isCollaborator,
       collaborationProjects: normalizeProjectsArray(action.payload.projects || []),
     };
+    case 'SET_ACCOUNT_INTENT':
+      return { ...state, accountIntent: action.payload };
     case 'RESET_LAZY_DATA': {
       newState = {
         ...state,
@@ -305,6 +308,8 @@ function appReducer(state, action) {
       saveStateToStorage(newState);
       return newState;
     }
+    case 'MERGE_TASKS':
+      return { ...state, tasks: dedupeTasksById(action.payload) };
     case 'SET_TASKS_LOADED': return { ...state, tasks: dedupeTasksById(action.payload), tasksLoaded: true };
     case 'SET_FILES_LOADED': return { ...state, files: action.payload, filesLoaded: true };
     case 'SET_CALENDAR_EVENTS_LOADED': return { ...state, calendarEvents: action.payload, calendarEventsLoaded: true };
@@ -774,6 +779,26 @@ export const AppProvider = ({ children }) => {
           if (contactId) {
             dispatch({ type: 'SET_USER_CONTACT_ID', payload: contactId });
           }
+
+          try {
+            const workspaceClient = await import('../utils/workspaceClient');
+            const pendingIntent = sessionStorage.getItem('pendingAccountIntent');
+            if (pendingIntent) {
+              sessionStorage.removeItem('pendingAccountIntent');
+              await supabaseClient.from('profiles').upsert({
+                id: state.user.id,
+                account_intent: pendingIntent,
+                role: 'Team',
+              }, { onConflict: 'id' });
+            }
+            const pendingInviteToken = workspaceClient.consumePendingProjectInviteToken();
+            if (pendingInviteToken) {
+              await workspaceClient.redeemProjectInvite(supabaseClient, { token: pendingInviteToken });
+            }
+            await workspaceClient.autoRedeemProjectInvites(supabaseClient);
+          } catch (bootstrapErr) {
+            console.warn('Account bootstrap (invites/provision):', bootstrapErr);
+          }
           
           // Load organization and user role
           const { data: profileWithOrg } = await supabaseClient
@@ -781,6 +806,7 @@ export const AppProvider = ({ children }) => {
             .select(`
               organization_id,
               role_id,
+              account_intent,
               roles (
                 id,
                 name,
@@ -790,6 +816,10 @@ export const AppProvider = ({ children }) => {
             `)
             .eq('id', state.user.id)
             .single();
+
+          if (profileWithOrg?.account_intent) {
+            dispatch({ type: 'SET_ACCOUNT_INTENT', payload: profileWithOrg.account_intent });
+          }
           
           // Check must_change_password separately (column may not exist in older schemas)
           let mustChangePassword = false;
@@ -839,8 +869,33 @@ export const AppProvider = ({ children }) => {
                 dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: null });
                 console.log('User is a project collaborator with', collaborations.length, 'project(s)');
               } else {
-                // No organization AND no collaborations
-                dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: 'No organization or project access found. Please contact your administrator.' });
+                const intent = profileWithOrg?.account_intent || 'workspace_owner';
+                dispatch({ type: 'SET_ACCOUNT_INTENT', payload: intent });
+                if (intent === 'workspace_owner') {
+                  try {
+                    const { provisionPersonalWorkspace } = await import('../utils/workspaceClient');
+                    const prov = await provisionPersonalWorkspace(supabaseClient);
+                    if (prov?.success && prov.organization) {
+                      const { data: adminRole } = await supabaseClient
+                        .from('roles')
+                        .select('*')
+                        .eq('organization_id', prov.organization.id)
+                        .eq('name', 'Org Admin')
+                        .maybeSingle();
+                      dispatch({ type: 'SET_ORGANIZATION', payload: prov.organization });
+                      dispatch({ type: 'SET_USER_ROLE', payload: adminRole });
+                      dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: null });
+                      organization = prov.organization;
+                    } else {
+                      dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: 'guest_waiting' });
+                    }
+                  } catch (provErr) {
+                    console.error('provision personal workspace:', provErr);
+                    dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: 'guest_waiting' });
+                  }
+                } else {
+                  dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: 'guest_waiting' });
+                }
                 dispatch({ type: 'SET_COLLABORATOR_STATUS', payload: { isCollaborator: false, projects: [] } });
               }
             } catch (error) {
@@ -889,8 +944,7 @@ export const AppProvider = ({ children }) => {
             return data || [];
           };
 
-          const [{ data: messageChannels }, { data: userPreferences, error: userPrefsError }, activityLog] = await Promise.all([
-            supabaseClient.from('message_channels').select('*'),
+          const [{ data: userPreferences, error: userPrefsError }, activityLog] = await Promise.all([
             supabaseClient.from('user_preferences').select('*').eq('user_id', state.user.id).maybeSingle(),
             fetchActivityLog()
           ]);
@@ -957,7 +1011,7 @@ export const AppProvider = ({ children }) => {
           dispatch({ type: 'SET_DATA', payload: { 
             projects: finalProjects, 
             contacts: finalContacts, 
-            messageChannels: messageChannels || [], 
+            messageChannels: [], 
             messages: [],
             activityLog: activityLog || [],
             activeView: currentActiveViewRef.current || state.activeView
@@ -1082,38 +1136,6 @@ export const AppProvider = ({ children }) => {
         } catch (error) {
           console.error('Error processing task change in subscription:', error);
         }
-      })
-      .subscribe(() => {}); // Silently handle subscription status
-
-    // Messages are now loaded per-channel in MessagesView component (MVP pattern)
-    // This global subscription is kept for backwards compatibility but MessagesView handles its own subscription
-    const messagesSubscription = supabaseClient.channel('public:messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-        // MessagesView handles its own subscription with fetchMessageWithUserInfo
-        // This global subscription is kept minimal for other components that might need it
-        const { fetchMessageWithUserInfo } = await import('@siteweave/core-logic');
-        try {
-          const enrichedMessage = await fetchMessageWithUserInfo(supabaseClient, payload.new);
-          dispatch({ type: 'ADD_MESSAGE', payload: enrichedMessage });
-        } catch (error) {
-          console.error('Error processing message in global subscription:', error);
-        }
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, async (payload) => {
-        // Update message instantly when edited
-        const updatedMessage = payload.new;
-        // Preserve user info if it exists in the current message
-        const currentMessage = state.messages.find(m => m.id === updatedMessage.id);
-        if (currentMessage?.user) {
-          updatedMessage.user = currentMessage.user;
-        }
-        dispatch({ type: 'UPDATE_MESSAGE', payload: updatedMessage });
-      })
-      .subscribe(() => {}); // Silently handle subscription status
-
-    const messageChannelsSubscription = supabaseClient.channel('public:message_channels')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_channels' }, (payload) => {
-        dispatch({ type: 'ADD_CHANNEL', payload: payload.new });
       })
       .subscribe(() => {}); // Silently handle subscription status
 

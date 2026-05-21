@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabaseClient, useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
+import { canInviteGuestCollaborator, isGuestCollaboratorLimitError } from '@siteweave/core-logic';
+import UpgradeRequiredModal from './UpgradeRequiredModal';
 
 const DEFAULT_ROLE = 'Team';
 const ROLE_OPTIONS = ['PM', 'Team', 'Subcontractor', 'Client'];
@@ -16,6 +18,7 @@ function ShareModal({ projectId, onClose }) {
   const [showContactPicker, setShowContactPicker] = useState(true);
   const [warning, setWarning] = useState(null);
   const [removingMemberId, setRemovingMemberId] = useState(null);
+  const [showGuestLimitUpgrade, setShowGuestLimitUpgrade] = useState(false);
   
   // Direct database state for project members (more reliable than context state)
   const [dbProjectMembers, setDbProjectMembers] = useState([]);
@@ -232,6 +235,15 @@ function ShareModal({ projectId, onClose }) {
     setError(null);
     setResults(null);
     try {
+      const orgId = state.currentOrganization?.id || project?.organization_id;
+      if (orgId && entries.length > 0) {
+        const allowed = await canInviteGuestCollaborator(supabaseClient, orgId, projectId);
+        if (!allowed) {
+          setShowGuestLimitUpgrade(true);
+          setSubmitting(false);
+          return;
+        }
+      }
       const payload = { projectId, entries, addedByUserId: state.user?.id };
       console.log('Invoking invite_or_add_member with:', JSON.stringify(payload, null, 2));
       
@@ -255,7 +267,11 @@ function ShareModal({ projectId, onClose }) {
       addToast('Members added successfully!', 'success');
     } catch (err) {
       console.error('Full error:', err);
-      setError(err?.message || 'Failed to add members. Please check console for details.');
+      if (isGuestCollaboratorLimitError(err) || err?.message?.includes('GUEST_COLLABORATOR_LIMIT')) {
+        setShowGuestLimitUpgrade(true);
+      } else {
+        setError(err?.message || 'Failed to add members. Please check console for details.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -472,6 +488,24 @@ function ShareModal({ projectId, onClose }) {
                             : r.reason}
                         </div>
                       )}
+                      {r.inviteUrl && (
+                        <div className="flex flex-wrap items-center gap-2 text-xs pl-2">
+                          <span className="text-gray-500">Invite link:</span>
+                          <button
+                            type="button"
+                            className="text-blue-600 hover:underline"
+                            onClick={() => {
+                              navigator.clipboard.writeText(r.inviteUrl);
+                              addToast('Invite link copied', 'success');
+                            }}
+                          >
+                            Copy link
+                          </button>
+                          {r.shortCode && (
+                            <span className="font-mono text-gray-700">Code: {r.shortCode}</span>
+                          )}
+                        </div>
+                      )}
                     </li>
                   );
                 })}
@@ -491,6 +525,11 @@ function ShareModal({ projectId, onClose }) {
           </div>
         </form>
       </div>
+      <UpgradeRequiredModal
+        isOpen={showGuestLimitUpgrade}
+        onClose={() => setShowGuestLimitUpgrade(false)}
+        feature="guest_collaborators"
+      />
     </div>
   );
 }

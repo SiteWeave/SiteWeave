@@ -86,6 +86,12 @@ serve(async (req) => {
         console.error('createGuestShare (dependency_unlocked):', shareDep.error)
       }
 
+      const { data: orgTzDep } = await supabase
+        .from('organizations')
+        .select('progress_report_timezone')
+        .eq('id', organizationId)
+        .maybeSingle()
+
       const template = buildMinimalDigestEmail({
         heading: `${projectName || 'Project'}: task unlocked`,
         subheading: `${successorTaskText || 'Task'} is ready to start`,
@@ -110,6 +116,7 @@ serve(async (req) => {
         projectName: projectName || null,
         projectAddress: projectAddress ? String(projectAddress).trim() : null,
         tasksSectionTitle: 'Task',
+        calendarTimeZone: orgTzDep?.progress_report_timezone ?? null,
       })
 
       let status: 'sent' | 'failed' = 'sent'
@@ -306,12 +313,27 @@ serve(async (req) => {
         console.error('createGuestShare (manual_reminder):', shareManual.error)
       }
 
-      const { data: taskDueRow } = await supabase.from('tasks').select('due_date').eq('id', taskId).maybeSingle()
-      const rawDue = taskDueRow?.due_date
+      const { data: taskDatesRow } = await supabase
+        .from('tasks')
+        .select('due_date, start_date')
+        .eq('id', taskId)
+        .maybeSingle()
+      const rawDue = taskDatesRow?.due_date
+      const rawStart = taskDatesRow?.start_date
       const dueDateIso =
         typeof rawDue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawDue)
           ? rawDue.slice(0, 10)
           : null
+      const startDateIso =
+        typeof rawStart === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawStart)
+          ? rawStart.slice(0, 10)
+          : null
+
+      const { data: orgTzManual } = await supabase
+        .from('organizations')
+        .select('progress_report_timezone')
+        .eq('id', organizationId)
+        .maybeSingle()
 
       const template = buildMinimalDigestEmail({
         heading: `${projectName || 'Project'}: Task reminder`,
@@ -327,6 +349,7 @@ serve(async (req) => {
             priority: taskPriority ? String(taskPriority) : null,
             dueDateLabel: taskDueDateLabel ? String(taskDueDateLabel) : null,
             dueDateIso,
+            startDateIso,
           },
         ],
         footerText: `${senderName || 'A teammate'} sent this reminder.`,
@@ -334,6 +357,7 @@ serve(async (req) => {
         projectAddress: projectAddress ? String(projectAddress).trim() : null,
         tasksSectionTitle: 'Task reminder',
         omitLeadBlock: true,
+        calendarTimeZone: orgTzManual?.progress_report_timezone ?? null,
       })
 
       const sendEmail = channels.includes('email')

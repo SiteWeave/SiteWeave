@@ -12,8 +12,10 @@ import {
     markMessageAsRead,
     fetchUnreadCounts,
     uploadFile,
-    fetchMessageWithUserInfo
+    fetchMessageWithUserInfo,
+    blockUser,
 } from '@siteweave/core-logic';
+import ReportContentModal from '../components/moderation/ReportContentModal';
 import { 
     setTypingStatus, 
     getTypingUsers, 
@@ -47,8 +49,37 @@ function MessagesView({ showTeamPanel = false, onOpenDirectory = null }) {
     const previousMessageCountRef = useRef(0);
     const isUserScrollingRef = useRef(false);
     const scrollTimeoutRef = useRef(null);
+    const [reportTarget, setReportTarget] = useState(null);
 
     const activeChannel = state.messageChannels.find(ch => ch.id === state.selectedChannelId);
+
+    const reloadChannelMessages = useCallback(async () => {
+        if (!activeChannel?.id || !state.user?.id) return;
+        try {
+            const messages = await fetchChannelMessages(supabaseClient, activeChannel.id, state.user.id);
+            dispatch({ type: 'SET_CHANNEL_MESSAGES', payload: { channelId: activeChannel.id, messages } });
+        } catch (error) {
+            console.error('Error reloading messages:', error);
+        }
+    }, [activeChannel?.id, state.user?.id, dispatch]);
+
+    const handleReportMessage = useCallback((message) => {
+        setReportTarget(message);
+    }, []);
+
+    const handleBlockUser = useCallback(async (message) => {
+        if (!state.user?.id || !message?.user_id) return;
+        const name = message.user?.name || 'this user';
+        if (!window.confirm(`Block ${name}? Their messages will be hidden from you.`)) return;
+        try {
+            await blockUser(supabaseClient, state.user.id, message.user_id);
+            addToast(`${name} has been blocked.`, 'success');
+            await reloadChannelMessages();
+        } catch (error) {
+            console.error('Error blocking user:', error);
+            addToast('Failed to block user. Please try again.', 'error');
+        }
+    }, [state.user?.id, addToast, reloadChannelMessages]);
     const channelMessages = state.messages.filter(msg => msg.channel_id === state.selectedChannelId && !msg.parent_message_id);
 
     // Message grouping logic - group consecutive messages from same user within the same minute
@@ -471,6 +502,7 @@ function MessagesView({ showTeamPanel = false, onOpenDirectory = null }) {
     };
 
     return (
+        <>
         <div className="flex h-full min-h-0 min-w-0">
             <aside 
                 data-onboarding="message-channels"
@@ -566,6 +598,9 @@ function MessagesView({ showTeamPanel = false, onOpenDirectory = null }) {
                                                 showTimestamp={msg.showTimestamp}
                                                 isLastInChannel={isLastMessageInChannel}
                                                 onReply={handleReply}
+                                                onReport={handleReportMessage}
+                                                onBlock={handleBlockUser}
+                                                currentUserId={state.user?.id}
                                             />
                                         );
                                     })}
@@ -697,6 +732,16 @@ function MessagesView({ showTeamPanel = false, onOpenDirectory = null }) {
                 ) : <div className="flex-1 flex items-center justify-center text-gray-500">Select a channel to start messaging.</div>}
             </main>
         </div>
+
+        <ReportContentModal
+            show={Boolean(reportTarget)}
+            onClose={() => setReportTarget(null)}
+            contentType="message"
+            contentId={reportTarget?.id}
+            reportedUserId={reportTarget?.user_id}
+            reportedUserName={reportTarget?.user?.name}
+        />
+        </>
     );
 }
 

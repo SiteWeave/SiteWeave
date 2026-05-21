@@ -4,6 +4,8 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import Avatar from './Avatar';
 import { formatActivityLine } from '../utils/formatActivityLine';
 import { fetchActivityHistoryPage, DEFAULT_PAGE_SIZE } from '../utils/activityHistoryService';
+import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
+import UpgradeRequiredModal from './UpgradeRequiredModal';
 
 const ENTITY_OPTIONS = [
   { value: '', key: 'all' },
@@ -46,6 +48,8 @@ function csvEscape(s) {
 function ActivityHistoryPanel({ mode, organizationId, projectId = null, title }) {
   const { t, i18n } = useTranslation();
   const { state } = useAppContext();
+  const { canExport } = useWorkspaceTier();
+  const [showExportUpgrade, setShowExportUpgrade] = useState(false);
 
   const [entityType, setEntityType] = useState('');
   const [rows, setRows] = useState([]);
@@ -123,6 +127,10 @@ function ActivityHistoryPanel({ mode, organizationId, projectId = null, title })
   };
 
   const handleExportCsv = () => {
+    if (!canExport) {
+      setShowExportUpgrade(true);
+      return;
+    }
     if (!rows.length) return;
     const headers = ['created_at', 'user_name', 'entity_type', 'action', 'description', 'project_id'];
     const lines = [headers.join(',')];
@@ -262,6 +270,11 @@ function ActivityHistoryPanel({ mode, organizationId, projectId = null, title })
           </button>
         </div>
       )}
+      <UpgradeRequiredModal
+        isOpen={showExportUpgrade}
+        onClose={() => setShowExportUpgrade(false)}
+        feature="exports"
+      />
     </div>
   );
 }

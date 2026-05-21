@@ -9,6 +9,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { sendTwilioSms } from '../_shared/twilioSms.ts'
 import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
+import { createProjectAccessInvite, mapRoleToAccessLevel } from '../_shared/projectInvite.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -90,12 +91,12 @@ serve(async (req) => {
     const organizationId = projectData.organization_id
     console.log('Project organization_id:', organizationId)
 
-    const { data: orgRow } = await supabaseAdmin
+    const { data: orgRowForSms } = await supabaseAdmin
       .from('organizations')
       .select('name')
       .eq('id', organizationId)
       .maybeSingle()
-    const organizationName = orgRow?.name || 'Your team'
+    const organizationNameForSms = orgRowForSms?.name || 'Your team'
 
     const results: Array<{ email: string; action: 'added' | 'invited' | 'skipped'; reason?: string }> = []
     const emailsToSend: Array<{ from: string; to: string[]; subject: string; html: string }> = []
@@ -242,16 +243,91 @@ serve(async (req) => {
 
         // Successfully added contact to project
         console.log('Successfully added contact to project')
+
+        const inviteResult = await createProjectAccessInvite(supabaseAdmin, {
+          projectId,
+          organizationId,
+          contactId: contactId || null,
+          invitedEmail: email,
+          accessLevel: mapRoleToAccessLevel(role),
+          invitedByUserId: addedByUserId || null,
+        })
+        const inviteUrl = 'inviteUrl' in inviteResult ? inviteResult.inviteUrl : ''
+        const inviteShortCode = 'shortCode' in inviteResult ? inviteResult.shortCode : ''
+        if ('error' in inviteResult) {
+          console.warn('project_access_invite create failed:', inviteResult.error)
+        }
         
-        // Build a project URL for outbound notifications.
-        const baseUrl = (Deno.env.get('APP_URL') ||
-                         Deno.env.get('VITE_APP_URL') ||
+        // Fetch project and organization details for email
+        const { data: project } = await supabaseAdmin
+          .from('projects')
+          .select('name, organization_id')
+          .eq('id', projectId)
+          .single()
+
+        const projectName = project?.name || 'a project'
+        
+        // Get organization name
+        let organizationName = 'an organization'
+        if (project?.organization_id) {
+          const { data: organization } = await supabaseAdmin
+            .from('organizations')
+            .select('name')
+            .eq('id', project.organization_id)
+            .maybeSingle()
+          
+          if (organization?.name) {
+            organizationName = organization.name
+          }
+        }
+        
+        // Get inviter name
+        let inviterName = 'A team member'
+        if (addedByUserId) {
+          const { data: inviterProfile } = await supabaseAdmin
+            .from('profiles')
+            .select(`
+              contacts!fk_profiles_contact (
+                name
+              )
+            `)
+            .eq('id', addedByUserId)
+            .maybeSingle()
+          
+          inviterName = inviterProfile?.contacts?.name || inviterName
+        }
+
+        // Get client name (optional) - check if project has a client contact
+        let clientName: string | null = null
+        const { data: clientContacts } = await supabaseAdmin
+          .from('project_contacts')
+          .select(`
+            contacts!fk_project_contacts_contact (
+              name,
+              type
+            )
+          `)
+          .eq('project_id', projectId)
+          .limit(10)
+        
+        if (clientContacts && clientContacts.length > 0) {
+          const client = clientContacts.find((pc: any) => pc.contacts?.type === 'Client')
+          if (client?.contacts?.name) {
+            clientName = client.contacts.name
+          }
+        }
+
+        // Construct dashboard URL
+        const baseUrl = (Deno.env.get('APP_URL') || 
+                         Deno.env.get('VITE_APP_URL') || 
                          'https://app.siteweave.org').replace(/\/+$/, '')
         const dashboardUrl = `${baseUrl}/projects/${projectId}`
-        const normalizedPhone = normalizeAssigneePhone(contactPhone || '')
+        const projectInviteUrl = inviteUrl || dashboardUrl
 
+        const normalizedPhone = normalizeAssigneePhone(contactPhone || '')
         if (normalizedPhone.isValid && normalizedPhone.e164) {
-          const smsMessage = `You were added to a project on SiteWeave as ${role}. View project: ${dashboardUrl}`
+          const codePart = inviteShortCode ? ` Code: ${inviteShortCode}.` : ''
+          const smsMessage = `${inviterName} added you to ${projectName} on SiteWeave. Open: ${projectInviteUrl}${codePart}`
           smsToSend.push({
             email,
             phone: normalizedPhone.e164,
@@ -260,58 +336,185 @@ serve(async (req) => {
         } else if (contactPhone) {
           console.log('Skipping SMS due to invalid phone format', { email, contactPhone })
         }
-
+        
+        // Prepare notification email (will be sent in batch later)
         if (RESEND_API_KEY) {
           try {
-            console.log('Sending notification email to:', email)
+            console.log('Preparing notification email for:', email)
             const emailHtml = `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <div style="background: #ffffff; padding: 32px 40px 24px 40px; border-radius: 10px 10px 0 0; text-align: center; border: 1px solid #e5e7eb; border-bottom: none;">
-                  <img src="https://app.siteweave.org/logo.svg" alt="SiteWeave" style="height: 120px; width: auto; margin: 0 auto; display: block;" />
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            line-height: 1.6; 
+            color: #1a1a1a; 
+            background: #f6f9fc; 
+            padding: 40px 20px; 
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .email-wrapper { 
+            max-width: 600px; 
+            margin: 0 auto; 
+        }
+        .card { 
+            background: #ffffff; 
+            border-radius: 8px; 
+            border: 1px solid #e6ebf1;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+        }
+        .header { 
+            background: #ffffff; 
+            padding: 32px 40px 24px 40px; 
+            text-align: center; 
+        }
+        .logo-img {
+            height: 120px;
+            width: auto;
+            margin: 0 auto;
+            display: block;
+        }
+        .content { 
+            padding: 32px 40px 40px 40px; 
+        }
+        .headline { 
+            font-size: 24px; 
+            font-weight: 600; 
+            color: #1a1a1a; 
+            margin: 0 0 24px 0;
+            line-height: 1.3;
+        }
+        .job-details {
+            background: #f3f4f6;
+            border-radius: 4px;
+            padding: 20px;
+            margin: 24px 0;
+        }
+        .detail-row {
+            display: flex;
+            margin-bottom: 12px;
+        }
+        .detail-row:last-child {
+            margin-bottom: 0;
+        }
+        .detail-label {
+            font-size: 13px;
+            color: #6b7280;
+            font-weight: 500;
+            min-width: 100px;
+            flex-shrink: 0;
+        }
+        .detail-value {
+            font-size: 15px;
+            color: #1a1a1a;
+            font-weight: 600;
+        }
+        .cta-container {
+            text-align: center;
+            margin: 32px 0;
+        }
+        .cta-button { 
+            display: inline-block; 
+            padding: 12px 24px; 
+            background: #2563EB; 
+            color: #ffffff !important; 
+            text-decoration: none; 
+            border-radius: 6px; 
+            font-weight: 600; 
+            font-size: 15px; 
+            letter-spacing: -0.2px;
+            transition: background-color 0.2s;
+        }
+        .cta-button:hover {
+            background: #1d4ed8;
+            color: #ffffff !important;
+        }
+        .footer { 
+            background: #f9fafb; 
+            padding: 24px 40px; 
+            text-align: center; 
+            border-top: 1px solid #e5e7eb;
+        }
+        .footer-text {
+            font-size: 12px; 
+            color: #6b7280; 
+            line-height: 1.6;
+            margin: 0;
+        }
+        @media only screen and (max-width: 600px) {
+            body { padding: 20px 12px; }
+            .header { padding: 24px 24px 0 24px; }
+            .content { padding: 24px 24px 32px 24px; }
+            .footer { padding: 20px 24px; }
+            .headline { font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-wrapper">
+        <div class="card">
+            <div class="header">
+                <img src="https://app.siteweave.org/logo.svg" alt="SiteWeave" class="logo-img" />
+            </div>
+            <div class="content">
+                <h2 class="headline">${inviterName} added you to ${projectName}.</h2>
+                
+                <div class="job-details">
+                    <div class="detail-row">
+                        <span class="detail-label">Project</span>
+                        <span class="detail-value">${projectName}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Your Role</span>
+                        <span class="detail-value">${role}</span>
+                    </div>
+                    ${clientName ? `
+                    <div class="detail-row">
+                        <span class="detail-label">Client</span>
+                        <span class="detail-value">${clientName}</span>
+                    </div>
+                    ` : ''}
                 </div>
-                <div style="background: white; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;">
-                  <h2 style="color: #1f2937; margin-top: 0;">You've been added to a project! 🎉</h2>
-                  <p style="color: #4b5563; font-size: 16px; line-height: 1.6;">
-                    Great news! You've been added to a project on SiteWeave with the role: <strong style="color: #2563eb;">${role}</strong>
-                  </p>
-                  <p style="color: #4b5563; font-size: 16px; line-height: 1.6;">
-                    To access the project and start collaborating with your team, please sign in or create an account:
-                  </p>
-                  <div style="text-align: center; margin: 30px 0;">
-                    <a href="https://siteweave.netlify.app" style="display: inline-block; padding: 14px 32px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">Access SiteWeave</a>
-                  </div>
-                  <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin-top: 20px;">
-                    <p style="color: #6b7280; font-size: 14px; margin: 0; line-height: 1.5;">
-                      <strong>What's SiteWeave?</strong><br>
-                      SiteWeave is your all-in-one project management platform for construction and field work. Manage tasks, track progress, and collaborate with your team in real-time.
-                    </p>
-                  </div>
-                  <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-                  <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-                    If you have any questions, please contact your project manager.<br>
-                    This is an automated message from SiteWeave.
-                  </p>
+                
+                <div class="cta-container">
+                    <a href="${projectInviteUrl}" class="cta-button">Accept project invite</a>
                 </div>
-              </div>
-            `
+                ${inviteShortCode ? `<p style="text-align:center;font-size:13px;color:#6b7280;margin-top:12px;">Or sign in and enter code: <strong>${inviteShortCode}</strong></p>` : ''}
+            </div>
+            <div class="footer">
+                <p class="footer-text">
+                    You received this email because you are a member of ${organizationName}.
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+            `.trim()
 
             // Add to batch email queue
             emailsToSend.push({
               from: 'SiteWeave <noreply@siteweave.org>',
               to: [email],
-              subject: 'You\'ve been added to a project on SiteWeave',
+              subject: `${inviterName} added you to ${projectName}`,
               html: emailHtml
             })
             
             console.log('Email prepared for batch sending to:', email)
-            results.push({ email, action: 'added' })
+            results.push({ email, action: 'added', inviteUrl: projectInviteUrl, shortCode: inviteShortCode })
           } catch (emailError) {
             console.error('Error preparing email:', emailError)
-            results.push({ email, action: 'added', reason: 'email_prep_failed' })
+            results.push({ email, action: 'added', reason: 'email_prep_failed', inviteUrl: projectInviteUrl, shortCode: inviteShortCode })
           }
         } else {
           console.log('RESEND_API_KEY not configured, skipping email')
-          results.push({ email, action: 'added', reason: 'email_not_configured' })
+          results.push({ email, action: 'added', reason: 'email_not_configured', inviteUrl: projectInviteUrl, shortCode: inviteShortCode })
         }
       } catch (entryError) {
         console.error('Error processing entry:', entryError)
@@ -364,12 +567,13 @@ serve(async (req) => {
       }
     }
 
+    // Send SMS notifications one-by-one to preserve per-recipient status handling.
     if (smsToSend.length > 0) {
       for (const sms of smsToSend) {
         const gate = await gateOrSendOptInForSubstantiveSms(supabaseAdmin, {
           phoneE164: sms.phone,
           organizationId,
-          organizationName,
+          organizationName: organizationNameForSms,
         })
         if (!gate.allowed) {
           if (gate.optInSent) {

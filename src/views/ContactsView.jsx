@@ -5,10 +5,14 @@ import AddContactModal from '../components/AddContactModal';
 import ContactCard from '../components/ContactCard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { logContactCreated, logContactUpdated } from '../utils/activityLogger';
+import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
+import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
 
 function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
+    const { canExport } = useWorkspaceTier();
+    const [showExportUpgrade, setShowExportUpgrade] = useState(false);
     const [activeTab, setActiveTab] = useState('Team');
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingContact, setEditingContact] = useState(null);
@@ -246,6 +250,11 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     };
 
     const handleExportContacts = () => {
+        if (!canExport) {
+            setShowExportUpgrade(true);
+            setShowExportModal(false);
+            return;
+        }
         const contacts = activeTab === 'Team' ? teamMembers : subcontractors;
         const csvContent = [
             'Name,Role,Type,Company,Trade,Email,Phone,Status',
@@ -353,14 +362,11 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
         if (!contact) return;
         const firstProjectId = contact.project_contacts?.[0]?.project_id;
         if (firstProjectId) {
-            const channel = state.messageChannels.find(ch => String(ch.project_id) === String(firstProjectId));
-            if (channel) {
-                dispatch({ type: 'SET_CHANNEL', payload: channel.id });
-                return;
-            }
+            dispatch({ type: 'SET_PROJECT', payload: firstProjectId });
+            dispatch({ type: 'SET_VIEW', payload: 'Projects' });
+            return;
         }
-        dispatch({ type: 'SET_VIEW', payload: 'Messages' });
-        addToast('Switching to Messages. Select a channel to start chatting.', 'info');
+        addToast('Assign this contact to a project first to open the project stream.', 'info');
     };
 
     return (
@@ -705,6 +711,11 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     </div>
                 );
             })()}
+            <UpgradeRequiredModal
+                isOpen={showExportUpgrade}
+                onClose={() => setShowExportUpgrade(false)}
+                feature="exports"
+            />
         </>
     );
 }

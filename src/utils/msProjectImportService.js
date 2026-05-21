@@ -64,6 +64,10 @@ export async function importMsProjectXmlSchedule(supabase, params) {
 
     try {
         if (createNewProject) {
+            const { canCreateProject } = await import('@siteweave/core-logic');
+            const allowed = await canCreateProject(supabase, organizationId);
+            if (!allowed) return { success: false, error: 'PROJECT_LIMIT_REACHED' };
+
             const name = (newProjectName || parsed.project.title || 'Imported project').trim();
             const { data: proj, error: pErr } = await supabase
                 .from('projects')
@@ -83,11 +87,6 @@ export async function importMsProjectXmlSchedule(supabase, params) {
             projectId = proj.id;
             createdProjectId = proj.id;
 
-            await supabase.from('message_channels').insert({
-                project_id: projectId,
-                name: `${name} Discussion`,
-                organization_id: organizationId,
-            });
         }
 
         if (!projectId) {

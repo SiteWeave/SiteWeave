@@ -8,6 +8,7 @@ import {
   fetchMessageWithUserInfo,
   fetchUnreadCounts,
   markMessageAsRead,
+  blockUser,
 } from '@siteweave/core-logic';
 import PressableWithFade from '../../components/PressableWithFade';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -182,15 +183,65 @@ export default function MessagesScreen() {
     }
   };
 
+  const reloadMessages = async () => {
+    if (!selectedChannel?.id || !user?.id) return;
+    try {
+      const data = await fetchChannelMessages(supabase, selectedChannel.id, user.id);
+      setMessages(data || []);
+    } catch (error) {
+      console.error('Error reloading messages:', error);
+    }
+  };
+
+  const handleBlockUser = (message) => {
+    const name = message.user?.name || 'this user';
+    Alert.alert(
+      'Block User',
+      `Block ${name}? Their messages will be hidden from you.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              haptics.medium();
+              await blockUser(supabase, user.id, message.user_id);
+              haptics.success();
+              await reloadMessages();
+              Alert.alert('Blocked', `${name} has been blocked.`);
+            } catch (error) {
+              console.error('Error blocking user:', error);
+              haptics.error();
+              Alert.alert('Error', 'Failed to block user. Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleMessageLongPress = (message) => {
-    // Don't allow reporting your own messages
     if (message.user_id === user?.id) {
       return;
     }
-    
+
     haptics.medium();
-    setSelectedMessage(message);
-    setShowReportModal(true);
+    Alert.alert('Message options', undefined, [
+      {
+        text: 'Report',
+        onPress: () => {
+          setSelectedMessage(message);
+          setShowReportModal(true);
+        },
+      },
+      {
+        text: 'Block user',
+        style: 'destructive',
+        onPress: () => handleBlockUser(message),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   if (channels.length === 0) {

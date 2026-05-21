@@ -40,6 +40,8 @@ serve(async (req) => {
       .insert({
         name: orgName,
         slug: orgSlug,
+        workspace_type: 'business',
+        max_projects: null,
         created_by_user_id: null // Created by system
       })
       .select()

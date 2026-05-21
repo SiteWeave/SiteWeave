@@ -10,6 +10,7 @@ import {
   getPushToken,
   registerPushToken,
   setupNotificationListeners,
+  subscribeUserNotificationInserts,
   resolveNotificationRoute,
   getLastNotificationRoute,
 } from '../utils/notifications';
@@ -44,6 +45,8 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [activeOrganization, setActiveOrganization] = useState(null);
   const [organizationError, setOrganizationError] = useState(null);
+  const [isProjectCollaborator, setIsProjectCollaborator] = useState(false);
+  const [collaborationProjects, setCollaborationProjects] = useState([]);
   const [pendingNotificationRoute, setPendingNotificationRoute] = useState(null);
   const [syncPulse, setSyncPulse] = useState(0);
   
@@ -58,16 +61,20 @@ export function AuthProvider({ children }) {
     return createSupabaseClient(supabaseUrl, supabaseAnonKey);
   }, []);
 
-  // Load user's organization from profiles table
+  // Load org membership or guest collaborator access
   const loadUserOrganization = async (targetUser = user) => {
     if (!targetUser) {
       setActiveOrganization(null);
       setOrganizationError(null);
+      setIsProjectCollaborator(false);
+      setCollaborationProjects([]);
       return;
     }
 
     try {
-      // Get user's profile with organization
+      const { runInviteBootstrap } = await import('../utils/workspaceClient');
+      await runInviteBootstrap(supabase);
+
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select(`
@@ -84,24 +91,44 @@ export function AuthProvider({ children }) {
         console.error('Error loading organization:', profileError);
         setOrganizationError('Failed to load organization');
         setActiveOrganization(null);
+        setIsProjectCollaborator(false);
+        setCollaborationProjects([]);
         return;
       }
 
-      if (!profile?.organization_id || !profile?.organizations) {
-        setOrganizationError('No organization found. Please contact your administrator.');
+      if (profile?.organization_id && profile?.organizations) {
+        setActiveOrganization({
+          id: profile.organizations.id,
+          name: profile.organizations.name,
+        });
+        setOrganizationError(null);
+        setIsProjectCollaborator(false);
+        setCollaborationProjects([]);
+        return;
+      }
+
+      const { getUserCollaborationProjects } = await import('../utils/projectCollaborationService');
+      const collaborations = await getUserCollaborationProjects(supabase, targetUser.id);
+      const projects = collaborations.map((c) => c.projects).filter(Boolean);
+
+      if (projects.length > 0) {
+        setIsProjectCollaborator(true);
+        setCollaborationProjects(projects);
         setActiveOrganization(null);
+        setOrganizationError(null);
         return;
       }
 
-      setActiveOrganization({
-        id: profile.organizations.id,
-        name: profile.organizations.name
-      });
-      setOrganizationError(null);
+      setIsProjectCollaborator(false);
+      setCollaborationProjects([]);
+      setActiveOrganization(null);
+      setOrganizationError('guest_waiting');
     } catch (error) {
       console.error('Error in loadUserOrganization:', error);
       setOrganizationError('Failed to load organization');
       setActiveOrganization(null);
+      setIsProjectCollaborator(false);
+      setCollaborationProjects([]);
     }
   };
 
@@ -112,7 +139,28 @@ export function AuthProvider({ children }) {
     } else {
       setActiveOrganization(null);
       setOrganizationError(null);
+      setIsProjectCollaborator(false);
+      setCollaborationProjects([]);
     }
+  }, [user?.id]);
+
+  // Deep links: siteweave://project-invite/{token} or https://app.../project-invite/{token}
+  useEffect(() => {
+    const handleUrl = async (url) => {
+      const { extractProjectInviteTokenFromUrl, storePendingProjectInviteToken } = await import('../utils/workspaceClient');
+      const inviteToken = extractProjectInviteTokenFromUrl(url);
+      if (!inviteToken) return;
+      await storePendingProjectInviteToken(inviteToken);
+      if (user) {
+        await loadUserOrganization(user);
+      }
+    };
+
+    Linking.getInitialURL().then((url) => {
+      if (url) handleUrl(url);
+    });
+    const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => sub.remove();
   }, [user?.id]);
 
   // Register push token when user is available
@@ -157,6 +205,11 @@ export function AuthProvider({ children }) {
 
     return cleanup;
   }, []);
+
+  useEffect(() => {
+    if (!user?.id || !supabase) return;
+    return subscribeUserNotificationInserts(supabase, user.id, user.email || '');
+  }, [user?.id, user?.email, supabase]);
 
   // Lightweight background/foreground sync trigger.
   useEffect(() => {
@@ -207,6 +260,8 @@ export function AuthProvider({ children }) {
             setUser(null);
             setActiveOrganization(null);
             setOrganizationError(null);
+            setIsProjectCollaborator(false);
+            setCollaborationProjects([]);
             break;
           case 'PASSWORD_RECOVERY':
             // Don't change user state for password recovery
@@ -603,6 +658,8 @@ export function AuthProvider({ children }) {
       loading, 
       activeOrganization,
       organizationError,
+      isProjectCollaborator,
+      collaborationProjects,
       loadUserOrganization,
       signIn, 
       signInWithGoogle, 

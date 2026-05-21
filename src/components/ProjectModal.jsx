@@ -46,9 +46,26 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const isEditMode = !!project;
 
     const contacts = state.contacts || [];
-    
-    // Get all team members
-    const teamMembers = contacts.filter(c => c.type === 'Team');
+    const userEmail = state.user?.email?.trim().toLowerCase() || '';
+
+    const resolveOwnerContactId = () => {
+        if (isEditMode && project?.created_by_user_id) {
+            const creatorProfile = state.profiles?.find((p) => p.id === project.created_by_user_id);
+            if (creatorProfile?.contact_id) return creatorProfile.contact_id;
+        }
+        if (state.userContactId) return state.userContactId;
+        if (userEmail) {
+            const match = contacts.find((c) => c.email?.trim().toLowerCase() === userEmail);
+            if (match?.id) return match.id;
+        }
+        return null;
+    };
+
+    const ownerContactId = resolveOwnerContactId();
+    const allTeamMembers = contacts.filter((c) => c.type === 'Team');
+    const teamMembers = ownerContactId
+        ? allTeamMembers.filter((c) => String(c.id) !== String(ownerContactId))
+        : allTeamMembers;
 
     useEffect(() => {
         if (project) {
@@ -85,10 +102,10 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             
             // Load existing project contacts
             const existingContacts = state.contacts
-                .filter(contact => 
-                    contact.type === 'Team' && 
-                    contact.project_contacts && 
-                    contact.project_contacts.some(pc => pc.project_id === project.id)
+                .filter(contact =>
+                    contact.type === 'Team'
+                    && contact.project_contacts?.some((pc) => pc.project_id === project.id)
+                    && (!ownerContactId || String(contact.id) !== String(ownerContactId)),
                 )
                 .map(contact => contact.id);
             setSelectedContacts(existingContacts);
@@ -107,7 +124,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             setProjectBatchWindowMinutes(5);
             setDependencyNotifEnabled(true);
         }
-    }, [project, state.contacts]);
+    }, [project, state.contacts, state.userContactId, ownerContactId]);
 
     useEffect(() => {
         if (!actionsMenuOpen) return;
@@ -134,6 +151,10 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
         // Determine the final project_type value
         const finalProjectType = project_type === 'Other' ? project_type_custom : project_type;
         
+        const ownerAugmentedContacts = ownerContactId && !selectedContacts.includes(ownerContactId)
+            ? [...selectedContacts, ownerContactId]
+            : selectedContacts;
+
         const projectData = {
             name,
             address,
@@ -149,8 +170,8 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             notification_email_batching_enabled: projectBatchingEnabled,
             notification_batch_window_minutes: Math.max(1, Math.min(60, Number(projectBatchWindowMinutes) || 5)),
             dependency_notifications_enabled: dependencyNotifEnabled,
-            selectedContacts: selectedContacts,
-            emailAddresses: emailAddresses
+            selectedContacts: ownerAugmentedContacts,
+            emailAddresses: emailAddresses.filter((email) => email !== userEmail),
         };
         
         if (isEditMode) {
@@ -169,13 +190,19 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             .filter(e => e.includes('@') && e.length > 0);
         
         const deduped = Array.from(new Set(emails));
+        const rejectedOwnEmail = userEmail && deduped.includes(userEmail);
         const newEmails = deduped.filter(
-            email => !emailAddresses.includes(email) && 
-            !teamMembers.some(contact => contact.email?.toLowerCase() === email)
+            (email) => email !== userEmail
+            && !emailAddresses.includes(email)
+            && !allTeamMembers.some((contact) => contact.email?.toLowerCase() === email),
         );
-        
+
+        if (rejectedOwnEmail) {
+            addToast('You are automatically added to projects you create.', 'info');
+        }
+
         if (newEmails.length > 0) {
-            setEmailAddresses(prev => [...prev, ...newEmails]);
+            setEmailAddresses((prev) => [...prev, ...newEmails]);
             setEmailInput('');
         }
     };
@@ -609,7 +636,8 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                 </button>
                             </div>
                             <p className="text-xs text-gray-500 mt-1">
-                                Add email addresses for people who don't have accounts yet. They'll be invited to join.
+                                Add email addresses for people who don&apos;t have accounts yet. They&apos;ll be invited to join.
+                                {ownerContactId && ' You are added to the project automatically.'}
                             </p>
                         </div>
 
@@ -664,7 +692,14 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                 ))}
                             </div>
                         )}
-                        
+                        {ownerContactId && (
+                            <p className="mt-2 text-xs italic text-gray-500">
+                                {isEditMode
+                                    ? 'The project owner is always on the team and cannot be removed.'
+                                    : 'You are automatically on the project team.'}
+                            </p>
+                        )}
+
                         {(selectedContacts.length > 0 || emailAddresses.length > 0) && (
                             <p className="text-xs text-gray-500 mt-2">
                                 {selectedContacts.length} existing contact{selectedContacts.length !== 1 ? 's' : ''} selected

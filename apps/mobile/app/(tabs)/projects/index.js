@@ -9,14 +9,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function ProjectsScreen() {
-  const { user, supabase, activeOrganization } = useAuth();
+  const { user, supabase, activeOrganization, isProjectCollaborator } = useAuth();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const loadProjects = useCallback(async () => {
-    if (!user || !supabase || !activeOrganization) {
+    if (!user || !supabase || (!activeOrganization && !isProjectCollaborator)) {
       setLoading(false);
       setProjects([]);
       return;
@@ -26,7 +26,9 @@ export default function ProjectsScreen() {
       setLoading(true);
       const data = await fetchUserProjectsWithProgress(supabase, user.id);
       
-      const orgProjects = filterByOrganizationId(data || [], activeOrganization.id);
+      const orgProjects = activeOrganization
+        ? filterByOrganizationId(data || [], activeOrganization.id)
+        : (data || []);
       
       // Fetch incoming tasks with assignee info for each project
       const projectsWithTasks = await Promise.all(
@@ -47,7 +49,7 @@ export default function ProjectsScreen() {
                 )
               `)
               .eq('project_id', project.id)
-              .eq('organization_id', activeOrganization.id)
+              .eq('organization_id', project.organization_id)
               .order('due_date', { ascending: true, nullsFirst: false });
             
             if (tasksError) throw tasksError;
@@ -93,7 +95,7 @@ export default function ProjectsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [user, supabase, activeOrganization]);
+  }, [user, supabase, activeOrganization, isProjectCollaborator]);
 
   useEffect(() => {
     loadProjects();
@@ -114,9 +116,11 @@ export default function ProjectsScreen() {
     <View style={[styles.safeArea, { paddingTop: insets.top }]}>
       <View style={styles.container}>
         <View style={styles.header}>
-          {activeOrganization?.name && (
+          {activeOrganization?.name ? (
             <Text style={styles.organizationName}>{activeOrganization.name}</Text>
-          )}
+          ) : isProjectCollaborator ? (
+            <Text style={styles.organizationName}>Shared with you</Text>
+          ) : null}
           <Text style={styles.title}>Projects</Text>
         </View>
 
@@ -136,7 +140,11 @@ export default function ProjectsScreen() {
         ) : (
           <View style={styles.emptyContainer}>
             <Ionicons name="folder-outline" size={48} color="#9CA3AF" />
-            <Text style={styles.emptyText}>No projects assigned to you.</Text>
+            <Text style={styles.emptyText}>
+              {isProjectCollaborator
+                ? 'No projects yet. Open your invite link from your contractor.'
+                : 'No projects assigned to you.'}
+            </Text>
           </View>
         )}
       </View>

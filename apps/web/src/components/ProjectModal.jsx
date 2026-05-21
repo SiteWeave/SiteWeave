@@ -42,12 +42,22 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     // Get all team members
     const allTeamMembers = state.contacts.filter(c => c.type === 'Team');
     
-    // Determine owner contact:
-    // - Edit mode: created_by_user_id from project
-    // - Create mode: current signed-in user's contact
-    const ownerContactId = isEditMode && project?.created_by_user_id
-      ? (state.profiles?.find(p => p.id === project.created_by_user_id)?.contact_id || null)
-      : (state.profiles?.find(p => p.id === state.user?.id)?.contact_id || null);
+    const userEmail = state.user?.email?.trim().toLowerCase() || '';
+    const resolveOwnerContactId = () => {
+        if (isEditMode && project?.created_by_user_id) {
+            const creatorProfile = state.profiles?.find((p) => p.id === project.created_by_user_id);
+            if (creatorProfile?.contact_id) return creatorProfile.contact_id;
+        }
+        if (state.userContactId) return state.userContactId;
+        const selfProfile = state.profiles?.find((p) => p.id === state.user?.id);
+        if (selfProfile?.contact_id) return selfProfile.contact_id;
+        if (userEmail) {
+            const match = state.contacts.find((c) => c.email?.trim().toLowerCase() === userEmail);
+            if (match?.id) return match.id;
+        }
+        return null;
+    };
+    const ownerContactId = resolveOwnerContactId();
     
     // Filter out the owner from selectable team members (owner is always on the team)
     const teamMembers = ownerContactId
@@ -73,12 +83,12 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             
             // Load existing project contacts
             const existingContacts = state.contacts
-                .filter(contact => 
-                    contact.type === 'Team' && 
-                    contact.project_contacts && 
-                    contact.project_contacts.some(pc => pc.project_id === project.id)
+                .filter((contact) =>
+                    contact.type === 'Team'
+                    && contact.project_contacts?.some((pc) => pc.project_id === project.id)
+                    && (!ownerContactId || String(contact.id) !== String(ownerContactId)),
                 )
-                .map(contact => contact.id);
+                .map((contact) => contact.id);
             setSelectedContacts(existingContacts);
         } else {
             // Reset when creating new project
@@ -90,7 +100,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             setTaskNotifEnabled(false);
             setTaskNotifLeadDays('14, 7');
         }
-    }, [project, state.contacts]);
+    }, [project, state.contacts, state.userContactId, ownerContactId]);
 
     useEffect(() => {
         if (!actionsMenuOpen) return;
@@ -132,7 +142,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             task_start_notifications_enabled: taskNotifUseOrgDefaults ? null : taskNotifEnabled,
             task_start_notification_lead_days: taskNotifUseOrgDefaults ? null : parseLeadDays(taskNotifLeadDays),
             selectedContacts: ownerAugmentedContacts,
-            emailAddresses: emailAddresses
+            emailAddresses: emailAddresses.filter((email) => email !== userEmail),
         };
         
         if (isEditMode) {
@@ -151,13 +161,19 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             .filter(e => e.includes('@') && e.length > 0);
         
         const deduped = Array.from(new Set(emails));
+        const rejectedOwnEmail = userEmail && deduped.includes(userEmail);
         const newEmails = deduped.filter(
-            email => !emailAddresses.includes(email) && 
-            !teamMembers.some(contact => contact.email?.toLowerCase() === email)
+            (email) => email !== userEmail
+            && !emailAddresses.includes(email)
+            && !allTeamMembers.some((contact) => contact.email?.toLowerCase() === email),
         );
-        
+
+        if (rejectedOwnEmail) {
+            addToast('You are automatically added to projects you create.', 'info');
+        }
+
         if (newEmails.length > 0) {
-            setEmailAddresses(prev => [...prev, ...newEmails]);
+            setEmailAddresses((prev) => [...prev, ...newEmails]);
             setEmailInput('');
         }
     };
@@ -546,7 +562,8 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                 </button>
                             </div>
                             <p className="text-xs text-gray-500 mt-1">
-                                Add email addresses for people who don't have accounts yet. They'll be invited to join.
+                                Add email addresses for people who don&apos;t have accounts yet. They&apos;ll be invited to join.
+                                {ownerContactId && ' You are added to the project automatically.'}
                             </p>
                         </div>
 
@@ -601,10 +618,12 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                 ))}
                             </div>
                         )}
-                        {isEditMode && ownerContactId && (
-                            <div className="mt-2 text-xs text-gray-500 italic">
-                                Note: The project owner is always on the team and cannot be removed.
-                            </div>
+                        {ownerContactId && (
+                            <p className="mt-2 text-xs italic text-gray-500">
+                                {isEditMode
+                                    ? 'The project owner is always on the team and cannot be removed.'
+                                    : 'You are automatically on the project team.'}
+                            </p>
                         )}
                         
                         {(selectedContacts.length > 0 || emailAddresses.length > 0) && (

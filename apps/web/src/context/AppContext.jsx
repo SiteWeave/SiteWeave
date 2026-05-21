@@ -126,6 +126,7 @@ const getInitialState = () => {
     organizationLoading: false, // Loading state for organization check
     isProjectCollaborator: false, // User is a guest collaborator
     collaborationProjects: [], // Projects user can access as collaborator
+    accountIntent: 'workspace_owner',
   };
   
   // Try to restore from sessionStorage (will be null if no user or different user)
@@ -319,6 +320,8 @@ function appReducer(state, action) {
       isProjectCollaborator: action.payload.isCollaborator,
       collaborationProjects: normalizeProjectsArray(action.payload.projects || []),
     };
+    case 'SET_ACCOUNT_INTENT':
+      return { ...state, accountIntent: action.payload };
     default: return state;
   }
 }
@@ -775,6 +778,26 @@ export const AppProvider = ({ children }) => {
           if (contactId) {
             dispatch({ type: 'SET_USER_CONTACT_ID', payload: contactId });
           }
+
+          try {
+            const workspaceClient = await import('../utils/workspaceClient');
+            const pendingIntent = sessionStorage.getItem('pendingAccountIntent');
+            if (pendingIntent) {
+              sessionStorage.removeItem('pendingAccountIntent');
+              await supabaseClient.from('profiles').upsert({
+                id: state.user.id,
+                account_intent: pendingIntent,
+                role: 'Team',
+              }, { onConflict: 'id' });
+            }
+            const pendingInviteToken = workspaceClient.consumePendingProjectInviteToken();
+            if (pendingInviteToken) {
+              await workspaceClient.redeemProjectInvite(supabaseClient, { token: pendingInviteToken });
+            }
+            await workspaceClient.autoRedeemProjectInvites(supabaseClient);
+          } catch (bootstrapErr) {
+            console.warn('Account bootstrap (invites/provision):', bootstrapErr);
+          }
           
           // Load organization and user role
           const { data: profileWithOrg } = await supabaseClient
@@ -782,6 +805,7 @@ export const AppProvider = ({ children }) => {
             .select(`
               organization_id,
               role_id,
+              account_intent,
               roles (
                 id,
                 name,
@@ -791,6 +815,10 @@ export const AppProvider = ({ children }) => {
             `)
             .eq('id', state.user.id)
             .single();
+
+          if (profileWithOrg?.account_intent) {
+            dispatch({ type: 'SET_ACCOUNT_INTENT', payload: profileWithOrg.account_intent });
+          }
           
           // Check must_change_password separately (column may not exist in older schemas)
           let mustChangePassword = false;
@@ -840,8 +868,33 @@ export const AppProvider = ({ children }) => {
                 dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: null });
                 console.log('User is a project collaborator with', collaborations.length, 'project(s)');
               } else {
-                // No organization AND no collaborations
-                dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: 'No organization or project access found. Please contact your administrator.' });
+                const intent = profileWithOrg?.account_intent || 'workspace_owner';
+                dispatch({ type: 'SET_ACCOUNT_INTENT', payload: intent });
+                if (intent === 'workspace_owner') {
+                  try {
+                    const { provisionPersonalWorkspace } = await import('../utils/workspaceClient');
+                    const prov = await provisionPersonalWorkspace(supabaseClient);
+                    if (prov?.success && prov.organization) {
+                      const { data: adminRole } = await supabaseClient
+                        .from('roles')
+                        .select('*')
+                        .eq('organization_id', prov.organization.id)
+                        .eq('name', 'Org Admin')
+                        .maybeSingle();
+                      dispatch({ type: 'SET_ORGANIZATION', payload: prov.organization });
+                      dispatch({ type: 'SET_USER_ROLE', payload: adminRole });
+                      dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: null });
+                      organization = prov.organization;
+                    } else {
+                      dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: 'guest_waiting' });
+                    }
+                  } catch (provErr) {
+                    console.error('provision personal workspace:', provErr);
+                    dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: 'guest_waiting' });
+                  }
+                } else {
+                  dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: 'guest_waiting' });
+                }
                 dispatch({ type: 'SET_COLLABORATOR_STATUS', payload: { isCollaborator: false, projects: [] } });
               }
             } catch (error) {
@@ -877,14 +930,11 @@ export const AppProvider = ({ children }) => {
             return data || [];
           };
 
-          const [{ data: projects }, { data: tasks }, { data: files }, {data: calendarEvents}, {data: messageChannels}, {data: messages}, { data: userPreferences, error: userPrefsError }, activityLog] = await Promise.all([
+          const [{ data: projects }, { data: tasks }, { data: files }, {data: calendarEvents}, { data: userPreferences, error: userPrefsError }, activityLog] = await Promise.all([
             supabaseClient.from('projects').select('*'),
             supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email, phone)'),
             supabaseClient.from('files').select('*'),
             supabaseClient.from('calendar_events').select('*'),
-            supabaseClient.from('message_channels').select('*'),
-            // Don't load all messages initially - load per channel when needed (MVP pattern)
-            Promise.resolve({ data: [] }),
             supabaseClient.from('user_preferences').select('*').eq('user_id', state.user.id).maybeSingle(),
             fetchActivityLogWeb()
           ]);
@@ -954,8 +1004,8 @@ export const AppProvider = ({ children }) => {
             tasks: tasks || [], 
             files: files || [], 
             calendarEvents: calendarEvents || [], 
-            messageChannels: messageChannels || [], 
-            messages: messages || [],
+            messageChannels: [], 
+            messages: [],
             activityLog: activityLog || [],
             activeView: currentActiveViewRef.current || state.activeView
           } });
@@ -1075,38 +1125,6 @@ export const AppProvider = ({ children }) => {
         } else if (payload.eventType === 'DELETE') {
           dispatch({ type: 'DELETE_TASK', payload: payload.old.id });
         }
-      })
-      .subscribe(() => {}); // Silently handle subscription status
-
-    // Messages are now loaded per-channel in MessagesView component (MVP pattern)
-    // This global subscription is kept for backwards compatibility but MessagesView handles its own subscription
-    const messagesSubscription = supabaseClient.channel('public:messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
-        // MessagesView handles its own subscription with fetchMessageWithUserInfo
-        // This global subscription is kept minimal for other components that might need it
-        const { fetchMessageWithUserInfo } = await import('@siteweave/core-logic');
-        try {
-          const enrichedMessage = await fetchMessageWithUserInfo(supabaseClient, payload.new);
-          dispatch({ type: 'ADD_MESSAGE', payload: enrichedMessage });
-        } catch (error) {
-          console.error('Error processing message in global subscription:', error);
-        }
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, async (payload) => {
-        // Update message instantly when edited
-        const updatedMessage = payload.new;
-        // Preserve user info if it exists in the current message
-        const currentMessage = state.messages.find(m => m.id === updatedMessage.id);
-        if (currentMessage?.user) {
-          updatedMessage.user = currentMessage.user;
-        }
-        dispatch({ type: 'UPDATE_MESSAGE', payload: updatedMessage });
-      })
-      .subscribe(() => {}); // Silently handle subscription status
-
-    const messageChannelsSubscription = supabaseClient.channel('public:message_channels')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_channels' }, (payload) => {
-        dispatch({ type: 'ADD_CHANNEL', payload: payload.new });
       })
       .subscribe(() => {}); // Silently handle subscription status
 

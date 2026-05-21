@@ -41,6 +41,6 @@ nsis:
   createStartMenuShortcut: true
 publish:
   provider: github
-  owner: 21chrisab
+  owner: SiteWeave
   repo: SiteWeave
 electronVersion: 38.3.0

@@ -14,7 +14,13 @@ import ViewSwitcher from '../components/ViewSwitcher';
 import ProjectBoardView from '../components/ProjectBoardView';
 import ProjectListView from '../components/ProjectListView';
 import PermissionGuard from '../components/PermissionGuard';
+import ProjectLimitReachedModal from '../components/ProjectLimitReachedModal';
 import { useProjectShortcuts } from '../hooks/useKeyboardShortcuts';
+import {
+  canCreateProject,
+  isPersonalWorkspace,
+  isProjectLimitError,
+} from '@siteweave/core-logic';
 
 function DashboardView() {
     const navigate = useNavigate();
@@ -30,10 +36,44 @@ function DashboardView() {
     const [showCreateFromTemplateModal, setShowCreateFromTemplateModal] = useState(false);
     const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
+    const [showProjectLimitModal, setShowProjectLimitModal] = useState(false);
+
+    const isGuestOnly = state.isProjectCollaborator && !state.currentOrganization;
+
+    const guardCanCreateProject = async () => {
+        if (isGuestOnly) return false;
+        if (!state.currentOrganization) return true;
+        if (isPersonalWorkspace(state.currentOrganization)) {
+            const allowed = await canCreateProject(supabaseClient, state.currentOrganization.id, {
+                accountIntent: state.accountIntent,
+                isGuestCollaborator: isGuestOnly,
+            });
+            if (!allowed) {
+                setShowProjectLimitModal(true);
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const tryOpenCreateProject = async () => {
+        if (!(await guardCanCreateProject())) return;
+        setShowModal(true);
+    };
+
+    const tryOpenTemplateModal = async () => {
+        if (!(await guardCanCreateProject())) return;
+        setShowCreateFromTemplateModal(true);
+    };
+
+    const tryOpenMsImportModal = async () => {
+        if (!(await guardCanCreateProject())) return;
+        setShowMsProjectImportModal(true);
+    };
 
     // Keyboard shortcuts
     useProjectShortcuts({
-        createProject: () => setShowModal(true),
+        createProject: () => { tryOpenCreateProject(); },
         goToDashboard: () => dispatch({ type: 'SET_VIEW', payload: 'Dashboard' })
     });
 
@@ -169,26 +209,12 @@ function DashboardView() {
                 .single();
             if (error) {
                 console.error('Project creation error:', error);
-                addToast('Error creating project: ' + error.message, 'error');
-            } else {
-                // Create a message channel for the project
-                const { data: messageChannel, error: channelError } = await supabaseClient
-                    .from('message_channels')
-                    .insert({
-                        project_id: createdProject.id,
-                        name: `${createdProject.name} Discussion`,
-                        organization_id: state.currentOrganization?.id
-                    })
-                    .select()
-                    .single();
-
-                if (channelError) {
-                    console.error('Error creating message channel:', channelError);
-                    addToast('Project created, but message channel could not be created', 'warning');
+                if (isProjectLimitError(error)) {
+                    setShowProjectLimitModal(true);
                 } else {
-                    dispatch({ type: 'ADD_CHANNEL', payload: messageChannel });
+                    addToast('Error creating project: ' + error.message, 'error');
                 }
-
+            } else {
                 // Handle email addresses - create contacts for emails that don't exist
                 const emailAddresses = projectData.emailAddresses || [];
                 const contactsToAdd = [...(selectedContacts || [])];
@@ -390,44 +416,53 @@ function DashboardView() {
         <>
             <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 h-full">
                 <div className="xl:col-span-3">
-                    <header className="flex items-center justify-between mb-8 app-card p-5" data-onboarding="dashboard-welcome">
-                         <div>
-                            <h1 className="app-section-title mb-1">Project Dashboard</h1>
-                            <p className="app-section-subtitle">Manage your construction projects</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <ViewSwitcher currentView={viewType} onViewChange={setViewType} />
-                            <PermissionGuard permission="can_create_projects">
-                                <button 
-                                    onClick={() => setShowModal(true)} 
-                                    data-onboarding="new-project-btn"
-                                    className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs btn-smooth app-action-primary"
-                                >
-                                    + New Project
-                                </button>
-                                <button 
-                                    onClick={() => setShowCreateFromTemplateModal(true)} 
-                                    className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs btn-smooth app-action-secondary"
-                                >
-                                    From template
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowMsProjectImportModal(true)}
-                                    className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs btn-smooth bg-slate-700 text-white hover:bg-slate-800"
-                                >
-                                    Import MS Project XML
-                                </button>
-                            </PermissionGuard>
-                            <PermissionGuard permission="can_manage_org_progress_reports">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowProgressReportModal(true)}
-                                    className="px-4 py-2 text-sm font-semibold rounded-lg shadow-xs btn-smooth bg-emerald-600 text-white hover:bg-emerald-700"
-                                >
-                                    Organization progress reports
-                                </button>
-                            </PermissionGuard>
+                    <header className="mb-8 app-card p-5" data-onboarding="dashboard-welcome">
+                        <div className="flex min-w-0 items-center gap-4">
+                            <div className="min-w-0 shrink">
+                                <h1 className="app-section-title mb-0.5 text-2xl sm:text-[1.75rem]">
+                                    {isGuestOnly ? 'Your projects' : 'Project Dashboard'}
+                                </h1>
+                                <p className="app-section-subtitle truncate">
+                                    {isGuestOnly ? 'Projects shared with you' : 'Manage your construction projects'}
+                                </p>
+                            </div>
+                            <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                <ViewSwitcher compact currentView={viewType} onViewChange={setViewType} />
+                                <PermissionGuard permission="can_create_projects">
+                                    <button
+                                        onClick={() => tryOpenCreateProject()}
+                                        data-onboarding="new-project-btn"
+                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-primary"
+                                    >
+                                        + New Project
+                                    </button>
+                                    <button
+                                        onClick={() => tryOpenTemplateModal()}
+                                        title="Create from template"
+                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-secondary"
+                                    >
+                                        Template
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => tryOpenMsImportModal()}
+                                        title="Import MS Project XML"
+                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-slate-700 text-white hover:bg-slate-800"
+                                    >
+                                        Import XML
+                                    </button>
+                                </PermissionGuard>
+                                <PermissionGuard permission="can_manage_org_progress_reports">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowProgressReportModal(true)}
+                                        title="Organization progress reports"
+                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-emerald-600 text-white hover:bg-emerald-700"
+                                    >
+                                        Org reports
+                                    </button>
+                                </PermissionGuard>
+                            </div>
                         </div>
                     </header>
                     
@@ -474,14 +509,22 @@ function DashboardView() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                                 </svg>
                             </div>
-                            <h3 className="text-xl font-semibold text-gray-900 mb-2">No projects yet</h3>
-                            <p className="text-gray-500 mb-6 max-w-md text-sm leading-relaxed">Get started by creating your first construction project. Track progress, manage tasks, and collaborate with your team.</p>
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                                {isGuestOnly ? 'No projects shared yet' : 'No projects yet'}
+                            </h3>
+                            <p className="text-gray-500 mb-6 max-w-md text-sm leading-relaxed">
+                                {isGuestOnly
+                                    ? 'Ask your contractor to send you a project invite link or code. You can sign in with any email.'
+                                    : 'Get started by creating your first construction project. Track progress, manage tasks, and collaborate with your team.'}
+                            </p>
+                            {!isGuestOnly && (
                             <button 
-                                onClick={() => setShowModal(true)}
+                                onClick={() => tryOpenCreateProject()}
                                 className="px-6 py-3 rounded-lg transition-colors font-medium text-sm app-action-primary"
                             >
                                 Create Your First Project
                             </button>
+                            )}
                         </div>
                     )}
                 </div>
@@ -513,12 +556,16 @@ function DashboardView() {
                     project={editingProject}
                 />
             )}
+            <ProjectLimitReachedModal
+                isOpen={showProjectLimitModal}
+                onClose={() => setShowProjectLimitModal(false)}
+            />
             <ConfirmDialog
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
                 onConfirm={confirmDeleteProject}
                 title="Delete Project"
-                message={`Are you sure you want to delete "${projectToDelete?.name}"? This will also delete all associated tasks, files, message boards, and messages. This action cannot be undone.`}
+                message={`Are you sure you want to delete "${projectToDelete?.name}"? This will also delete all associated tasks, files, stream posts, and task comments. This action cannot be undone.`}
                 confirmText="Delete"
                 cancelText="Cancel"
             />

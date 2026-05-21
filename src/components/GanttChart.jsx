@@ -3,6 +3,8 @@ import Gantt from 'frappe-gantt';
 import 'frappe-gantt/dist/frappe-gantt.css';
 import { toFrappeGanttTasks } from '../utils/ganttAdapter';
 import Avatar from './Avatar';
+import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
+import UpgradeRequiredModal from './UpgradeRequiredModal';
 
 const ROW_HEIGHT = 40;
 const LEFT_PANEL_DEFAULT = 340;
@@ -79,6 +81,8 @@ export default function GanttChart({
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(LEFT_PANEL_DEFAULT);
   const [isCompactWindow, setIsCompactWindow] = useState(false);
+  const [showExportUpgrade, setShowExportUpgrade] = useState(false);
+  const { canExport } = useWorkspaceTier();
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(LEFT_PANEL_DEFAULT);
   const leftPanelMin = isCompactWindow ? 220 : LEFT_PANEL_MIN;
@@ -248,6 +252,10 @@ export default function GanttChart({
   }, [tasks]);
 
   const handleExportCSV = useCallback(() => {
+    if (!canExport) {
+      setShowExportUpgrade(true);
+      return;
+    }
     const headers = ['Name', 'Start', 'Due', 'Status', 'Assignee'];
     const rows = tasksWithDates.map((t) => [
       (t.text || '').replace(/"/g, '""'),
@@ -263,7 +271,7 @@ export default function GanttChart({
     link.download = 'gantt-tasks.csv';
     link.click();
     URL.revokeObjectURL(link.href);
-  }, [tasksWithDates]);
+  }, [tasksWithDates, canExport]);
 
   useEffect(() => {
     const container = chartContainerRef.current;
@@ -619,6 +627,11 @@ export default function GanttChart({
           cursor: grabbing !important;
         }
       `}</style>
+      <UpgradeRequiredModal
+        isOpen={showExportUpgrade}
+        onClose={() => setShowExportUpgrade(false)}
+        feature="exports"
+      />
     </div>
   );
 }

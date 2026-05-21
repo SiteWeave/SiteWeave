@@ -18,9 +18,11 @@ const TaskItem = memo(function TaskItem({
     isSelected,
     onSelect,
     onOpenPhotos = null,
+    onOpenDiscussion = null,
     onPingAssignee = null,
     onRequestAssigneeSmsConsent = null,
     pingingTaskId = null,
+    project = null,
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [isAssigning, setIsAssigning] = useState(false);
@@ -284,12 +286,13 @@ const TaskItem = memo(function TaskItem({
 
     return (
         <li 
-            className={`flex items-center justify-between p-3 rounded-xl group transition-all animate-slide-in ${
+            className={`flex flex-col p-3 rounded-xl group transition-all animate-slide-in ${
                 isSelected ? 'bg-blue-50 border border-blue-200' : isComplete ? '' : 'border border-slate-100 bg-white/80 hover:bg-slate-50'
             } ${isComplete ? 'bg-emerald-50/40 hover:bg-emerald-50/60 border-l-4 border-l-emerald-500' : ''}`}
             role="listitem"
             aria-label={`Task: ${task.text}, ${progressPercent}% complete, Priority: ${task.priority}, Start: ${formatDate(task.start_date)}, End: ${formatDate(task.due_date)}`}
         >
+            <div className="flex items-center justify-between gap-3 min-w-0 w-full">
             <div className="flex items-center gap-3 min-w-0 flex-1">
                 <PermissionGuard
                     permission="can_edit_tasks"
@@ -503,10 +506,20 @@ const TaskItem = memo(function TaskItem({
                         <button
                             onClick={() => onOpenPhotos(task.id)}
                             className="p-1 text-gray-500 hover:text-indigo-600"
-                            title="Manage task photos"
-                            aria-label={`Manage photos for task: ${task.text}`}
+                            title="Photos"
+                            aria-label={`Photos for task: ${task.text}`}
                         >
                             <Icon path="M3 16.5V7.5A1.5 1.5 0 014.5 6h3.879a1.5 1.5 0 001.06-.44l1.122-1.12A1.5 1.5 0 0111.621 4H19.5A1.5 1.5 0 0121 5.5v11A1.5 1.5 0 0119.5 18h-15A1.5 1.5 0 013 16.5zM8.25 12.75l1.5 1.5 2.5-2.5 3 3" className="w-4 h-4" />
+                        </button>
+                    )}
+                    {onOpenDiscussion && project && (
+                        <button
+                            onClick={() => onOpenDiscussion(task.id)}
+                            className="p-1 text-gray-500 hover:text-indigo-600"
+                            title="Discussion"
+                            aria-label={`Discussion for task: ${task.text}`}
+                        >
+                            <Icon path="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" className="w-4 h-4" />
                         </button>
                     )}
                     <PermissionGuard permission="can_edit_tasks">
@@ -552,6 +565,7 @@ const TaskItem = memo(function TaskItem({
                         </button>
                     </PermissionGuard>
                 </div>
+            </div>
             </div>
         </li>
     );

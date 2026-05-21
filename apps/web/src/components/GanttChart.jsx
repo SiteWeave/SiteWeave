@@ -3,9 +3,11 @@ import Gantt from 'frappe-gantt';
 import 'frappe-gantt/dist/frappe-gantt.css';
 import { toFrappeGanttTasks } from '../utils/ganttAdapter';
 import Avatar from './Avatar';
+import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
+import UpgradeRequiredModal from './UpgradeRequiredModal';
 
 const ROW_HEIGHT = 40;
-const LEFT_PANEL_DEFAULT = 360;
+const LEFT_PANEL_DEFAULT = 340;
 const LEFT_PANEL_MIN = 260;
 const LEFT_PANEL_MAX = 720;
 /** Must match frappe-gantt: upper + lower + 10 (see update_view_scale in library). */
@@ -67,6 +69,7 @@ export default function GanttChart({
   dependencies = [],
   criticalPathIds = [],
   showCriticalPath = true,
+  onToggleCriticalPath,
 }) {
   const chartContainerRef = useRef(null);
   const ganttInstanceRef = useRef(null);
@@ -77,14 +80,31 @@ export default function GanttChart({
   const [viewMode, setViewMode] = useState('Week');
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(LEFT_PANEL_DEFAULT);
+  const [isCompactWindow, setIsCompactWindow] = useState(false);
+  const [showExportUpgrade, setShowExportUpgrade] = useState(false);
+  const { canExport } = useWorkspaceTier();
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(LEFT_PANEL_DEFAULT);
+  const leftPanelMin = isCompactWindow ? 220 : LEFT_PANEL_MIN;
+
+  useEffect(() => {
+    const syncCompactMode = () => {
+      setIsCompactWindow(window.innerWidth < 1500);
+    };
+    syncCompactMode();
+    window.addEventListener('resize', syncCompactMode);
+    return () => window.removeEventListener('resize', syncCompactMode);
+  }, []);
+
+  useEffect(() => {
+    setLeftPanelWidth((current) => Math.max(leftPanelMin, current));
+  }, [leftPanelMin]);
 
   const handleResizeMove = useCallback((e) => {
     const delta = e.clientX - resizeStartX.current;
-    const next = Math.min(LEFT_PANEL_MAX, Math.max(LEFT_PANEL_MIN, resizeStartWidth.current + delta));
+    const next = Math.min(LEFT_PANEL_MAX, Math.max(leftPanelMin, resizeStartWidth.current + delta));
     setLeftPanelWidth(next);
-  }, []);
+  }, [leftPanelMin]);
 
   const handleResizeEnd = useCallback(() => {
     document.removeEventListener('mousemove', handleResizeMove);
@@ -140,6 +160,10 @@ export default function GanttChart({
     const taskById = new Map((Array.isArray(tasks) ? tasks : []).map((t) => [t.id, t]));
     return ganttTasks.map((gt) => taskById.get(gt.id)).filter(Boolean);
   }, [tasks, ganttTasks]);
+  const criticalCount = useMemo(
+    () => (Array.isArray(criticalPathIds) ? criticalPathIds.length : 0),
+    [criticalPathIds]
+  );
 
   /** Mouse drag on the chart pane pans the scroll area (document-level move so pan works past the edge). */
   useEffect(() => {
@@ -204,10 +228,6 @@ export default function GanttChart({
     };
   }, [tasksWithDates.length]);
 
-  const handleScrollToday = useCallback(() => {
-    try { ganttInstanceRef.current?.scroll_current?.(); } catch (_) { /* noop */ }
-  }, []);
-
   const handleChangeViewMode = useCallback((mode) => {
     setViewMode(mode);
     viewModeRef.current = mode;
@@ -232,6 +252,10 @@ export default function GanttChart({
   }, [tasks]);
 
   const handleExportCSV = useCallback(() => {
+    if (!canExport) {
+      setShowExportUpgrade(true);
+      return;
+    }
     const headers = ['Name', 'Start', 'Due', 'Status', 'Assignee'];
     const rows = tasksWithDates.map((t) => [
       (t.text || '').replace(/"/g, '""'),
@@ -247,7 +271,7 @@ export default function GanttChart({
     link.download = 'gantt-tasks.csv';
     link.click();
     URL.revokeObjectURL(link.href);
-  }, [tasksWithDates]);
+  }, [tasksWithDates, canExport]);
 
   useEffect(() => {
     const container = chartContainerRef.current;
@@ -311,13 +335,7 @@ export default function GanttChart({
       {/* Toolbar */}
       <div className="flex flex-col gap-2 py-2.5 px-3 bg-slate-50 border-b border-slate-200 flex-shrink-0">
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleScrollToday}
-            className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-          >
-            Today
-          </button>
+          <h2 className="text-lg font-bold text-slate-900 pr-2">Gantt</h2>
           <select
             value={viewMode}
             onChange={(e) => handleChangeViewMode(e.target.value)}
@@ -347,6 +365,20 @@ export default function GanttChart({
           >
             Export CSV
           </button>
+          <label className="flex items-center gap-2 cursor-pointer px-2 py-1.5 border border-slate-300 rounded-md bg-white">
+            <input
+              type="checkbox"
+              checked={showCriticalPath}
+              onChange={(e) => onToggleCriticalPath?.(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700">
+              Show critical path
+              <span className="ml-1 text-xs text-gray-500">
+                ({criticalCount} task{criticalCount === 1 ? '' : 's'})
+              </span>
+            </span>
+          </label>
         </div>
         {showCriticalPath && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600 pl-0.5">
@@ -363,6 +395,10 @@ export default function GanttChart({
               <span className="inline-block w-3 h-3 rounded-sm bg-emerald-600 ring-1 ring-emerald-800/30" aria-hidden />
               Complete
             </span>
+            <span className="flex-1 min-w-3" />
+            <span className="text-xs text-slate-600 bg-red-50 border border-red-100 rounded-md px-2 py-1 ml-auto">
+              Critical tasks drive finish date.
+            </span>
           </div>
         )}
         {!showCriticalPath && (
@@ -375,6 +411,10 @@ export default function GanttChart({
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded-sm bg-emerald-600 ring-1 ring-emerald-800/30" aria-hidden />
               Complete
+            </span>
+            <span className="flex-1 min-w-3" />
+            <span className="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded-md px-2 py-1 ml-auto">
+              Turn on critical path to highlight schedule-driving tasks.
             </span>
           </div>
         )}
@@ -392,11 +432,11 @@ export default function GanttChart({
             <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-3 w-[32%]">Name</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[16%]">Start</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[14%]">Due</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[22%]">Status</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[16%]">Assignee</th>
+                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-3 w-[32%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>Name</th>
+                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[16%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>Start</th>
+                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[14%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>Due</th>
+                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[22%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>Status</th>
+                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[16%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>Assignee</th>
                 </tr>
               </thead>
             </table>
@@ -419,13 +459,13 @@ export default function GanttChart({
                       className={`border-b border-gray-100 transition-colors ${isSelected ? 'bg-blue-50 border-l-2 border-l-blue-500' : 'hover:bg-gray-50'} focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 focus:outline-none`}
                       style={{ height: ROW_HEIGHT }}
                     >
-                      <td className="py-1 px-3 text-sm text-gray-900 truncate w-[32%]" style={{ paddingLeft: isChild ? 28 : 12 }}>
+                      <td className={`py-1 px-3 text-sm text-gray-900 truncate w-[32%] ${isCompactWindow ? 'gantt-compact-label' : ''}`} style={{ paddingLeft: isChild ? 28 : 12 }}>
                         <span className={isChild ? 'text-gray-700' : 'font-semibold'}>
                           {task.text || 'Task'}
                         </span>
                       </td>
-                      <td className="py-1 px-2 text-xs text-gray-500 w-[16%]">{formatGanttDate(task.start_date)}</td>
-                      <td className="py-1 px-2 text-xs text-gray-500 w-[14%]">{formatGanttDate(task.due_date)}</td>
+                      <td className={`py-1 px-2 text-xs text-gray-500 w-[16%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>{formatGanttDate(task.start_date)}</td>
+                      <td className={`py-1 px-2 text-xs text-gray-500 w-[14%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>{formatGanttDate(task.due_date)}</td>
                       <td className="py-1 px-2 w-[22%]">
                         <StatusBadge completed={task.completed} />
                       </td>
@@ -466,7 +506,7 @@ export default function GanttChart({
           tabIndex={0}
           onMouseDown={handleResizeStart}
           onKeyDown={(e) => {
-            if (e.key === 'ArrowLeft') { e.preventDefault(); setLeftPanelWidth((w) => Math.max(LEFT_PANEL_MIN, w - 20)); }
+            if (e.key === 'ArrowLeft') { e.preventDefault(); setLeftPanelWidth((w) => Math.max(leftPanelMin, w - 20)); }
             if (e.key === 'ArrowRight') { e.preventDefault(); setLeftPanelWidth((w) => Math.min(LEFT_PANEL_MAX, w + 20)); }
           }}
           className="gantt-resize-handle flex-shrink-0 w-2 flex flex-col items-center justify-center cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors select-none border-l border-r border-gray-200"
@@ -521,15 +561,10 @@ export default function GanttChart({
         }
 
         /* Today marker (frappe uses current-highlight) */
-        .gantt-chart-wrapper .current-highlight {
-          background: rgba(220, 38, 38, 0.12) !important;
-          width: 2px !important;
-        }
-        .gantt-chart-wrapper .current-ball-highlight {
-          background: #dc2626 !important;
-        }
+        .gantt-chart-wrapper .current-highlight,
+        .gantt-chart-wrapper .current-ball-highlight,
         .gantt-chart-wrapper .today-highlight {
-          fill: rgba(59, 130, 246, 0.08) !important;
+          display: none !important;
         }
 
         /* Status-based bar colors */
@@ -592,6 +627,11 @@ export default function GanttChart({
           cursor: grabbing !important;
         }
       `}</style>
+      <UpgradeRequiredModal
+        isOpen={showExportUpgrade}
+        onClose={() => setShowExportUpgrade(false)}
+        feature="exports"
+      />
     </div>
   );
 }

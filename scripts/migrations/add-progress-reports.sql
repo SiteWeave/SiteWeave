@@ -1,4 +1,5 @@
 -- Migration: Add Progress Reports Feature
+-- Superseded by schema.sql for new installs; kept for reference and incremental upgrades.
 -- Creates tables, indexes, RLS policies, and permissions for progress reports
 
 -- ============================================================================

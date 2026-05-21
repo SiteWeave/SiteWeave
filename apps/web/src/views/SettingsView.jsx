@@ -8,6 +8,9 @@ import DirectoryManagementModal from '../components/DirectoryManagementModal';
 import RoleManagement from '../components/RoleManagement';
 import packageJson from '../../package.json';
 import { getStoredCalendarToken } from '../utils/calendarIntegration';
+import { isModerationAdmin } from '@siteweave/core-logic';
+import BlockedUsersPanel from '../components/moderation/BlockedUsersPanel';
+import ContentReportsPanel from '../components/moderation/ContentReportsPanel';
 
 function SettingsView() {
   const { state, dispatch } = useAppContext();
@@ -447,6 +450,26 @@ function SettingsView() {
             <p className="text-xs text-gray-500 text-center">More integrations coming soon!</p>
           </div>
         </div>
+      </div>
+
+      {/* Privacy & safety */}
+      <div className="app-card p-6 space-y-6">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-1">Privacy &amp; safety</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Manage blocked users and review reported content.
+          </p>
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">Blocked users</h3>
+          <BlockedUsersPanel />
+        </div>
+        {isModerationAdmin(state.userRole?.name) && (
+          <div className="pt-6 border-t border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Content reports</h3>
+            <ContentReportsPanel />
+          </div>
+        )}
       </div>
 
       {/* App Information */}

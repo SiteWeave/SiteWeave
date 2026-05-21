@@ -5,7 +5,6 @@ import Icon from './Icon';
 import Avatar from './Avatar';
 import ProjectProgressCard from './ProjectProgressCard';
 import PermissionGuard from './PermissionGuard';
-import { normalizeStatusDisplay } from '../utils/projectHelpers';
 
 const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
     const { dispatch, state } = useAppContext();
@@ -52,26 +51,6 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
     // Get final team members list
     const teamMembers = state.contacts.filter(contact => projectContactIds.has(contact.id));
     
-    // Auto-determine status color based on status (using helper from projectHelpers)
-    const getStatusColor = (status) => {
-        if (!status) return 'bg-gray-100 text-gray-800';
-        const normalized = status.trim().toLowerCase();
-        switch (normalized) {
-            case 'planning':
-                return 'bg-blue-100 text-blue-800';
-            case 'in progress':
-            case 'in-progress':
-                return 'bg-green-100 text-green-800';
-            case 'on hold':
-            case 'on-hold':
-                return 'bg-yellow-100 text-yellow-900';
-            case 'completed':
-                return 'bg-gray-100 text-gray-800';
-            default:
-                return 'bg-gray-100 text-gray-800';
-        }
-    };
-
     const formatDate = (dateString) => {
         if (!dateString) return '';
         const date = new Date(dateString);
@@ -119,16 +98,11 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
                     <h3 className="text-xl font-bold text-slate-900">{project.name}</h3>
                     <p className="text-xs text-slate-500">{project.project_type}</p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(project.status)}`}>
-                        {normalizeStatusDisplay(project.status) || 'No Status'}
-                    </span>
-                    {project.notification_count > 0 && (
-                        <div className="flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full">
-                            {project.notification_count}
-                        </div>
-                    )}
-                </div>
+                {project.notification_count > 0 && (
+                    <div className="flex shrink-0 items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full">
+                        {project.notification_count}
+                    </div>
+                )}
             </div>
             <div>
                 <p className="text-xs text-gray-400 font-semibold">NEXT MILESTONE</p>
@@ -154,23 +128,27 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
             </div>
             
             {/* Action buttons */}
-            <div className={`project-actions absolute top-3 right-3 flex gap-1 transition-opacity ${showActions ? 'opacity-100' : 'opacity-0'}`} role="group" aria-label="Project actions">
+            <div
+                className={`project-actions absolute top-3 right-3 flex overflow-hidden rounded-lg border border-slate-200/80 bg-white/95 shadow-sm backdrop-blur-sm transition-opacity ${showActions ? 'opacity-100' : 'opacity-0'}`}
+                role="group"
+                aria-label="Project actions"
+            >
                 <PermissionGuard permission="can_edit_projects">
                     <button
                         onClick={handleEdit}
-                        className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-xs"
+                        className="p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
                         aria-label={`Edit project: ${project.name}`}
                     >
-                        <Icon path="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" className="w-3.5 h-3.5" />
+                        <Icon path="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" className="h-3.5 w-3.5" />
                     </button>
                 </PermissionGuard>
                 <PermissionGuard permission="can_delete_projects">
                     <button
                         onClick={handleDelete}
-                        className="p-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 shadow-xs"
+                        className="border-l border-slate-200/80 p-1.5 text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
                         aria-label={`Delete project: ${project.name}`}
                     >
-                        <Icon path="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" className="w-3.5 h-3.5" />
+                        <Icon path="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" className="h-3.5 w-3.5" />
                     </button>
                 </PermissionGuard>
             </div>

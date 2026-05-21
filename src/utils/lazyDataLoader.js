@@ -192,7 +192,7 @@ export async function loadProjectTasks(supabaseClient, dispatch, projectId, getS
 
     const state = getState() || { tasks: [] };
     const otherTasks = (state.tasks || []).filter((t) => String(t.project_id) !== String(projectId));
-    dispatch({ type: 'SET_TASKS_LOADED', payload: [...otherTasks, ...(tasks || [])] });
+    dispatch({ type: 'MERGE_TASKS', payload: [...otherTasks, ...(tasks || [])] });
 
     return tasks || [];
   } catch (error) {

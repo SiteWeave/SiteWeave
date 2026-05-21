@@ -1,10 +1,15 @@
 import { View, Text, StyleSheet, Modal, TextInput, Pressable } from 'react-native';
 import { useEffect, useState } from 'react';
 import PressableWithFade from './PressableWithFade';
+import TaskCommentsSection from './TaskCommentsSection';
 
 export default function TaskDetailModal({
   visible,
   task,
+  project = null,
+  supabase = null,
+  currentUserId = null,
+  viewerOrgId = null,
   onClose,
   onSave,
   loading = false,
@@ -83,6 +88,16 @@ export default function TaskDetailModal({
               </PressableWithFade>
             ))}
           </View>
+
+          {project && supabase && currentUserId ? (
+            <TaskCommentsSection
+              task={task}
+              project={project}
+              supabase={supabase}
+              currentUserId={currentUserId}
+              viewerOrgId={viewerOrgId}
+            />
+          ) : null}
 
           <View style={styles.actionRow}>
             <PressableWithFade style={styles.secondaryButton} onPress={onClose} disabled={loading}>

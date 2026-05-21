@@ -3,7 +3,6 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import DateDropdown from './DateDropdown';
 import { createProjectFromTemplate } from '../utils/projectTemplateService';
-import { logProjectCreated } from '../utils/activityLogger';
 
 export default function CreateFromTemplateModal({ onClose, onCreated }) {
   const { state, dispatch } = useAppContext();
@@ -49,11 +48,11 @@ export default function CreateFromTemplateModal({ onClose, onCreated }) {
       if (result.success) {
         addToast('Project created from template', 'success');
         const { data: newProject } = await supabaseClient.from('projects').select('*').eq('id', result.projectId).single();
-        if (newProject) {
-          dispatch({ type: 'ADD_PROJECT', payload: newProject });
-          logProjectCreated(newProject, state.user);
-        }
+        if (newProject) dispatch({ type: 'ADD_PROJECT', payload: newProject });
         onCreated?.(result.projectId);
+        onClose();
+      } else if (result.error === 'PROJECT_LIMIT_REACHED') {
+        addToast('Project limit reached. Contact sales to upgrade.', 'warning');
         onClose();
       } else {
         addToast(result.error || 'Failed to create project', 'error');

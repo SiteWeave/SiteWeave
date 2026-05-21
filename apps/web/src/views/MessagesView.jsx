@@ -3,7 +3,8 @@ import { useAppContext, supabaseClient } from '../context/AppContext'
 import { useToast } from '../context/ToastContext'
 import LoadingSpinner from '../components/LoadingSpinner'
 import ProjectTeamPanel from '../components/ProjectTeamPanel'
-import { fetchChannelMessages, sendMessage, fetchUnreadCounts, getTypingUsers, markMessageAsRead, uploadFile, fetchMessageWithUserInfo } from '@siteweave/core-logic'
+import { fetchChannelMessages, sendMessage, fetchUnreadCounts, getTypingUsers, markMessageAsRead, uploadFile, fetchMessageWithUserInfo, blockUser } from '@siteweave/core-logic'
+import ReportContentModal from '../components/moderation/ReportContentModal'
 
 export default function MessagesView({ embedded = false, onOpenDirectory = null }) {
   const { state, dispatch } = useAppContext()
@@ -15,9 +16,30 @@ export default function MessagesView({ embedded = false, onOpenDirectory = null 
   const [isUploading, setIsUploading] = React.useState(false)
   const fileInputRef = React.useRef(null)
   const messagesEndRef = React.useRef(null)
+  const [reportTarget, setReportTarget] = React.useState(null)
 
   const channels = state.messageChannels || []
   const activeChannel = channels.find((channel) => channel.id === state.selectedChannelId)
+
+  const reloadChannelMessages = React.useCallback(async () => {
+    if (!activeChannel?.id || !state.user?.id) return
+    const rows = await fetchChannelMessages(supabaseClient, activeChannel.id, state.user.id)
+    dispatch({ type: 'SET_CHANNEL_MESSAGES', payload: { channelId: activeChannel.id, messages: rows || [] } })
+  }, [activeChannel?.id, state.user?.id, dispatch])
+
+  const handleBlockUser = React.useCallback(async (message) => {
+    if (!state.user?.id || !message?.user_id) return
+    const name = message.user?.name || message.user_name || 'this user'
+    if (!window.confirm(`Block ${name}? Their messages will be hidden from you.`)) return
+    try {
+      await blockUser(supabaseClient, state.user.id, message.user_id)
+      addToast(`${name} has been blocked.`, 'success')
+      await reloadChannelMessages()
+    } catch (error) {
+      console.error('Error blocking user:', error)
+      addToast('Failed to block user. Please try again.', 'error')
+    }
+  }, [state.user?.id, addToast, reloadChannelMessages])
   const projectById = React.useMemo(() => {
     const map = new Map()
     ;(state.projects || []).forEach((project) => map.set(project.id, project))
@@ -201,11 +223,21 @@ export default function MessagesView({ embedded = false, onOpenDirectory = null 
         </aside>
         <main className="flex-1 flex flex-col min-w-0">
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 bg-white">
-            {channelMessages.map((message) => (
+            {channelMessages.map((message) => {
+              const isCurrentUser = message.user_id === state.user?.id
+              return (
               <div key={message.id} className="rounded-xl border border-slate-200 p-3 bg-slate-50/50">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs text-slate-600 font-medium">{message.user?.name || message.user_name || 'Team member'}</p>
-                  <p className="text-xs text-slate-400">{new Date(message.created_at).toLocaleString()}</p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!isCurrentUser && (
+                      <>
+                        <button type="button" onClick={() => setReportTarget(message)} className="text-xs text-amber-700 hover:text-amber-800 font-medium">Report</button>
+                        <button type="button" onClick={() => handleBlockUser(message)} className="text-xs text-red-600 hover:text-red-700 font-medium">Block</button>
+                      </>
+                    )}
+                    <p className="text-xs text-slate-400">{new Date(message.created_at).toLocaleString()}</p>
+                  </div>
                 </div>
                 <p className="text-sm text-slate-900 whitespace-pre-wrap mt-1">{message.content}</p>
                 {message.file_url ? (
@@ -214,7 +246,7 @@ export default function MessagesView({ embedded = false, onOpenDirectory = null 
                   </a>
                 ) : null}
               </div>
-            ))}
+            )})}
             {typingUsers.length > 0 ? (
               <p className="text-xs text-gray-500 italic">
                 {typingUsers.length === 1 ? `${typingUsers[0]?.name || 'Someone'} is typing...` : `${typingUsers[0]?.name || 'Someone'} and others are typing...`}
@@ -257,6 +289,15 @@ export default function MessagesView({ embedded = false, onOpenDirectory = null 
           </aside>
         )}
       </div>
+
+      <ReportContentModal
+        show={Boolean(reportTarget)}
+        onClose={() => setReportTarget(null)}
+        contentType="message"
+        contentId={reportTarget?.id}
+        reportedUserId={reportTarget?.user_id}
+        reportedUserName={reportTarget?.user?.name || reportTarget?.user_name}
+      />
     </div>
   )
 }

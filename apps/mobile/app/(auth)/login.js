@@ -132,6 +132,10 @@ export default function LoginScreen() {
         </Text>
       </TouchableOpacity>
 
+      <Text style={styles.inviteHint}>
+        Invited to a project? Sign in with any email — then open the invite link from your contractor.
+      </Text>
+
       <TextInput
         style={styles.input}
         placeholder="Email address"
@@ -237,6 +241,14 @@ const styles = StyleSheet.create({
   signupLinkText: {
     color: '#3B82F6',
     fontWeight: '600',
+  },
+  inviteHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 18,
+    paddingHorizontal: 8,
   },
   input: {
     backgroundColor: '#fff',

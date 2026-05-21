@@ -22,19 +22,77 @@ function stripProjectPrefixFromHeading(heading: string, projectName: string): st
   return h
 }
 
+/**
+ * Format a Postgres date / ISO string for email. When the value is `YYYY-MM-DD`, it is treated as a
+ * calendar date (no timezone shift). Full timestamps still use normal Date parsing.
+ */
 export function formatDigestDueDate(iso: string | null | undefined): string | null {
   if (!iso || typeof iso !== 'string') return null
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const trimmed = iso.trim()
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed)
+  if (ymd) {
+    const y = Number(ymd[1])
+    const mo = Number(ymd[2])
+    const d = Number(ymd[3])
+    if (!Number.isFinite(y) || mo < 1 || mo > 12 || d < 1 || d > 31) return null
+    const dt = new Date(Date.UTC(y, mo - 1, d))
+    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+  }
+  const parsed = new Date(trimmed)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-/** Calendar-day difference: due − today in UTC (0 = due today). Returns null if `dueDateIso` is not YYYY-MM-DD. */
-export function dueCalendarDiffDays(dueDateIso: string | null | undefined, now: Date = new Date()): number | null {
+/** IANA zone for comparing date-only fields to “today” (matches org `progress_report_timezone`). */
+function resolveCalendarTimeZone(raw: string | null | undefined): string {
+  const z = typeof raw === 'string' && raw.trim() ? raw.trim() : 'America/New_York'
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: z })
+    return z
+  } catch {
+    return 'America/New_York'
+  }
+}
+
+function calendarYmdInTimeZone(d: Date, timeZone: string): string | null {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+    const mapped = Object.fromEntries(
+      formatter.formatToParts(d).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]),
+    ) as { year?: string; month?: string; day?: string }
+    const y = mapped.year
+    const mo = mapped.month
+    const day = mapped.day
+    if (!y || !mo || !day) return null
+    return `${y}-${mo}-${day}`
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Calendar-day difference: date-only `dueDateIso` minus “today” in `calendarTimeZone` (0 = due today).
+ * Uses IANA timezone so counts match the project/org calendar, not UTC-only “today”.
+ */
+export function dueCalendarDiffDays(
+  dueDateIso: string | null | undefined,
+  now: Date = new Date(),
+  calendarTimeZone?: string | null,
+): number | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dueDateIso ?? '').trim())
   if (!m) return null
   const due = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
-  const t = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  const tz = resolveCalendarTimeZone(calendarTimeZone)
+  const todayStr = calendarYmdInTimeZone(now, tz)
+  if (!todayStr) return null
+  const tm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(todayStr)
+  if (!tm) return null
+  const t = Date.UTC(Number(tm[1]), Number(tm[2]) - 1, Number(tm[3]))
   return Math.round((due - t) / 86400000)
 }
 
@@ -91,6 +149,9 @@ export type DigestTask = {
   dueDateLabel?: string | null
   /** `YYYY-MM-DD` (or timestamp string); used for “Due in N days” vs send time. */
   dueDateIso?: string | null
+  startDateLabel?: string | null
+  /** `YYYY-MM-DD` on-site / field start (shown as “On-site on …”). */
+  startDateIso?: string | null
 }
 
 export type DigestParams = {
@@ -115,17 +176,21 @@ export type DigestParams = {
    * Plain-text body skips those lines as well.
    */
   omitLeadBlock?: boolean
+  /** IANA timezone for “today” vs task date-only fields (e.g. org `progress_report_timezone`). */
+  calendarTimeZone?: string | null
 }
 
-function taskMetaLine(task: DigestTask, now: Date): string {
+function taskMetaLine(task: DigestTask, now: Date, calendarTimeZone: string): string {
   const parts: string[] = []
-  if (task.dueDateLabel) parts.push(`Due: ${task.dueDateLabel}`)
+  const startFmt = task.startDateLabel || (task.startDateIso ? formatDigestDueDate(task.startDateIso) : null)
+  if (startFmt) parts.push(`On-site on ${startFmt}`)
+  if (task.dueDateLabel) parts.push(`Due on ${task.dueDateLabel}`)
   else if (task.dueDateIso) {
     const f = formatDigestDueDate(task.dueDateIso)
-    if (f) parts.push(`Due: ${f}`)
+    if (f) parts.push(`Due on ${f}`)
   }
   if (task.dueLabel) parts.push(String(task.dueLabel))
-  const phrase = formatDueInDaysPhrase(dueCalendarDiffDays(task.dueDateIso, now))
+  const phrase = formatDueInDaysPhrase(dueCalendarDiffDays(task.dueDateIso, now, calendarTimeZone))
   let s = parts.join(' · ')
   if (phrase) s = s ? `${s} · ${phrase}` : phrase
   return s
@@ -138,29 +203,48 @@ function digestTaskDetailHtml(
     showInlineReviewLink: boolean
     ctaUrl?: string | null
     reviewLinkText?: string | null
+    calendarTimeZone: string
   },
 ): string {
-  const { sentAt, showInlineReviewLink, ctaUrl, reviewLinkText } = opts
+  const { sentAt, showInlineReviewLink, ctaUrl, reviewLinkText, calendarTimeZone } = opts
   const chunks: string[] = []
 
+  const displayStart = task.startDateLabel || (task.startDateIso ? formatDigestDueDate(task.startDateIso) : null)
   const displayDue = task.dueDateLabel || (task.dueDateIso ? formatDigestDueDate(task.dueDateIso) : null)
-  const diff = dueCalendarDiffDays(task.dueDateIso, sentAt)
+  const diff = dueCalendarDiffDays(task.dueDateIso, sentAt, calendarTimeZone)
   const phrase = formatDueInDaysPhrase(diff)
-  const hasCalendarDue = Boolean(displayDue || phrase)
+  const urgencyDiff =
+    diff !== null && !Number.isNaN(diff)
+      ? diff
+      : dueCalendarDiffDays(task.startDateIso, sentAt, calendarTimeZone)
+  const hasDateBlock = Boolean(displayStart || displayDue || phrase)
 
-  if (hasCalendarDue) {
-    const vis = urgencyVisual(diff)
-    const dateLine = displayDue
-      ? `<p style="margin:4px 0 0;font-size:21px;line-height:1.25;font-weight:800;color:${vis.dateColor};letter-spacing:-0.02em;">${escapeHtml(displayDue)}</p>`
+  if (hasDateBlock) {
+    const vis = urgencyVisual(urgencyDiff)
+    const labelStyle =
+      'margin:0;font-size:11px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:#64748b;'
+    const sentenceStyle = `margin:6px 0 0;font-size:19px;line-height:1.25;font-weight:800;color:${vis.dateColor};letter-spacing:-0.02em;`
+    const startBlock = displayStart
+      ? `<div>
+        <p style="${labelStyle}">On-site</p>
+        <p style="${sentenceStyle}">${escapeHtml(`On-site on ${displayStart}`)}</p>
+      </div>`
       : ''
-    const phraseLine = phrase
-      ? `<p style="margin:8px 0 0;font-size:15px;line-height:1.35;font-weight:700;color:${vis.phraseColor};">${escapeHtml(phrase)}</p>`
+    const dueTop = displayStart ? '14px' : '0'
+    const dueBlock = displayDue || phrase
+      ? `<div style="margin-top:${dueTop};padding-top:${displayStart ? '12px' : '0'};${displayStart ? 'border-top:1px solid rgba(148,163,184,0.35);' : ''}">
+        ${displayDue ? `<p style="${labelStyle}">Due</p><p style="${sentenceStyle}">${escapeHtml(`Due on ${displayDue}`)}</p>` : ''}
+        ${
+          phrase
+            ? `<p style="margin:${displayDue ? '8px' : '0'} 0 0;font-size:15px;line-height:1.35;font-weight:700;color:${vis.phraseColor};">${escapeHtml(phrase)}</p>`
+            : ''
+        }
+      </div>`
       : ''
     chunks.push(
       `<div style="${vis.wrap}">
-        <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:#64748b;">Due</p>
-        ${dateLine}
-        ${phraseLine}
+        ${startBlock}
+        ${dueBlock}
       </div>`,
     )
   } else if (task.dueLabel) {
@@ -193,9 +277,11 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
     projectAddress,
     tasksSectionTitle,
     omitLeadBlock = false,
+    calendarTimeZone: calendarTimeZoneRaw,
   } = params
 
   const sentAt = new Date()
+  const calendarTimeZone = resolveCalendarTimeZone(calendarTimeZoneRaw)
 
   const safeTasks = tasks.slice(0, 8)
   const defaultReview =
@@ -232,6 +318,7 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
         showInlineReviewLink,
         ctaUrl,
         reviewLinkText,
+        calendarTimeZone,
       })
       return `
         <tr>
@@ -338,7 +425,7 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
 
   const lines = safeTasks
     .map((task, idx) => {
-      const meta = taskMetaLine(task, sentAt)
+      const meta = taskMetaLine(task, sentAt, calendarTimeZone)
       const head = `- ${idx + 1}. ${task.title}`
       if (safeTasks.length === 1 && ctaUrl && reviewLinkText) {
         const metaPart = meta ? ` — ${meta}` : ''

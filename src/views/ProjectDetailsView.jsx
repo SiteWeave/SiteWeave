@@ -15,6 +15,7 @@ import {
 import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
 import TaskPhotosModal from '../components/TaskPhotosModal';
+import TaskDiscussionModal from '../components/TaskDiscussionModal';
 import PhaseTaskSection from '../components/PhaseTaskSection';
 import BuildPath from '../components/BuildPath';
 import ProjectSidebar from '../components/ProjectSidebar';
@@ -28,7 +29,7 @@ import WeatherDelayMarker from '../components/WeatherDelayMarker';
 import PermissionGuard from '../components/PermissionGuard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TaskBulkActions from '../components/TaskBulkActions';
-import FieldIssues from '../components/FieldIssues';
+import ProjectCollaborationView from '../components/collaboration/ProjectCollaborationView';
 import Avatar from '../components/Avatar';
 import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
 import { handleApiError } from '../utils/errorHandling';
@@ -53,6 +54,8 @@ import {
 } from '../utils/taskDependencyService';
 import { mergeWeatherIntoPhaseTasks } from '../utils/weatherTaskTimeline';
 import GanttChart from '../components/GanttChart';
+import { useStreamUnread } from '../hooks/useStreamUnread';
+import { useIssuesUnread } from '../hooks/useIssuesUnread';
 import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
 import Icon from '../components/Icon';
 
@@ -90,7 +93,19 @@ function ProjectDetailsView() {
     const [selectedTasks, setSelectedTasks] = useState([]);
     const [taskFilter, setTaskFilter] = useState('all'); // all, completed, pending
     const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
-    const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, fieldIssues, activity
+    const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, updates, activity
+    const [collabPanel, setCollabPanel] = useState('stream');
+    const { unreadCount: streamUnreadCount } = useStreamUnread(
+        supabaseClient,
+        project?.id,
+        activeTab,
+    );
+    const { unreadCount: issuesUnreadCount } = useIssuesUnread(
+        supabaseClient,
+        project?.id,
+        activeTab,
+    );
+    const collaborationUnreadCount = streamUnreadCount + issuesUnreadCount;
     const [showShare, setShowShare] = useState(false);
     const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [showWeatherImpactModal, setShowWeatherImpactModal] = useState(false);
@@ -111,6 +126,7 @@ function ProjectDetailsView() {
     const [projectDependencyMode, setProjectDependencyMode] = useState('auto');
     const [projectPhases, setProjectPhases] = useState([]);
     const [photoModalTaskId, setPhotoModalTaskId] = useState(null);
+    const [discussionModalTaskId, setDiscussionModalTaskId] = useState(null);
     const [showPhasesModal, setShowPhasesModal] = useState(false);
     const [dependencyDrawerTaskId, setDependencyDrawerTaskId] = useState(null);
     const [drawerPredecessorQuery, setDrawerPredecessorQuery] = useState('');
@@ -278,7 +294,7 @@ function ProjectDetailsView() {
         [tasksState, state.selectedProjectId]
     );
     // Prefer global state so Supabase realtime (and other views) update the list without navigating away.
-    // Local fetch still hydrates state via SET_TASKS_LOADED; empty project uses [] from either source.
+    // Local fetch still hydrates global state via MERGE_TASKS; empty project uses [] from either source.
     const allTasks = useMemo(
         () => (allTasksFromState.length > 0 ? allTasksFromState : projectTasksList),
         [allTasksFromState, projectTasksList]
@@ -314,7 +330,7 @@ function ProjectDetailsView() {
                 const otherTasks = (state.tasks || []).filter(
                   (t) => String(t.project_id) !== String(state.selectedProjectId),
                 );
-                dispatch({ type: 'SET_TASKS_LOADED', payload: [...otherTasks, ...list] });
+                dispatch({ type: 'MERGE_TASKS', payload: [...otherTasks, ...list] });
             } catch (e) {
                 if (!ac.signal.aborted) console.error('Error loading project tasks:', e);
             }
@@ -2255,7 +2271,7 @@ function ProjectDetailsView() {
                 {/* Main content — full width on Gantt and Tasks (sidebar hidden) */}
                 <div
                     className={
-                        activeTab === 'gantt' || activeTab === 'tasks' ? 'lg:col-span-5' : 'lg:col-span-3'
+                        activeTab === 'gantt' || activeTab === 'tasks' || activeTab === 'updates' ? 'lg:col-span-5' : 'lg:col-span-3'
                     }
                 >
                     {/* Tab Navigation */}
@@ -2282,14 +2298,27 @@ function ProjectDetailsView() {
                                 Gantt
                             </button>
                             <button
-                                onClick={() => setActiveTab('fieldIssues')}
-                                className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
-                                    activeTab === 'fieldIssues'
+                                onClick={() => {
+                                    setCollabPanel('stream');
+                                    setActiveTab('updates');
+                                }}
+                                className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors inline-flex items-center gap-1.5 ${
+                                    activeTab === 'updates'
                                         ? 'border-blue-500 text-blue-600'
                                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                             >
-                                Field Issues ({fieldIssuesCount})
+                                Updates
+                                {collaborationUnreadCount > 0 && activeTab !== 'updates' ? (
+                                    <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                                        {collaborationUnreadCount > 99 ? '99+' : collaborationUnreadCount}
+                                    </span>
+                                ) : null}
+                                {fieldIssuesCount > 0 ? (
+                                    <span className="text-[10px] font-normal text-gray-500">
+                                        · {fieldIssuesCount} issue{fieldIssuesCount === 1 ? '' : 's'}
+                                    </span>
+                                ) : null}
                             </button>
                             {canViewActivityHistory && (
                             <button
@@ -2540,6 +2569,7 @@ function ProjectDetailsView() {
                                                                                     isSelected={selectedTasks.includes(row.task.id)}
                                                                                     onSelect={handleTaskSelect}
                                                                                     onOpenPhotos={setPhotoModalTaskId}
+                                                                                    onOpenDiscussion={setDiscussionModalTaskId}
                                                                                     projectPhases={projectPhases}
                                                                                     assignableContacts={assignableContactsForTasks}
                                                                                     dependencyMeta={
@@ -2550,6 +2580,7 @@ function ProjectDetailsView() {
                                                                                     onPingAssignee={handlePingAssignee}
                                                                                     onRequestAssigneeSmsConsent={handleRequestAssigneeSmsConsent}
                                                                                     pingingTaskId={pingingTaskId}
+                                                                                    project={project}
                                                                                 />
                                                                             )
                                                                         )}
@@ -2598,6 +2629,7 @@ function ProjectDetailsView() {
                                                                             isSelected={selectedTasks.includes(row.task.id)}
                                                                             onSelect={handleTaskSelect}
                                                                             onOpenPhotos={setPhotoModalTaskId}
+                                                                            onOpenDiscussion={setDiscussionModalTaskId}
                                                                             projectPhases={projectPhases}
                                                                             assignableContacts={assignableContactsForTasks}
                                                                             dependencyMeta={
@@ -2608,6 +2640,7 @@ function ProjectDetailsView() {
                                                                             onPingAssignee={handlePingAssignee}
                                                                             onRequestAssigneeSmsConsent={handleRequestAssigneeSmsConsent}
                                                                             pingingTaskId={pingingTaskId}
+                                                                            project={project}
                                                                         />
                                                                     )
                                                                 )}
@@ -2638,8 +2671,16 @@ function ProjectDetailsView() {
                             </div>
                         )}
 
-                        {activeTab === 'fieldIssues' && (
-                            <FieldIssues projectId={project.id} />
+                        {activeTab === 'updates' && project && (
+                            <div className="p-4 lg:p-6 bg-white rounded-xl shadow-xs border border-gray-200 min-h-[72vh]">
+                                <ProjectCollaborationView
+                                    project={project}
+                                    supabaseClient={supabaseClient}
+                                    currentUserId={state.user?.id}
+                                    projectTasks={allTasks}
+                                    initialPanel={collabPanel}
+                                />
+                            </div>
                         )}
 
                         {canViewActivityHistory && activeTab === 'activity' && (
@@ -2653,10 +2694,10 @@ function ProjectDetailsView() {
                     </div>
                 </div>
 
-                {/* Sidebar hidden on Gantt and Tasks tabs */}
+                {/* Sidebar hidden on Gantt, Tasks, and Stream tabs */}
                 <div
                     className={
-                        activeTab === 'gantt' || activeTab === 'tasks'
+                        activeTab === 'gantt' || activeTab === 'tasks' || activeTab === 'updates'
                             ? 'hidden'
                             : 'lg:col-span-2'
                     }
@@ -2870,6 +2911,14 @@ function ProjectDetailsView() {
                     isLoading={isCreatingTask}
                     photoUploadProgress={createTaskPhotoUploadProgress}
                     allTasks={allTasks}
+                />
+            )}
+
+            {discussionModalTaskId && project && (
+                <TaskDiscussionModal
+                    task={allTasks.find((t) => t.id === discussionModalTaskId)}
+                    project={project}
+                    onClose={() => setDiscussionModalTaskId(null)}
                 />
             )}
 

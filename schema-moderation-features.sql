@@ -1,4 +1,5 @@
 -- SiteWeave Moderation Features Schema
+-- Superseded by schema.sql for new installs; kept for reference and incremental upgrades.
 -- Content Reporting, User Blocking, and Terms of Service
 
 -- ============================================================================
@@ -7,7 +8,7 @@
 CREATE TABLE IF NOT EXISTS content_reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     reported_by_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    content_type TEXT NOT NULL CHECK (content_type IN ('message', 'profile', 'project', 'task', 'comment', 'file')),
+    content_type TEXT NOT NULL CHECK (content_type IN ('message', 'profile', 'project', 'task', 'comment', 'file', 'stream_post', 'task_comment')),
     content_id UUID NOT NULL,
     reported_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     reason TEXT NOT NULL CHECK (reason IN ('spam', 'harassment', 'inappropriate', 'violence', 'hate_speech', 'other')),

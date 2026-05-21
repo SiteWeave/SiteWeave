@@ -265,3 +265,38 @@ export function logWeatherImpactScheduleApplied(impact, user, projectId, organiz
         },
     });
 }
+
+export function logFieldIssueCreated(issue, user, projectId) {
+    return logActivity({
+        action: 'created',
+        entityType: 'field_issue',
+        entityId: String(issue.id),
+        entityName: issue.title,
+        projectId,
+        user,
+        details: { priority: issue.priority },
+    });
+}
+
+export function logFieldIssueUpdated(issue, user, projectId) {
+    return logActivity({
+        action: 'updated',
+        entityType: 'field_issue',
+        entityId: String(issue.id),
+        entityName: issue.title,
+        projectId,
+        user,
+    });
+}
+
+export function logFieldIssueClosed(issue, user, projectId) {
+    return logActivity({
+        action: 'completed',
+        entityType: 'field_issue',
+        entityId: String(issue.id),
+        entityName: issue.title,
+        projectId,
+        user,
+        details: { status: 'closed' },
+    });
+}

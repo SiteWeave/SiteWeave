@@ -24,7 +24,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useHaptics } from '../../hooks/useHaptics';
 
 export default function HomeScreen() {
-  const { user, supabase, activeOrganization } = useAuth();
+  const { user, supabase, activeOrganization, isProjectCollaborator } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
@@ -60,7 +60,7 @@ export default function HomeScreen() {
   }, [supabase, user]);
 
   const loadData = async () => {
-    if (!user || !supabase || !activeOrganization) {
+    if (!user || !supabase || (!activeOrganization && !isProjectCollaborator)) {
       setTasks([]);
       setEvents([]);
       setProjects([]);
@@ -80,10 +80,10 @@ export default function HomeScreen() {
         fetchUnreadNotificationCount(supabase, { userId: user.id, email: user.email || '' }),
       ]);
       
-      const orgId = activeOrganization.id;
-      const orgTasks = filterByOrganizationId(tasksData || [], orgId);
-      const orgEvents = filterByOrganizationId(eventsData || [], orgId);
-      const orgProjects = filterByOrganizationId(projectsData || [], orgId);
+      const orgId = activeOrganization?.id;
+      const orgTasks = orgId ? filterByOrganizationId(tasksData || [], orgId) : (tasksData || []);
+      const orgEvents = orgId ? filterByOrganizationId(eventsData || [], orgId) : (eventsData || []);
+      const orgProjects = orgId ? filterByOrganizationId(projectsData || [], orgId) : (projectsData || []);
       
       setTasks(orgTasks);
       setEvents(orgEvents);
@@ -171,7 +171,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadData();
-  }, [user, activeOrganization]);
+  }, [user, activeOrganization, isProjectCollaborator, supabase]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -259,9 +259,11 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View style={styles.headerContent}>
             <View>
-              {activeOrganization?.name && (
+              {activeOrganization?.name ? (
                 <Text style={styles.organizationName}>{activeOrganization.name}</Text>
-              )}
+              ) : isProjectCollaborator ? (
+                <Text style={styles.organizationName}>Projects shared with you</Text>
+              ) : null}
               <Text style={styles.greeting}>Hello, {getUserName()}</Text>
             </View>
             <View style={styles.headerButtons}>

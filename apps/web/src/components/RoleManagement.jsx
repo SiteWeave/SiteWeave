@@ -8,6 +8,9 @@ import LoadingSpinner from './LoadingSpinner';
 import RoleCreationModal from './RoleCreationModal';
 import DeleteRoleModal from './DeleteRoleModal';
 import Icon from './Icon';
+import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
+import UpgradeRequiredModal from './UpgradeRequiredModal';
+import { isCustomRolesLockedError } from '@siteweave/core-logic';
 
 // Default permission structure
 const DEFAULT_PERMISSIONS = {
@@ -52,8 +55,11 @@ function RoleManagement() {
   const [editingRole, setEditingRole] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [rolePendingDelete, setRolePendingDelete] = useState(null);
+  const [roleModalReadOnly, setRoleModalReadOnly] = useState(false);
 
   const organizationId = state.currentOrganization?.id;
+  const { canCustomRoles } = useWorkspaceTier();
+  const [showRolesUpgrade, setShowRolesUpgrade] = useState(false);
 
   useEffect(() => {
     if (organizationId) {
@@ -79,6 +85,12 @@ function RoleManagement() {
   const handleSaveRole = async (roleData) => {
     if (!roleData.name || !organizationId) return;
 
+    // Prevent saving changes to Org Admin
+    if (editingRole && editingRole.name === 'Org Admin') {
+      addToast('Organization Admin role cannot be modified.', 'error');
+      return;
+    }
+
     setIsSaving(true);
     try {
       if (editingRole) {
@@ -101,13 +113,21 @@ function RoleManagement() {
       }
     } catch (error) {
       console.error('Error saving role:', error);
-      addToast(error.message || 'Failed to save role', 'error');
+      if (isCustomRolesLockedError(error)) {
+        setShowRolesUpgrade(true);
+      } else {
+        addToast(error.message || 'Failed to save role', 'error');
+      }
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDuplicateRole = async (role) => {
+    if (!canCustomRoles) {
+      setShowRolesUpgrade(true);
+      return;
+    }
     if (!organizationId) return;
 
     setIsSaving(true);
@@ -129,12 +149,28 @@ function RoleManagement() {
   };
 
   const handleCreateRole = () => {
+    if (!canCustomRoles) {
+      setShowRolesUpgrade(true);
+      return;
+    }
     setEditingRole(null);
+    setRoleModalReadOnly(false);
+    setShowRoleModal(true);
+  };
+
+  const handleViewRole = (role) => {
+    setEditingRole(role);
+    setRoleModalReadOnly(true);
     setShowRoleModal(true);
   };
 
   const handleEditRole = (role) => {
+    if (role.name === 'Org Admin' || role.is_system_role || !canCustomRoles) {
+      handleViewRole(role);
+      return;
+    }
     setEditingRole(role);
+    setRoleModalReadOnly(false);
     setShowRoleModal(true);
   };
 
@@ -146,20 +182,26 @@ function RoleManagement() {
     <div className="p-6">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Role Management</h2>
-        <p className="text-gray-600 mt-1">Create and manage custom roles for your organization</p>
+        <p className="text-gray-600 mt-1">
+          {canCustomRoles
+            ? 'Create and manage custom roles for your organization'
+            : 'View default role permissions below. Upgrade to create custom roles and change permissions.'}
+        </p>
       </div>
 
-      <PermissionGuard permission="can_manage_roles">
-        <div className="mb-6">
-          <button
-            onClick={handleCreateRole}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2"
-          >
-            <Icon path="M12 4v16m8-8H4" className="w-5 h-5" />
-            <span>Create Custom Role</span>
-          </button>
-        </div>
-      </PermissionGuard>
+      {canCustomRoles && (
+        <PermissionGuard permission="can_manage_roles">
+          <div className="mb-6">
+            <button
+              onClick={handleCreateRole}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2"
+            >
+              <Icon path="M12 4v16m8-8H4" className="w-5 h-5" />
+              <span>Create Custom Role</span>
+            </button>
+          </div>
+        </PermissionGuard>
+      )}
 
       {/* Roles List */}
       <div className="bg-white rounded-lg shadow">
@@ -167,43 +209,64 @@ function RoleManagement() {
           <h3 className="text-lg font-semibold">Roles</h3>
         </div>
         <div className="divide-y divide-gray-200">
-          {roles.filter(role => role.name !== 'Org Admin').length === 0 ? (
+          {roles.length === 0 ? (
             <div className="p-6 text-center text-gray-500">No roles found</div>
           ) : (
-            roles.filter(role => role.name !== 'Org Admin').map(role => (
+            [...roles]
+              .sort((a, b) => {
+                if (a.name === 'Org Admin') return -1;
+                if (b.name === 'Org Admin') return 1;
+                if (a.is_system_role !== b.is_system_role) return a.is_system_role ? -1 : 1;
+                return a.name.localeCompare(b.name);
+              })
+              .map((role) => {
+              const canEditRole = canCustomRoles && !role.is_system_role && role.name !== 'Org Admin';
+              return (
               <div key={role.id} className="p-6">
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <h4 className="font-medium">{role.name}</h4>
                     {role.is_system_role && (
-                      <span className="text-xs text-gray-500">System Role (Cannot be modified)</span>
+                      <span className="text-xs text-gray-500">Default role — view only</span>
                     )}
                   </div>
-                  <PermissionGuard permission="can_manage_roles">
-                    {!role.is_system_role && (
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => handleDuplicateRole(role)}
-                          className="p-2 text-purple-600 hover:bg-purple-50 rounded"
-                          title="Duplicate role"
-                        >
-                          <Icon path="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleEditRole(role)}
-                          className="px-3 py-1 text-blue-600 hover:bg-blue-50 rounded text-sm"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteRole(role)}
-                          className="px-3 py-1 text-red-600 hover:bg-red-50 rounded text-sm"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    )}
-                  </PermissionGuard>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => handleViewRole(role)}
+                      className="px-3 py-1 text-gray-700 hover:bg-gray-100 rounded text-sm border border-gray-200"
+                    >
+                      View permissions
+                    </button>
+                    <PermissionGuard permission="can_manage_roles">
+                      {canEditRole && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleDuplicateRole(role)}
+                            className="p-2 text-purple-600 hover:bg-purple-50 rounded"
+                            title="Duplicate role"
+                          >
+                            <Icon path="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEditRole(role)}
+                            className="px-3 py-1 text-blue-600 hover:bg-blue-50 rounded text-sm"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRole(role)}
+                            className="px-3 py-1 text-red-600 hover:bg-red-50 rounded text-sm"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </PermissionGuard>
+                  </div>
                 </div>
                 <div className="mt-2 text-sm text-gray-600">
                   <div className="flex flex-wrap gap-2">
@@ -217,7 +280,8 @@ function RoleManagement() {
                   </div>
                 </div>
               </div>
-            ))
+            );
+            })
           )}
         </div>
       </div>
@@ -228,10 +292,12 @@ function RoleManagement() {
         onClose={() => {
           setShowRoleModal(false);
           setEditingRole(null);
+          setRoleModalReadOnly(false);
         }}
         onSave={handleSaveRole}
         existingRole={editingRole}
         isLoading={isSaving}
+        readOnly={roleModalReadOnly}
       />
 
       <DeleteRoleModal
@@ -241,6 +307,11 @@ function RoleManagement() {
         roleToDelete={rolePendingDelete}
         allRoles={roles}
         onDeleted={loadRoles}
+      />
+      <UpgradeRequiredModal
+        isOpen={showRolesUpgrade}
+        onClose={() => setShowRolesUpgrade(false)}
+        feature="custom_roles"
       />
     </div>
   );

@@ -15,6 +15,9 @@ import {
 } from '@siteweave/core-logic';
 import { saveProgressReportPdf } from '../utils/saveProgressReportPdf';
 import { defaultProgressReportPdfFilename } from '../utils/progressReportPdfFilename';
+import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
+import UpgradeRequiredModal from './UpgradeRequiredModal';
+import { isExportFeatureLockedError } from '@siteweave/core-logic';
 
 /**
  * Progress Report Modal Component
@@ -24,6 +27,8 @@ function ProgressReportModal({ projectId, onClose }) {
   const { i18n } = useTranslation();
   const { state } = useAppContext();
   const { addToast } = useToast();
+  const { canExport } = useWorkspaceTier();
+  const [showExportUpgrade, setShowExportUpgrade] = useState(false);
   const [schedules, setSchedules] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showBuilder, setShowBuilder] = useState(false);
@@ -114,6 +119,10 @@ function ProgressReportModal({ projectId, onClose }) {
   };
 
   const handleExportPDF = async (scheduleId) => {
+    if (!canExport) {
+      setShowExportUpgrade(true);
+      return;
+    }
     try {
       const result = await exportReportToPDF(supabaseClient, scheduleId);
       if (!result?.html) {
@@ -137,6 +146,10 @@ function ProgressReportModal({ projectId, onClose }) {
         addToast('PDF downloaded.', 'success');
       }
     } catch (error) {
+      if (isExportFeatureLockedError(error)) {
+        setShowExportUpgrade(true);
+        return;
+      }
       addToast('Error exporting PDF: ' + error.message, 'error');
     }
   };
@@ -188,6 +201,7 @@ function ProgressReportModal({ projectId, onClose }) {
   }
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-[min(1440px,96vw)] max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
@@ -381,6 +395,12 @@ function ProgressReportModal({ projectId, onClose }) {
         </div>
       </div>
     </div>
+    <UpgradeRequiredModal
+      isOpen={showExportUpgrade}
+      onClose={() => setShowExportUpgrade(false)}
+      feature="exports"
+    />
+    </>
   );
 }
 

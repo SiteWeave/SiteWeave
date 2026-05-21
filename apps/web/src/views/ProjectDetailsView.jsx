@@ -14,6 +14,7 @@ import {
 import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
 import TaskPhotosModal from '../components/TaskPhotosModal';
+import TaskDiscussionModal from '../components/TaskDiscussionModal';
 import PhaseTaskSection from '../components/PhaseTaskSection';
 import ProjectSidebar from '../components/ProjectSidebar';
 import ProjectModal from '../components/ProjectModal';
@@ -21,7 +22,7 @@ import ShareModal from '../components/ShareModal';
 import SaveAsTemplateModal from '../components/SaveAsTemplateModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TaskBulkActions from '../components/TaskBulkActions';
-import FieldIssues from '../components/FieldIssues';
+import ProjectCollaborationView from '../components/collaboration/ProjectCollaborationView';
 import Avatar from '../components/Avatar';
 import PermissionGuard from '../components/PermissionGuard';
 import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
@@ -46,6 +47,8 @@ import { buildTaskPhotoDraft, canManageTaskPhotos, revokeTaskPhotoDraftUrls, sor
 import GanttChart from '../components/GanttChart';
 import ProgressReportModal from '../components/ProgressReportModal';
 import MsProjectImportModal from '../components/MsProjectImportModal';
+import { useStreamUnread } from '../hooks/useStreamUnread';
+import { useIssuesUnread } from '../hooks/useIssuesUnread';
 
 function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
     const { state, dispatch } = useAppContext();
@@ -58,7 +61,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
     const [selectedTasks, setSelectedTasks] = useState([]);
     const [taskFilter, setTaskFilter] = useState('all'); // all, completed, pending
     const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
-    const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, fieldIssues, activity
+    const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, updates, activity
     const [showShare, setShowShare] = useState(false);
     const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
@@ -74,6 +77,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
     const [projectPhases, setProjectPhases] = useState([]);
     const [fieldIssuesCount, setFieldIssuesCount] = useState(0);
     const [photoModalTaskId, setPhotoModalTaskId] = useState(null);
+    const [discussionModalTaskId, setDiscussionModalTaskId] = useState(null);
     const [photoActionTaskIds, setPhotoActionTaskIds] = useState({});
     const [taskPhotoUploadProgress, setTaskPhotoUploadProgress] = useState(null);
     const [ganttTasks, setGanttTasks] = useState([]);
@@ -84,6 +88,17 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
     const [projectTasksList, setProjectTasksList] = useState([]);
 
     const project = state.projects.find((p) => p.id === state.selectedProjectId);
+    const { unreadCount: streamUnreadCount } = useStreamUnread(
+        supabaseClient,
+        project?.id,
+        activeTab,
+    );
+    const { unreadCount: issuesUnreadCount } = useIssuesUnread(
+        supabaseClient,
+        project?.id,
+        activeTab,
+    );
+    const collaborationUnreadCount = streamUnreadCount + issuesUnreadCount;
     const allTasksFromState = (state.tasks || []).filter((t) => t.project_id === state.selectedProjectId);
     const allTasks = projectTasksList.length > 0 ? projectTasksList : allTasksFromState;
     const allTaskIdsKey = useMemo(
@@ -110,16 +125,20 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
     const routeToTabMap = {
         tasks: 'tasks',
         gantt: 'gantt',
-        'field-issues': 'fieldIssues',
-        fieldIssues: 'fieldIssues',
-        activity: 'activity'
+        updates: 'updates',
+        'field-issues': 'updates',
+        fieldIssues: 'updates',
+        stream: 'updates',
+        activity: 'activity',
     };
     const tabToRouteMap = {
         tasks: 'tasks',
         gantt: 'gantt',
-        fieldIssues: 'field-issues',
-        activity: 'activity'
+        updates: 'updates',
+        activity: 'activity',
     };
+    const collaborationPanel =
+        routeTab === 'field-issues' || routeTab === 'fieldIssues' ? 'issues' : 'stream';
     const setTabAndRoute = (nextTab) => {
         setActiveTab(nextTab);
         if (onTabChange) {
@@ -1829,7 +1848,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
                 {/* Main content — full width on Gantt and Tasks (desktop parity) */}
-                <div className={activeTab === 'gantt' || activeTab === 'tasks' ? 'lg:col-span-5' : 'lg:col-span-3'}>
+                <div className={activeTab === 'gantt' || activeTab === 'tasks' || activeTab === 'stream' ? 'lg:col-span-5' : 'lg:col-span-3'}>
                     {/* Tab Navigation */}
                     <div className="border-b border-slate-200 mb-6 app-card-soft px-4">
                         <nav className="-mb-px flex space-x-8">
@@ -1854,14 +1873,24 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                                 Gantt
                             </button>
                             <button
-                                onClick={() => setTabAndRoute('fieldIssues')}
-                                className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
-                                    activeTab === 'fieldIssues'
+                                onClick={() => setTabAndRoute('updates')}
+                                className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors inline-flex items-center gap-1.5 ${
+                                    activeTab === 'updates'
                                         ? 'border-blue-500 text-blue-600'
                                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                             >
-                                Field Issues ({fieldIssuesCount})
+                                Updates
+                                {collaborationUnreadCount > 0 && activeTab !== 'updates' ? (
+                                    <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                                        {collaborationUnreadCount > 99 ? '99+' : collaborationUnreadCount}
+                                    </span>
+                                ) : null}
+                                {fieldIssuesCount > 0 ? (
+                                    <span className="text-[10px] font-normal text-slate-500">
+                                        · {fieldIssuesCount} issue{fieldIssuesCount === 1 ? '' : 's'}
+                                    </span>
+                                ) : null}
                             </button>
                             {canViewActivityHistory && (
                                 <button
@@ -1997,9 +2026,11 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                                                                                     isSelected={selectedTasks.includes(row.task.id)}
                                                                                     onSelect={handleTaskSelect}
                                                                                     onOpenPhotos={handleOpenTaskPhotos}
+                                                                                    onOpenDiscussion={setDiscussionModalTaskId}
                                                                                     onPingAssignee={handlePingAssignee}
                                                                                     onRequestAssigneeSmsConsent={handleRequestAssigneeSmsConsent}
                                                                                     pingingTaskId={pingingTaskId}
+                                                                                    project={project}
                                                                                 />
                                                                             )
                                                                         )}
@@ -2046,9 +2077,11 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                                                                             isSelected={selectedTasks.includes(row.task.id)}
                                                                             onSelect={handleTaskSelect}
                                                                             onOpenPhotos={handleOpenTaskPhotos}
+                                                                            onOpenDiscussion={setDiscussionModalTaskId}
                                                                             onPingAssignee={handlePingAssignee}
                                                                             onRequestAssigneeSmsConsent={handleRequestAssigneeSmsConsent}
                                                                             pingingTaskId={pingingTaskId}
+                                                                            project={project}
                                                                         />
                                                                     )
                                                                 )}
@@ -2079,8 +2112,16 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                             </div>
                         )}
 
-                        {activeTab === 'fieldIssues' && (
-                            <FieldIssues projectId={project.id} />
+                        {activeTab === 'updates' && project && (
+                            <div className="p-4 lg:p-6 app-card min-h-[72vh]">
+                                <ProjectCollaborationView
+                                    project={project}
+                                    supabaseClient={supabaseClient}
+                                    currentUserId={state.user?.id}
+                                    projectTasks={allTasks}
+                                    initialPanel={collaborationPanel}
+                                />
+                            </div>
                         )}
 
                         {activeTab === 'activity' && canViewActivityHistory && (
@@ -2099,7 +2140,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                 </div>
 
                 {/* Sidebar hidden on Gantt and Tasks, like desktop layout */}
-                <div className={activeTab === 'gantt' || activeTab === 'tasks' ? 'hidden' : 'lg:col-span-2'}>
+                <div className={activeTab === 'gantt' || activeTab === 'tasks' || activeTab === 'updates' ? 'hidden' : 'lg:col-span-2'}>
                     <ProjectSidebar project={project} showProjectPhases={activeTab !== 'gantt'} />
                 </div>
             </div>
@@ -2121,6 +2162,13 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
                 confirmText="Delete"
                 cancelText="Cancel"
             />
+            {discussionModalTaskId && project && (
+                <TaskDiscussionModal
+                    task={allTasks.find((task) => task.id === discussionModalTaskId)}
+                    project={project}
+                    onClose={() => setDiscussionModalTaskId(null)}
+                />
+            )}
             {photoModalTaskId && (
                 <TaskPhotosModal
                     task={allTasks.find((task) => task.id === photoModalTaskId)}

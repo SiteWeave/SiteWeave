@@ -1,6 +1,6 @@
 import React from 'react';
 
-function ViewSwitcher({ currentView, onViewChange }) {
+function ViewSwitcher({ currentView, onViewChange, compact = false }) {
     const views = [
         { id: 'card', label: 'Card', icon: 'grid' },
         { id: 'list', label: 'List', icon: 'list' },
@@ -46,7 +46,7 @@ function ViewSwitcher({ currentView, onViewChange }) {
                     title={`${view.label} View`}
                 >
                     {getIcon(view.icon)}
-                    <span className="hidden sm:inline">{view.label}</span>
+                    {!compact && <span className="hidden sm:inline">{view.label}</span>}
                 </button>
             ))}
         </div>

@@ -220,7 +220,7 @@ export default function MsProjectImportModal({ onClose, context, projectId: exis
                     .eq('project_id', pid)
                     .order('due_date', { ascending: true, nullsFirst: false });
                 const other = tasksState.filter((t) => String(t.project_id) !== String(pid));
-                dispatch({ type: 'SET_TASKS_LOADED', payload: [...other, ...(taskList || [])] });
+                dispatch({ type: 'MERGE_TASKS', payload: [...other, ...(taskList || [])] });
                 onSuccess?.(pid);
             }
             onClose();

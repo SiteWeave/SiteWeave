@@ -9,6 +9,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { sendTwilioSms } from '../_shared/twilioSms.ts'
 import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
+import { createProjectAccessInvite, mapRoleToAccessLevel } from '../_shared/projectInvite.ts'
+import { assertCanInviteGuestCollaborator, GUEST_COLLABORATOR_LIMIT_ERROR } from '../_shared/workspaceTier.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -242,6 +244,26 @@ serve(async (req) => {
 
         // Successfully added contact to project
         console.log('Successfully added contact to project')
+
+        const perInviteCap = await assertCanInviteGuestCollaborator(supabaseAdmin, organizationId, projectId)
+        if (!perInviteCap.ok) {
+          results.push({ email, action: 'skipped', reason: GUEST_COLLABORATOR_LIMIT_ERROR })
+          continue
+        }
+
+        const inviteResult = await createProjectAccessInvite(supabaseAdmin, {
+          projectId,
+          organizationId,
+          contactId: contactId || null,
+          invitedEmail: email,
+          accessLevel: mapRoleToAccessLevel(role),
+          invitedByUserId: addedByUserId || null,
+        })
+        const inviteUrl = 'inviteUrl' in inviteResult ? inviteResult.inviteUrl : ''
+        const inviteShortCode = 'shortCode' in inviteResult ? inviteResult.shortCode : ''
+        if ('error' in inviteResult) {
+          console.warn('project_access_invite create failed:', inviteResult.error)
+        }
         
         // Fetch project and organization details for email
         const { data: project } = await supabaseAdmin
@@ -307,10 +329,12 @@ serve(async (req) => {
                          Deno.env.get('VITE_APP_URL') || 
                          'https://app.siteweave.org').replace(/\/+$/, '')
         const dashboardUrl = `${baseUrl}/projects/${projectId}`
+        const projectInviteUrl = inviteUrl || dashboardUrl
 
         const normalizedPhone = normalizeAssigneePhone(contactPhone || '')
         if (normalizedPhone.isValid && normalizedPhone.e164) {
-          const smsMessage = `${inviterName} added you to ${projectName} on SiteWeave as ${role}. View project: ${dashboardUrl}`
+          const codePart = inviteShortCode ? ` Code: ${inviteShortCode}.` : ''
+          const smsMessage = `${inviterName} added you to ${projectName} on SiteWeave. Open: ${projectInviteUrl}${codePart}`
           smsToSend.push({
             email,
             phone: normalizedPhone.e164,
@@ -466,8 +490,9 @@ serve(async (req) => {
                 </div>
                 
                 <div class="cta-container">
-                    <a href="${dashboardUrl}" class="cta-button">View Project Dashboard</a>
+                    <a href="${projectInviteUrl}" class="cta-button">Accept project invite</a>
                 </div>
+                ${inviteShortCode ? `<p style="text-align:center;font-size:13px;color:#6b7280;margin-top:12px;">Or sign in and enter code: <strong>${inviteShortCode}</strong></p>` : ''}
             </div>
             <div class="footer">
                 <p class="footer-text">
@@ -489,14 +514,14 @@ serve(async (req) => {
             })
             
             console.log('Email prepared for batch sending to:', email)
-            results.push({ email, action: 'added' })
+            results.push({ email, action: 'added', inviteUrl: projectInviteUrl, shortCode: inviteShortCode })
           } catch (emailError) {
             console.error('Error preparing email:', emailError)
-            results.push({ email, action: 'added', reason: 'email_prep_failed' })
+            results.push({ email, action: 'added', reason: 'email_prep_failed', inviteUrl: projectInviteUrl, shortCode: inviteShortCode })
           }
         } else {
           console.log('RESEND_API_KEY not configured, skipping email')
-          results.push({ email, action: 'added', reason: 'email_not_configured' })
+          results.push({ email, action: 'added', reason: 'email_not_configured', inviteUrl: projectInviteUrl, shortCode: inviteShortCode })
         }
       } catch (entryError) {
         console.error('Error processing entry:', entryError)

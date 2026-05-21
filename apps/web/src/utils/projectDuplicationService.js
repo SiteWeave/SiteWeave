@@ -16,6 +16,12 @@
  */
 export async function duplicateProject(supabase, projectId, newName, organizationId, newStartDate, overrides = {}, currentUserId = null) {
   try {
+    const { canCreateProject, isProjectLimitError } = await import('@siteweave/core-logic');
+    const allowed = await canCreateProject(supabase, organizationId);
+    if (!allowed) {
+      return { success: false, error: 'PROJECT_LIMIT_REACHED' };
+    }
+
     // Get original project
     const { data: originalProject, error: projectError } = await supabase
       .from('projects')
@@ -155,15 +161,6 @@ export async function duplicateProject(supabase, projectId, newName, organizatio
         }
       }
     }
-
-    // Create a message channel for the new project
-    await supabase
-      .from('message_channels')
-      .insert({
-        project_id: newProject.id,
-        name: `${newProject.name} Discussion`,
-        organization_id: organizationId
-      });
 
     return {
       success: true,

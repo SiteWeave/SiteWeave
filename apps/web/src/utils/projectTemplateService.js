@@ -92,6 +92,10 @@ function shiftDate(date, days) {
  */
 export async function createProjectFromTemplate(supabase, templateId, organizationId, userId, projectName, address, projectNumber, startDate) {
   try {
+    const { canCreateProject } = await import('@siteweave/core-logic');
+    const allowed = await canCreateProject(supabase, organizationId);
+    if (!allowed) return { success: false, error: 'PROJECT_LIMIT_REACHED' };
+
     const { data: template, error: tErr } = await supabase
       .from('project_templates')
       .select('structure')
@@ -168,12 +172,6 @@ export async function createProjectFromTemplate(supabase, templateId, organizati
         }));
       if (newDeps.length > 0) await supabase.from('task_dependencies').insert(newDeps);
     }
-
-    await supabase.from('message_channels').insert({
-      project_id: newProject.id,
-      name: `${newProject.name} Discussion`,
-      organization_id: organizationId
-    });
 
     return { success: true, projectId: newProject.id };
   } catch (e) {

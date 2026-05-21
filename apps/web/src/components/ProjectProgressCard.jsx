@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { computeWeightedProjectProgressPercent } from '@siteweave/core-logic';
+import { getStatusColor, normalizeStatusDisplay } from '../utils/projectHelpers';
 import { supabaseClient } from '../context/AppContext';
 
 function ProjectProgressCard({ project }) {
@@ -68,7 +69,7 @@ function ProjectProgressCard({ project }) {
                 <h3 className="font-semibold text-sm text-gray-700">Progress Status</h3>
                 <span className="text-sm font-bold text-gray-900">{overallProgress}%</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2 mb-3 overflow-hidden">
+            <div className="w-full bg-gray-200 rounded-full h-2 mb-2 overflow-hidden">
                 <div
                     className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(overallProgress, project.due_date)}`}
                     style={{
@@ -78,13 +79,16 @@ function ProjectProgressCard({ project }) {
                 ></div>
             </div>
 
-            {phases.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                    <div className="text-xs text-gray-500">
-                        {phases.length} phases • {phases.filter(p => p.progress === 100).length} complete
-                    </div>
-                </div>
-            )}
+            <div className="flex min-w-0 items-center justify-between gap-2">
+                <span className="min-w-0 text-xs text-gray-500">
+                    {phases.length > 0
+                        ? `${phases.length} phases • ${phases.filter((p) => p.progress === 100).length} complete`
+                        : null}
+                </span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${getStatusColor(project.status)}`}>
+                    {normalizeStatusDisplay(project.status) || 'No Status'}
+                </span>
+            </div>
         </div>
     );
 }

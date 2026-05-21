@@ -97,7 +97,9 @@ serve(async (req) => {
     const organizationIds = Array.from(new Set(taskList.map((t: any) => t.organization_id).filter(Boolean)))
     const { data: orgRows } = await supabase
       .from('organizations')
-      .select('id, name, task_start_notifications_enabled, task_start_notification_lead_days, notification_email_batching_enabled')
+      .select(
+        'id, name, task_start_notifications_enabled, task_start_notification_lead_days, notification_email_batching_enabled, progress_report_timezone',
+      )
       .in('id', organizationIds)
 
     const orgById = new Map((orgRows || []).map((row: any) => [row.id, row]))
@@ -191,6 +193,9 @@ serve(async (req) => {
         : bucket.tasks[0]?.text || 'Task reminder'
       const summaryLabel = bucket.daysUntilStart === 0 ? 'Due now' : 'Due soon'
       const projectAddress = (bucket.tasks[0]?.projects as { address?: string } | undefined)?.address || null
+      const calendarTimeZone =
+        (orgById.get(bucket.organizationId) as { progress_report_timezone?: string } | undefined)
+          ?.progress_report_timezone || null
 
       const taskIdList = bucket.tasks.map((t: any) => t.id)
       let guestUrl = buildAppUrl(bucket.projectId)
@@ -220,10 +225,12 @@ serve(async (req) => {
           priority: task.priority || null,
           dueDateLabel: formatDigestDueDate(task.due_date),
           dueDateIso: task.due_date ? String(task.due_date).slice(0, 10) : null,
+          startDateIso: task.start_date ? String(task.start_date).slice(0, 10) : null,
         })),
         projectName: bucket.projectName,
         projectAddress: projectAddress ? String(projectAddress).trim() : null,
         tasksSectionTitle: batchSize > 1 ? 'Your tasks' : 'Task details',
+        calendarTimeZone,
       })
       const subject = batchSize > 1
         ? `${batchSize} updates for ${bucket.projectName}`

@@ -4,17 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import PressableWithFade from './PressableWithFade';
 import { useAuth } from '../context/AuthContext';
-import { reportContent } from '@siteweave/core-logic';
+import { reportContent, REPORT_REASONS } from '@siteweave/core-logic';
 import { useHaptics } from '../hooks/useHaptics';
-
-const REPORT_REASONS = [
-  { value: 'spam', label: 'Spam' },
-  { value: 'harassment', label: 'Harassment' },
-  { value: 'inappropriate', label: 'Inappropriate Content' },
-  { value: 'violence', label: 'Violence or Threats' },
-  { value: 'hate_speech', label: 'Hate Speech' },
-  { value: 'other', label: 'Other' },
-];
 
 export default function ReportContentModal({ visible, onClose, contentType, contentId, reportedUserId, reportedUserName }) {
   const { user, supabase } = useAuth();

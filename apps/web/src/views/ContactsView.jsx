@@ -1,15 +1,21 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext, supabaseClient } from '../context/AppContext';
+import { ROUTE_PATHS } from '../config/routes';
 import { useToast } from '../context/ToastContext';
 import AddContactModal from '../components/AddContactModal';
 import ContactCard from '../components/ContactCard';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { logContactCreated, logContactUpdated } from '../utils/activityLogger';
+import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
+import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
 
 function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const navigate = useNavigate();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
+    const { canExport } = useWorkspaceTier();
+    const [showExportUpgrade, setShowExportUpgrade] = useState(false);
     const [activeTab, setActiveTab] = useState('Team');
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingContact, setEditingContact] = useState(null);
@@ -36,12 +42,6 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const [selectedAssignProject, setSelectedAssignProject] = useState('');
     const [isAssigningContact, setIsAssigningContact] = useState(false);
 
-    useEffect(() => {
-        if (defaultProjectFilter != null && defaultProjectFilter !== '') {
-            setProjectFilter(String(defaultProjectFilter));
-        }
-    }, [defaultProjectFilter]);
-
     // Listen for tour navigation to switch to Subcontractors tab
     useEffect(() => {
         const handleSwitchToSubcontractors = () => {
@@ -55,8 +55,19 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
         };
     }, []);
 
-    const teamMembers = state.contacts.filter(c => c.type === 'Team');
-    const subcontractors = state.contacts.filter(c => c.type === 'Subcontractor');
+    useEffect(() => {
+        if (defaultProjectFilter) {
+            setProjectFilter(String(defaultProjectFilter));
+        } else if (embedded) {
+            setProjectFilter('All Projects');
+        }
+    }, [defaultProjectFilter, embedded]);
+
+    const contacts = state.contacts || [];
+    const projects = state.projects || [];
+
+    const teamMembers = contacts.filter(c => c.type === 'Team');
+    const subcontractors = contacts.filter(c => c.type === 'Subcontractor');
 
     // Filter contacts based on search and status
     const filteredContacts = useMemo(() => {
@@ -106,6 +117,20 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             if (error) {
                 addToast('Error updating contact: ' + error.message, 'error');
             } else {
+                const trackKeys = ['name', 'role', 'type', 'company', 'trade', 'email', 'phone', 'status'];
+                const changes = {};
+                trackKeys.forEach((k) => {
+                    if (contactData[k] !== undefined && editingContact[k] !== contactData[k]) {
+                        changes[k] = { from: editingContact[k], to: contactData[k] };
+                    }
+                });
+                if (Object.keys(changes).length > 0 && state.user) {
+                    logContactUpdated(
+                        { ...editingContact, ...contactData, organization_id: editingContact.organization_id ?? state.currentOrganization?.id },
+                        state.user,
+                        changes
+                    );
+                }
                 if (contactData.type === 'Subcontractor') {
                     const hasEmail = contactData.email && String(contactData.email).includes('@');
                     addToast(
@@ -126,7 +151,8 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             setIsCreatingContact(true);
             const contactDataWithAudit = {
                 ...contactData,
-                created_by_user_id: state.user?.id
+                created_by_user_id: state.user?.id,
+                organization_id: state.currentOrganization?.id
             };
             const { data, error } = await supabaseClient
                 .from('contacts')
@@ -149,6 +175,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     addToast('Contact created successfully!', 'success');
                 }
                 dispatch({ type: 'ADD_CONTACT', payload: data });
+                if (state.user) logContactCreated(data, state.user, null);
                 setShowAddModal(false);
             }
             setIsCreatingContact(false);
@@ -226,6 +253,11 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     };
 
     const handleExportContacts = () => {
+        if (!canExport) {
+            setShowExportUpgrade(true);
+            setShowExportModal(false);
+            return;
+        }
         const contacts = activeTab === 'Team' ? teamMembers : subcontractors;
         const csvContent = [
             'Name,Role,Type,Company,Trade,Email,Phone,Status',
@@ -249,13 +281,13 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     };
 
     const handleAssignToProject = (contact) => {
-        if (state.projects.length === 0) {
+        if (projects.length === 0) {
             addToast('No projects available to assign', 'warning');
             return;
         }
         setAssignContact(contact);
         const assignedIds = (contact.project_contacts || []).map(pc => String(pc.project_id));
-        const unassignedProject = state.projects.find(project => !assignedIds.includes(String(project.id)));
+        const unassignedProject = projects.find(project => !assignedIds.includes(String(project.id)));
         const defaultProject = unassignedProject || state.projects[0];
         setSelectedAssignProject(defaultProject ? String(defaultProject.id) : '');
         setShowAssignModal(true);
@@ -333,16 +365,12 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
         if (!contact) return;
         const firstProjectId = contact.project_contacts?.[0]?.project_id;
         if (firstProjectId) {
-            const channel = state.messageChannels.find(ch => String(ch.project_id) === String(firstProjectId));
-            if (channel) {
-                dispatch({ type: 'SET_CHANNEL', payload: channel.id });
-                navigate('/team');
-                addToast('Opening project discussion.', 'info');
-                return;
-            }
+            dispatch({ type: 'SET_PROJECT', payload: firstProjectId });
+            dispatch({ type: 'SET_VIEW', payload: 'Projects' });
+            navigate(ROUTE_PATHS.projectStream.replace(':id', firstProjectId));
+            return;
         }
-        navigate('/team');
-        addToast('Open Team and pick a project channel to start chatting.', 'info');
+        addToast('Assign this contact to a project first to open the project stream.', 'info');
     };
 
     return (
@@ -352,9 +380,11 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     <h1 className={`${embedded ? 'text-2xl' : 'text-3xl'} font-bold text-gray-900`}>
                         {embedded ? 'Directory' : 'Contacts'}
                     </h1>
-                    {!embedded && (
-                        <p className="text-gray-500">Manage your team members and trade partners</p>
-                    )}
+                    <p className="text-gray-500">
+                        {embedded
+                            ? 'Manage your team members, trade partners, and project assignments'
+                            : 'Manage your team members and trade partners'}
+                    </p>
                 </div>
                 <div className="flex gap-3">
                     <button 
@@ -425,7 +455,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                         <option value="All Projects">All Projects</option>
-                        {state.projects.map(project => (
+                        {projects.map(project => (
                             <option key={project.id} value={String(project.id)}>{project.name}</option>
                         ))}
                     </select>
@@ -444,7 +474,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                 </div>
             </div>
 
-            <div className="flex border-b border-slate-200 mb-6">
+            <div className="flex border-b border-gray-200 mb-6">
                 <button 
                     onClick={() => setActiveTab('Team')} 
                     className={`px-4 py-2 text-sm font-semibold ${activeTab === 'Team' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
@@ -460,7 +490,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             </div>
             
             {activeTab === 'Team' ? (
-                <div className="p-6 app-card" data-onboarding="contacts-list">
+                <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="contacts-list">
                     <h2 className="text-xl font-bold mb-4">
                         Team Members ({filteredContacts.length})
                     </h2>
@@ -488,7 +518,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     )}
                 </div>
             ) : (
-                <div className="p-6 app-card" data-onboarding="contacts-list">
+                <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="contacts-list">
                     <h2 className="text-xl font-bold mb-4">
                         All Trade Partners ({filteredContacts.length})
                     </h2>
@@ -549,24 +579,22 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
 
             {/* Import Modal */}
             {showImportModal && (
-                <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/30 flex items-center justify-center z-50">
-                    <div className="app-card shadow-2xl p-8 w-full max-w-md">
-                        <h2 className="text-2xl font-bold text-slate-900 mb-6">Import Contacts</h2>
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
+                        <h2 className="text-2xl font-bold mb-6">Import Contacts</h2>
                         <p className="text-gray-600 mb-6">
                             Import contacts from a CSV file. The file should have columns: Name, Role, Type, Company, Trade, Email, Phone, Status
                         </p>
                         <div className="flex justify-end gap-4">
                             <button 
-                                type="button"
                                 onClick={() => setShowImportModal(false)}
-                                className="px-6 py-2 app-action-secondary rounded-lg transition-colors"
+                                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
                             >
                                 Cancel
                             </button>
                             <button 
-                                type="button"
                                 onClick={handleImportContacts}
-                                className="px-6 py-2 app-action-primary rounded-lg transition-colors"
+                                className="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                             >
                                 Choose File
                             </button>
@@ -577,24 +605,22 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
 
             {/* Export Modal */}
             {showExportModal && (
-                <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/30 flex items-center justify-center z-50">
-                    <div className="app-card shadow-2xl p-8 w-full max-w-md">
-                        <h2 className="text-2xl font-bold text-slate-900 mb-6">Export Contacts</h2>
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
+                        <h2 className="text-2xl font-bold mb-6">Export Contacts</h2>
                         <p className="text-gray-600 mb-6">
                             Export {activeTab.toLowerCase()} contacts as a CSV file.
                         </p>
                         <div className="flex justify-end gap-4">
                             <button 
-                                type="button"
                                 onClick={() => setShowExportModal(false)}
-                                className="px-6 py-2 app-action-secondary rounded-lg transition-colors"
+                                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
                             >
                                 Cancel
                             </button>
                             <button 
-                                type="button"
                                 onClick={handleExportContacts}
-                                className="px-6 py-2 rounded-lg bg-emerald-600 text-white border border-emerald-700 hover:bg-emerald-700 transition-colors"
+                                className="px-6 py-2 text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
                             >
                                 Export
                             </button>
@@ -607,12 +633,12 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             {showAssignModal && assignContact && (() => {
                 // Get projects the contact is already assigned to
                 const assignedProjectIds = (assignContact.project_contacts || []).map(pc => String(pc.project_id));
-                const assignedProjects = state.projects.filter(p => assignedProjectIds.includes(String(p.id)));
-                const unassignedProjects = state.projects.filter(p => !assignedProjectIds.includes(String(p.id)));
+                const assignedProjects = projects.filter(p => assignedProjectIds.includes(String(p.id)));
+                const unassignedProjects = projects.filter(p => !assignedProjectIds.includes(String(p.id)));
                 
                 return (
-                    <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/30 flex items-center justify-center z-50 p-4">
-                        <div className="app-card shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+                    <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
                             <h2 className="text-2xl font-bold mb-2">Assign to Project</h2>
                             <p className="text-gray-600 text-sm mb-4">
                                 Manage project assignments for <span className="font-semibold">{assignContact.name}</span>.
@@ -647,7 +673,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                                     value={selectedAssignProject}
                                     onChange={e => setSelectedAssignProject(e.target.value)}
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                                    disabled={state.projects.length === 0 || unassignedProjects.length === 0}
+                                    disabled={projects.length === 0 || unassignedProjects.length === 0}
                                 >
                                     <option value="" disabled>
                                         {unassignedProjects.length === 0 
@@ -665,7 +691,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                                         This contact is already assigned to all available projects.
                                     </p>
                                 )}
-                                {assignContact && state.projects.length === 0 && (
+                                {assignContact && projects.length === 0 && (
                                     <p className="text-sm text-amber-600 mt-2">Create a project to use this action.</p>
                                 )}
                             </div>
@@ -689,6 +715,11 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     </div>
                 );
             })()}
+            <UpgradeRequiredModal
+                isOpen={showExportUpgrade}
+                onClose={() => setShowExportUpgrade(false)}
+                feature="exports"
+            />
         </>
     );
 }

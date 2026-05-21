@@ -1,43 +1,31 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useAppContext, useLazyDataLoader, supabaseClient } from '../context/AppContext';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
 import ProjectModal from '../components/ProjectModal';
 import CreateFromTemplateModal from '../components/CreateFromTemplateModal';
-import MsProjectImportModal from '../components/MsProjectImportModal';
 import MyDaySidebar from '../components/MyDaySidebar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import DashboardStats from '../components/DashboardStats';
+import ProgressReportModal from '../components/ProgressReportModal';
+import MsProjectImportModal from '../components/MsProjectImportModal';
 import ViewSwitcher from '../components/ViewSwitcher';
 import ProjectBoardView from '../components/ProjectBoardView';
 import ProjectListView from '../components/ProjectListView';
 import PermissionGuard from '../components/PermissionGuard';
-import ProgressReportModal from '../components/ProgressReportModal';
-import Icon from '../components/Icon';
+import ProjectLimitReachedModal from '../components/ProjectLimitReachedModal';
 import { useProjectShortcuts } from '../hooks/useKeyboardShortcuts';
-import { logProjectCreated, logActivity } from '../utils/activityLogger';
+import {
+  canCreateProject,
+  isPersonalWorkspace,
+  isProjectLimitError,
+} from '@siteweave/core-logic';
 
 function DashboardView() {
-    const { t } = useTranslation();
+    const navigate = useNavigate();
     const { state, dispatch } = useAppContext();
-    const { loadTasksIfNeeded } = useLazyDataLoader();
     const { addToast } = useToast();
-
-    const user = state.user;
-    const projects = state.projects || [];
-
-    const tasksBootstrapKey = useMemo(
-        () =>
-            `${user?.id ?? ''}|${state.currentOrganization?.id ?? ''}|${projects.length > 0 ? '1' : '0'}`,
-        [user?.id, state.currentOrganization?.id, projects.length],
-    );
-
-    // Lazy load tasks for dashboard KPIs once user/org/projects gate is stable (dedupe in lazyDataLoader handles overlap)
-    useEffect(() => {
-        if (!user?.id) return;
-        void loadTasksIfNeeded();
-    }, [tasksBootstrapKey, state.tasksLoaded, loadTasksIfNeeded, user?.id]);
     const [showModal, setShowModal] = useState(false);
     const [isCreatingProject, setIsCreatingProject] = useState(false);
     const [isUpdatingProject, setIsUpdatingProject] = useState(false);
@@ -45,49 +33,58 @@ function DashboardView() {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [projectToDelete, setProjectToDelete] = useState(null);
     const [viewType, setViewType] = useState('card'); // 'card', 'list', or 'board'
-    const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [showCreateFromTemplateModal, setShowCreateFromTemplateModal] = useState(false);
+    const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
-    const [dashboardMenu, setDashboardMenu] = useState(null);
-    const dashboardMenuRef = useRef(null);
+    const [showProjectLimitModal, setShowProjectLimitModal] = useState(false);
+
+    const isGuestOnly = state.isProjectCollaborator && !state.currentOrganization;
+
+    const guardCanCreateProject = async () => {
+        if (isGuestOnly) return false;
+        if (!state.currentOrganization) return true;
+        if (isPersonalWorkspace(state.currentOrganization)) {
+            const allowed = await canCreateProject(supabaseClient, state.currentOrganization.id, {
+                accountIntent: state.accountIntent,
+                isGuestCollaborator: isGuestOnly,
+            });
+            if (!allowed) {
+                setShowProjectLimitModal(true);
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const tryOpenCreateProject = async () => {
+        if (!(await guardCanCreateProject())) return;
+        setShowModal(true);
+    };
+
+    const tryOpenTemplateModal = async () => {
+        if (!(await guardCanCreateProject())) return;
+        setShowCreateFromTemplateModal(true);
+    };
+
+    const tryOpenMsImportModal = async () => {
+        if (!(await guardCanCreateProject())) return;
+        setShowMsProjectImportModal(true);
+    };
 
     // Keyboard shortcuts
     useProjectShortcuts({
-        createProject: () => setShowModal(true),
+        createProject: () => { tryOpenCreateProject(); },
         goToDashboard: () => dispatch({ type: 'SET_VIEW', payload: 'Dashboard' })
     });
-
-    useEffect(() => {
-        if (!dashboardMenu) return undefined;
-
-        const handleClickOutside = (event) => {
-            if (dashboardMenuRef.current && !dashboardMenuRef.current.contains(event.target)) {
-                setDashboardMenu(null);
-            }
-        };
-
-        const handleEscape = (event) => {
-            if (event.key === 'Escape') {
-                setDashboardMenu(null);
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        document.addEventListener('keydown', handleEscape);
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-            document.removeEventListener('keydown', handleEscape);
-        };
-    }, [dashboardMenu]);
 
     const handleSaveProject = async (projectData) => {
         if (editingProject) {
             setIsUpdatingProject(true);
             // Remove selectedContacts and emailAddresses from projectData as they're not columns in the projects table
             const { selectedContacts, emailAddresses, ...projectFields } = projectData;
-                const projectDataWithAudit = {
+            const projectDataWithAudit = {
                 ...projectFields,
-                updated_by_user_id: user?.id,
+                updated_by_user_id: state.user.id,
                 updated_at: new Date().toISOString()
             };
             const { data: updatedProject, error } = await supabaseClient
@@ -97,7 +94,7 @@ function DashboardView() {
                 .select()
                 .single();
             if (error) {
-                addToast(t('toast.error_updating_project', { message: error.message }), 'error');
+                addToast('Error updating project: ' + error.message, 'error');
             } else {
                 // Update project contacts if selectedContacts or emailAddresses is provided
                 if (selectedContacts !== undefined || projectData.emailAddresses) {
@@ -109,7 +106,7 @@ function DashboardView() {
                     
                     if (deleteError) {
                         console.error('Error removing existing contacts:', deleteError);
-                        addToast(t('toast.project_updated_contacts_warning'), 'warning');
+                        addToast('Project updated, but contacts could not be updated', 'warning');
                     } else {
                         // Handle email addresses - create contacts for emails that don't exist
                         const emailAddresses = projectData.emailAddresses || [];
@@ -144,7 +141,7 @@ function DashboardView() {
                                         
                                         if (contactError) {
                                             console.error(`Error creating contact for ${email}:`, contactError);
-                                            addToast(t('toast.could_not_create_contact', { email }), 'warning');
+                                            addToast(`Could not create contact for ${email}`, 'warning');
                                         } else {
                                             contactsToAdd.push(newContact.id);
                                             // Refresh contacts in context
@@ -153,7 +150,7 @@ function DashboardView() {
                                     }
                                 } catch (error) {
                                     console.error(`Error processing email ${email}:`, error);
-                                    addToast(t('toast.error_processing_email', { email }), 'warning');
+                                    addToast(`Error processing ${email}`, 'warning');
                                 }
                             }
                         }
@@ -173,39 +170,13 @@ function DashboardView() {
                                 });
                             if (contactsError && contactsError.code !== '23505') {
                                 console.error('Error adding contacts to project:', contactsError);
-                                addToast(t('toast.project_updated_some_contacts_warning'), 'warning');
+                                addToast('Project updated, but some contacts could not be added', 'warning');
                             }
                         }
                     }
                 }
                 dispatch({ type: 'UPDATE_PROJECT', payload: updatedProject });
-                addToast(t('toast.project_updated_successfully'), 'success');
-                const changedFields = [];
-                if (editingProject.name !== updatedProject.name) changedFields.push('name');
-                if (editingProject.address !== updatedProject.address) changedFields.push('address');
-                if (editingProject.status !== updatedProject.status) changedFields.push('status');
-                if (String(editingProject.due_date || '') !== String(updatedProject.due_date || '')) {
-                    changedFields.push('due_date');
-                }
-                const statusChanged = editingProject.status !== updatedProject.status;
-                if (user && (statusChanged || changedFields.length > 0)) {
-                    const details = {};
-                    if (statusChanged) {
-                        details.old_status = editingProject.status;
-                        details.new_status = updatedProject.status;
-                    }
-                    if (changedFields.length > 0) details.changed_fields = changedFields;
-                    logActivity({
-                        action: 'updated',
-                        entityType: 'project',
-                        entityId: updatedProject.id,
-                        entityName: updatedProject.name,
-                        projectId: updatedProject.id,
-                        organizationId: updatedProject.organization_id,
-                        user,
-                        details
-                    });
-                }
+                addToast('Project updated successfully!', 'success');
                 setShowModal(false);
                 setEditingProject(null);
             }
@@ -217,7 +188,7 @@ function DashboardView() {
             
             // Ensure organization_id is included for multi-tenant RLS
             if (!state.currentOrganization?.id) {
-                addToast(t('toast.error_no_organization'), 'error');
+                addToast('Error: No organization found. Please contact support.', 'error');
                 setIsCreatingProject(false);
                 return;
             }
@@ -225,9 +196,9 @@ function DashboardView() {
             const projectDataWithAudit = {
                 ...projectFields,
                 organization_id: state.currentOrganization.id,
-                project_manager_id: user?.id,
-                created_by_user_id: user?.id,
-                updated_by_user_id: user?.id,
+                project_manager_id: state.user.id,
+                created_by_user_id: state.user.id,
+                updated_by_user_id: state.user.id,
                 updated_at: new Date().toISOString()
             };
             console.log('Creating project with data:', projectDataWithAudit);
@@ -238,26 +209,12 @@ function DashboardView() {
                 .single();
             if (error) {
                 console.error('Project creation error:', error);
-                addToast(t('toast.error_creating_project', { message: error.message }), 'error');
-            } else {
-                // Create a message channel for the project
-                const { data: messageChannel, error: channelError } = await supabaseClient
-                    .from('message_channels')
-                    .insert({
-                        project_id: createdProject.id,
-                        name: `${createdProject.name} Discussion`,
-                        organization_id: state.currentOrganization?.id
-                    })
-                    .select()
-                    .single();
-
-                if (channelError) {
-                    console.error('Error creating message channel:', channelError);
-                    addToast(t('toast.project_created_channel_warning'), 'warning');
+                if (isProjectLimitError(error)) {
+                    setShowProjectLimitModal(true);
                 } else {
-                    dispatch({ type: 'ADD_CHANNEL', payload: messageChannel });
+                    addToast('Error creating project: ' + error.message, 'error');
                 }
-
+            } else {
                 // Handle email addresses - create contacts for emails that don't exist
                 const emailAddresses = projectData.emailAddresses || [];
                 const contactsToAdd = [...(selectedContacts || [])];
@@ -286,14 +243,14 @@ function DashboardView() {
                                         role: 'Team Member',
                                         status: 'Available',
                                         organization_id: state.currentOrganization?.id,
-                                        created_by_user_id: user?.id
+                                        created_by_user_id: state.user.id
                                     })
                                     .select()
                                     .single();
                                 
                                 if (contactError) {
                                     console.error(`Error creating contact for ${email}:`, contactError);
-                                    addToast(t('toast.could_not_create_contact', { email }), 'warning');
+                                    addToast(`Could not create contact for ${email}`, 'warning');
                                 } else {
                                     contactsToAdd.push(newContact.id);
                                     // Refresh contacts in context
@@ -302,7 +259,7 @@ function DashboardView() {
                             }
                         } catch (error) {
                             console.error(`Error processing email ${email}:`, error);
-                            addToast(t('toast.error_processing_email', { email }), 'warning');
+                            addToast(`Error processing ${email}`, 'warning');
                         }
                     }
                 }
@@ -315,24 +272,24 @@ function DashboardView() {
                 const { data: profile } = await supabaseClient
                     .from('profiles')
                     .select('contact_id')
-                    .eq('id', user?.id)
+                    .eq('id', state.user.id)
                     .single();
                 
                 creatorContactId = profile?.contact_id;
                 
                 // If no contact_id exists, create a contact for the creator
-                if (!creatorContactId && user?.email) {
-                    console.log('Creator has no contact_id, creating contact for:', user.email);
+                if (!creatorContactId && state.user.email) {
+                    console.log('Creator has no contact_id, creating contact for:', state.user.email);
                     const { data: newCreatorContact, error: creatorContactError } = await supabaseClient
                         .from('contacts')
                         .insert({
-                            name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User',
-                            email: user?.email,
+                            name: state.user.user_metadata?.full_name || state.user.email.split('@')[0] || 'User',
+                            email: state.user.email,
                             type: 'Team',
                             role: 'Team Member',
                             status: 'Available',
                             organization_id: state.currentOrganization?.id,
-                            created_by_user_id: user?.id
+                            created_by_user_id: state.user.id
                         })
                         .select('id')
                         .single();
@@ -345,7 +302,7 @@ function DashboardView() {
                         await supabaseClient
                             .from('profiles')
                             .update({ contact_id: creatorContactId })
-                            .eq('id', user?.id);
+                            .eq('id', state.user.id);
                         
                         // Refresh contacts in context
                         dispatch({ type: 'ADD_CONTACT', payload: newCreatorContact });
@@ -360,7 +317,7 @@ function DashboardView() {
                     console.log('Adding creator to project_contacts:', creatorContactId);
                 } else if (!creatorContactId) {
                     console.error('CRITICAL: Could not create or find contact for project creator. Project may not be visible.');
-                    addToast(t('toast.warning_could_not_add_you'), 'warning');
+                    addToast('Warning: Could not automatically add you to the project. Please contact support.', 'warning');
                 }
                 
                 // Add all contacts (existing + newly created + creator) to the project
@@ -402,9 +359,9 @@ function DashboardView() {
                     if (failedContacts.length > 0) {
                         console.warn('Some contacts could not be added:', failedContacts);
                         if (insertedContactIds.length === 0) {
-                            addToast(t('toast.project_created_contacts_warning'), 'warning');
+                            addToast('Project created, but contacts could not be added. You may need to add them manually.', 'warning');
                         } else {
-                            addToast(t('toast.project_created_some_contacts_warning', { count: failedContacts.length }), 'warning');
+                            addToast(`Project created. ${failedContacts.length} contact(s) could not be added automatically.`, 'warning');
                         }
                     } else {
                         console.log('Successfully added all contacts to project:', insertedContactIds);
@@ -413,8 +370,7 @@ function DashboardView() {
                     console.warn('No contacts to add to project - project may not be visible after reload');
                 }
                 dispatch({ type: 'ADD_PROJECT', payload: createdProject });
-                logProjectCreated(createdProject, user);
-                addToast(t('toast.project_created_successfully'), 'success');
+                addToast('Project created successfully!', 'success');
                 setShowModal(false);
             }
             setIsCreatingProject(false);
@@ -435,10 +391,10 @@ function DashboardView() {
         if (projectToDelete) {
             const { error } = await supabaseClient.from('projects').delete().eq('id', projectToDelete.id);
             if (error) {
-                addToast(t('toast.error_deleting_project', { message: error.message }), 'error');
+                addToast('Error deleting project: ' + error.message, 'error');
             } else {
                 dispatch({ type: 'DELETE_PROJECT', payload: projectToDelete.id });
-                addToast(t('toast.project_deleted_successfully'), 'success');
+                addToast('Project deleted successfully!', 'success');
             }
         }
         setShowDeleteConfirm(false);
@@ -453,96 +409,72 @@ function DashboardView() {
     const handleProjectClick = (project) => {
         dispatch({ type: 'SET_PROJECT', payload: project.id });
         dispatch({ type: 'SET_VIEW', payload: 'Projects' });
+        navigate(`/projects/${project.id}/tasks`);
     };
 
     return (
         <>
-            <div className="grid h-full grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
-                <div className="min-w-0">
-                    <header className="mb-8 flex flex-wrap items-start justify-between gap-3" data-onboarding="dashboard-welcome" ref={dashboardMenuRef}>
-                         <div className="min-w-0">
-                            <h1 className="text-3xl font-bold text-gray-900 mb-1 ui-ellipsis-1">{t('dashboard.title')}</h1>
-                            <p className="text-gray-500 text-sm">{t('dashboard.subtitle')}</p>
-                        </div>
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                            <ViewSwitcher currentView={viewType} onViewChange={setViewType} />
-                            <PermissionGuard permission="can_create_projects">
-                                <button 
-                                    onClick={() => setShowModal(true)} 
-                                    data-onboarding="new-project-btn"
-                                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full shadow-xs hover:bg-blue-700 btn-smooth"
-                                >
-                                    + {t('dashboard.new_project')}
-                                </button>
-                            </PermissionGuard>
-                            <div className="relative">
-                                <button
-                                    type="button"
-                                    onClick={() => setDashboardMenu((current) => current === 'actions' ? null : 'actions')}
-                                    className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-xs hover:bg-gray-50"
-                                    aria-expanded={dashboardMenu === 'actions'}
-                                >
-                                    <span>Actions</span>
-                                    <Icon path="M6 9l6 6 6-6" className="h-4 w-4" />
-                                </button>
-                                {dashboardMenu === 'actions' && (
-                                    <div className="absolute right-0 top-12 z-20 w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
-                                        <PermissionGuard permission="can_manage_org_progress_reports">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowProgressReportModal(true);
-                                                    setDashboardMenu(null);
-                                                }}
-                                                className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                                            >
-                                                Organization progress reports
-                                            </button>
-                                        </PermissionGuard>
-                                        <PermissionGuard permission="can_create_projects">
-                                            <button 
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowCreateFromTemplateModal(true);
-                                                    setDashboardMenu(null);
-                                                }} 
-                                                className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                                            >
-                                                From template
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowMsProjectImportModal(true);
-                                                    setDashboardMenu(null);
-                                                }}
-                                                className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                                            >
-                                                Import MS Project XML
-                                            </button>
-                                        </PermissionGuard>
-                                    </div>
-                                )}
+            <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 h-full">
+                <div className="xl:col-span-3">
+                    <header className="mb-8 app-card p-5" data-onboarding="dashboard-welcome">
+                        <div className="flex min-w-0 items-center gap-4">
+                            <div className="min-w-0 shrink">
+                                <h1 className="app-section-title mb-0.5 text-2xl sm:text-[1.75rem]">
+                                    {isGuestOnly ? 'Your projects' : 'Project Dashboard'}
+                                </h1>
+                                <p className="app-section-subtitle truncate">
+                                    {isGuestOnly ? 'Projects shared with you' : 'Manage your construction projects'}
+                                </p>
+                            </div>
+                            <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                <ViewSwitcher compact currentView={viewType} onViewChange={setViewType} />
+                                <PermissionGuard permission="can_create_projects">
+                                    <button
+                                        onClick={() => tryOpenCreateProject()}
+                                        data-onboarding="new-project-btn"
+                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-primary"
+                                    >
+                                        + New Project
+                                    </button>
+                                    <button
+                                        onClick={() => tryOpenTemplateModal()}
+                                        title="Create from template"
+                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-secondary"
+                                    >
+                                        Template
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => tryOpenMsImportModal()}
+                                        title="Import MS Project XML"
+                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-slate-700 text-white hover:bg-slate-800"
+                                    >
+                                        Import XML
+                                    </button>
+                                </PermissionGuard>
+                                <PermissionGuard permission="can_manage_org_progress_reports">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowProgressReportModal(true)}
+                                        title="Organization progress reports"
+                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-emerald-600 text-white hover:bg-emerald-700"
+                                    >
+                                        Org reports
+                                    </button>
+                                </PermissionGuard>
                             </div>
                         </div>
                     </header>
-
-                    {showProgressReportModal && (
-                        <ProgressReportModal
-                            projectId={null}
-                            onClose={() => setShowProgressReportModal(false)}
-                        />
-                    )}
                     
                     {/* Dashboard Statistics */}
                     <DashboardStats />
                     
                     {/* Project Views */}
-                    {projects.length > 0 ? (
+                    {state.projects.length > 0 ? (
                         <div data-onboarding="project-grid">
                             {viewType === 'card' && (
-                                <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
-                                    {projects.map(p => (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {state.projects.map(p => (
                                         <div key={p.id} data-onboarding="project-cards">
                                             <ProjectCard 
                                                 project={p} 
@@ -555,7 +487,7 @@ function DashboardView() {
                             )}
                             {viewType === 'list' && (
                                 <ProjectListView
-                                    projects={projects}
+                                    projects={state.projects}
                                     onEdit={handleEditProject}
                                     onDelete={handleDeleteProject}
                                     onProjectClick={handleProjectClick}
@@ -563,7 +495,7 @@ function DashboardView() {
                             )}
                             {viewType === 'board' && (
                                 <ProjectBoardView
-                                    projects={projects}
+                                    projects={state.projects}
                                     onEdit={handleEditProject}
                                     onDelete={handleDeleteProject}
                                     onProjectClick={handleProjectClick}
@@ -571,30 +503,51 @@ function DashboardView() {
                             )}
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-                            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-5">
+                        <div className="flex flex-col items-center justify-center py-20 px-6 text-center app-card">
+                            <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-5">
                                 <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                                 </svg>
                             </div>
-                            <h3 className="text-xl font-semibold text-gray-900 mb-2">{t('dashboard.no_projects_yet')}</h3>
-                            <p className="text-gray-500 mb-6 max-w-md text-sm leading-relaxed">{t('dashboard.no_projects_description')}</p>
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                                {isGuestOnly ? 'No projects shared yet' : 'No projects yet'}
+                            </h3>
+                            <p className="text-gray-500 mb-6 max-w-md text-sm leading-relaxed">
+                                {isGuestOnly
+                                    ? 'Ask your contractor to send you a project invite link or code. You can sign in with any email.'
+                                    : 'Get started by creating your first construction project. Track progress, manage tasks, and collaborate with your team.'}
+                            </p>
+                            {!isGuestOnly && (
                             <button 
-                                onClick={() => setShowModal(true)}
-                                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+                                onClick={() => tryOpenCreateProject()}
+                                className="px-6 py-3 rounded-lg transition-colors font-medium text-sm app-action-primary"
                             >
-                                {t('dashboard.create_first_project')}
+                                Create Your First Project
                             </button>
+                            )}
                         </div>
                     )}
                 </div>
                 <aside 
                     data-onboarding="my-day-sidebar"
-                    className="h-fit min-w-0 bg-white rounded-xl shadow-xs p-5 border border-gray-200"
+                    className="app-card p-5 h-fit"
                 >
                     <MyDaySidebar />
                 </aside>
             </div>
+            {showCreateFromTemplateModal && (
+                <CreateFromTemplateModal onClose={() => setShowCreateFromTemplateModal(false)} />
+            )}
+            {showProgressReportModal && (
+                <ProgressReportModal onClose={() => setShowProgressReportModal(false)} />
+            )}
+            {showMsProjectImportModal && (
+                <MsProjectImportModal
+                    context="newProject"
+                    onClose={() => setShowMsProjectImportModal(false)}
+                    onSuccess={() => setShowMsProjectImportModal(false)}
+                />
+            )}
             {showModal && (
                 <ProjectModal 
                     onClose={handleCloseModal} 
@@ -603,28 +556,18 @@ function DashboardView() {
                     project={editingProject}
                 />
             )}
-            {showCreateFromTemplateModal && (
-                <CreateFromTemplateModal onClose={() => setShowCreateFromTemplateModal(false)} />
-            )}
-            {showMsProjectImportModal && (
-                <MsProjectImportModal
-                    context="newProject"
-                    onClose={() => setShowMsProjectImportModal(false)}
-                    onSuccess={(newProjectId) => {
-                        if (newProjectId) {
-                            dispatch({ type: 'SET_VIEW', payload: 'Projects' });
-                        }
-                    }}
-                />
-            )}
+            <ProjectLimitReachedModal
+                isOpen={showProjectLimitModal}
+                onClose={() => setShowProjectLimitModal(false)}
+            />
             <ConfirmDialog
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
                 onConfirm={confirmDeleteProject}
-                title={t('dashboard.delete_project')}
-                message={t('dashboard.delete_project_message', { name: projectToDelete?.name || '' })}
-                confirmText={t('common.delete')}
-                cancelText={t('common.cancel')}
+                title="Delete Project"
+                message={`Are you sure you want to delete "${projectToDelete?.name}"? This will also delete all associated tasks, files, stream posts, and task comments. This action cannot be undone.`}
+                confirmText="Delete"
+                cancelText="Cancel"
             />
         </>
     );

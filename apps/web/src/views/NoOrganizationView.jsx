@@ -1,11 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from '../components/Icon';
+import {
+  extractProjectInviteTokenFromUrl,
+  provisionPersonalWorkspace,
+  redeemProjectInvite,
+} from '../utils/workspaceClient';
 
 function NoOrganizationView() {
   const { state, dispatch } = useAppContext();
   const { addToast } = useToast();
+  const [inviteUrl, setInviteUrl] = useState('');
+  const [shortCode, setShortCode] = useState('');
+  const [isRedeeming, setIsRedeeming] = useState(false);
+  const [isProvisioning, setIsProvisioning] = useState(false);
 
   const handleSignOut = async () => {
     try {
@@ -22,7 +31,50 @@ function NoOrganizationView() {
     }
   };
 
-  // If user is a project collaborator, show different message
+  const handleRedeemInvite = async () => {
+    setIsRedeeming(true);
+    try {
+      const token = extractProjectInviteTokenFromUrl(inviteUrl) || inviteUrl.trim();
+      const result = await redeemProjectInvite(supabaseClient, {
+        token: token.length > 20 ? token : undefined,
+        shortCode: shortCode.trim() || undefined,
+      });
+      if (result?.success) {
+        addToast('Project access granted!', 'success');
+        window.location.reload();
+      } else {
+        addToast(result?.error || 'Invalid invite', 'error');
+      }
+    } catch (e) {
+      addToast(e?.message || 'Failed to redeem invite', 'error');
+    } finally {
+      setIsRedeeming(false);
+    }
+  };
+
+  const handleCreateWorkspace = async () => {
+    setIsProvisioning(true);
+    try {
+      await supabaseClient.from('profiles').upsert({
+        id: state.user.id,
+        account_intent: 'workspace_owner',
+        role: 'Team',
+      }, { onConflict: 'id' });
+      dispatch({ type: 'SET_ACCOUNT_INTENT', payload: 'workspace_owner' });
+      const result = await provisionPersonalWorkspace(supabaseClient, { force: true });
+      if (result?.success) {
+        addToast('Your workspace is ready!', 'success');
+        window.location.reload();
+      } else {
+        addToast(result?.error || 'Could not create workspace', 'error');
+      }
+    } catch (e) {
+      addToast(e?.message || 'Failed to create workspace', 'error');
+    } finally {
+      setIsProvisioning(false);
+    }
+  };
+
   if (state.isProjectCollaborator && state.collaborationProjects.length > 0) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
@@ -41,7 +93,7 @@ function NoOrganizationView() {
           </div>
           <div className="space-y-4">
             <p className="text-sm text-gray-500">
-              You can access your assigned projects from the dashboard. If you need to join an organization, please contact your administrator.
+              Open your shared projects from the dashboard.
             </p>
             <button
               type="button"
@@ -63,7 +115,64 @@ function NoOrganizationView() {
     );
   }
 
-  // User has no organization and no project access
+  const isGuestWaiting = state.organizationError === 'guest_waiting' || state.accountIntent === 'guest_only';
+
+  if (isGuestWaiting) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-8">
+        <div className="max-w-md w-full app-card p-8 shadow-lg">
+          <h1 className="text-2xl font-bold text-slate-900 mb-2 text-center">Waiting for a project invite</h1>
+          <p className="text-slate-600 text-sm text-center mb-6">
+            If your contractor added the wrong email, ask them to copy the invite link from the project team page and send it to you. You can sign in with any email or Google.
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Paste invite link</label>
+              <input
+                type="url"
+                value={inviteUrl}
+                onChange={(e) => setInviteUrl(e.target.value)}
+                placeholder="https://app.siteweave.org/project-invite/..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Or enter invite code</label>
+              <input
+                type="text"
+                value={shortCode}
+                onChange={(e) => setShortCode(e.target.value.toUpperCase())}
+                placeholder="8-character code"
+                maxLength={8}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm uppercase tracking-widest"
+              />
+            </div>
+            <button
+              type="button"
+              disabled={isRedeeming || (!inviteUrl.trim() && !shortCode.trim())}
+              onClick={handleRedeemInvite}
+              className="w-full app-action-primary py-2 rounded-lg disabled:opacity-50"
+            >
+              {isRedeeming ? 'Opening project…' : 'Open invite'}
+            </button>
+            <button
+              type="button"
+              disabled={isProvisioning}
+              onClick={handleCreateWorkspace}
+              className="w-full app-action-secondary py-2 rounded-lg text-sm disabled:opacity-50"
+            >
+              {isProvisioning ? 'Creating…' : 'I want to run my own projects'}
+            </button>
+            <button type="button" onClick={handleSignOut} className="w-full text-sm text-gray-500 hover:text-gray-700 py-2">
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="max-w-md w-full app-card p-8 text-center shadow-lg">
@@ -80,26 +189,28 @@ function NoOrganizationView() {
           </p>
         </div>
         <div className="space-y-4">
-          <p className="text-sm text-gray-500">
-            To access SiteWeave, you need to be:
-          </p>
           <ul className="text-sm text-gray-600 text-left space-y-2 mb-6">
             <li className="flex items-start">
               <span className="text-blue-600 mr-2">•</span>
-              <span>Invited to join an organization by an Organization Admin</span>
+              <span>Invited to join an organization by an admin</span>
             </li>
             <li className="flex items-start">
               <span className="text-blue-600 mr-2">•</span>
-              <span>Added as a project collaborator on a specific project</span>
+              <span>Added as a project collaborator with an invite link</span>
             </li>
           </ul>
-          <p className="text-sm text-gray-500 mb-6">
-            Please contact your administrator to be added to an organization or invited to a project.
-          </p>
+          <button
+            type="button"
+            onClick={handleCreateWorkspace}
+            disabled={isProvisioning}
+            className="w-full px-4 py-2 app-action-primary rounded-lg transition-colors disabled:opacity-50"
+          >
+            {isProvisioning ? 'Creating workspace…' : 'Create my workspace'}
+          </button>
           <button
             type="button"
             onClick={handleSignOut}
-            className="w-full px-4 py-2 app-action-primary rounded-lg transition-colors"
+            className="w-full px-4 py-2 app-action-secondary rounded-lg transition-colors"
           >
             Sign Out
           </button>

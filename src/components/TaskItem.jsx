@@ -16,6 +16,7 @@ const TaskItem = memo(function TaskItem({
     isSelected,
     onSelect,
     onOpenPhotos,
+    onOpenDiscussion = null,
     projectPhases = [],
     assignableContacts = [],
     dependencyMeta = null,
@@ -23,11 +24,11 @@ const TaskItem = memo(function TaskItem({
     onPingAssignee = null,
     onRequestAssigneeSmsConsent = null,
     pingingTaskId = null,
+    project = null,
 }) {
     const { i18n } = useTranslation();
     /** @type {[TaskPanel, (p: TaskPanel) => void]} */
     const [panel, setPanel] = useState(null);
-
     const [draftStart, setDraftStart] = useState(task.start_date || '');
     const [draftDue, setDraftDue] = useState(task.due_date || '');
     const [editTitle, setEditTitle] = useState(task.text);
@@ -580,6 +581,26 @@ const TaskItem = memo(function TaskItem({
                                 )}
                             </button>
                         </PermissionGuard>
+
+                        {/* Discussion */}
+                        {onOpenDiscussion && project && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenDiscussion(task.id);
+                                }}
+                                className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                                title="Discussion"
+                                aria-label={`Discussion for ${task.text}`}
+                            >
+                                <Icon
+                                    path="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                                    className="h-3.5 w-3.5 shrink-0"
+                                />
+                                <span className="hidden sm:inline">Discussion</span>
+                            </button>
+                        )}
 
                         {/* Assignee */}
                         <PermissionGuard

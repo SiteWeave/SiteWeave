@@ -7,6 +7,8 @@ import GuestTaskShareView from './views/GuestTaskShareView'
 import ForcePasswordReset from './components/ForcePasswordReset'
 import AppShell from './layouts/AppShell'
 import LoginView from './views/LoginView'
+import SignUpView from './views/SignUpView'
+import ProjectInviteAcceptPage from './components/ProjectInviteAcceptPage'
 import ProjectWorkspaceView from './views/ProjectWorkspaceView'
 import DashboardView from './views/DashboardView'
 import CalendarView from './views/CalendarView'
@@ -48,13 +50,14 @@ function WorkspaceLayout({ session }) {
       return
     }
 
+    const isPersonal = state.currentOrganization.workspace_type === 'personal'
     const isOrgAdmin = state.userRole?.name === 'Org Admin'
     const isFoundingAdmin =
       state.currentOrganization.created_by_user_id != null &&
       state.currentOrganization.created_by_user_id === state.user.id
     const wizardPending = !state.currentOrganization.setup_wizard_completed_at
 
-    if (isOrgAdmin && isFoundingAdmin && wizardPending) {
+    if (!isPersonal && isOrgAdmin && isFoundingAdmin && wizardPending) {
       setShowSetupWizard(true)
     } else {
       setShowSetupWizard(false)
@@ -254,6 +257,8 @@ export default function AppStandalone() {
       <Route path={ROUTE_PATHS.invite} element={<InviteAcceptPage />} />
       <Route path={ROUTE_PATHS.guestTaskShare} element={<GuestTaskShareView />} />
       <Route path={ROUTE_PATHS.login} element={<LoginView />} />
+      <Route path={ROUTE_PATHS.signup} element={<SignUpView />} />
+      <Route path={ROUTE_PATHS.projectInvite} element={<ProjectInviteAcceptPage />} />
       <Route
         element={(
           <ProtectedRoute session={session}>
@@ -268,11 +273,13 @@ export default function AppStandalone() {
         <Route path={ROUTE_PATHS.project} element={<Navigate to="tasks" replace />} />
         <Route path={ROUTE_PATHS.projectTasks} element={<ProjectWorkspaceRoute routeTab="tasks" />} />
         <Route path={ROUTE_PATHS.projectGantt} element={<ProjectWorkspaceRoute routeTab="gantt" />} />
+        <Route path={ROUTE_PATHS.projectUpdates} element={<ProjectWorkspaceRoute routeTab="updates" />} />
         <Route path={ROUTE_PATHS.projectFieldIssues} element={<ProjectWorkspaceRoute routeTab="field-issues" />} />
         <Route path={ROUTE_PATHS.projectActivity} element={<ProjectWorkspaceRoute routeTab="activity" />} />
-        <Route path={ROUTE_PATHS.messages} element={<Navigate to={ROUTE_PATHS.team} replace />} />
+        <Route path={ROUTE_PATHS.projectStream} element={<ProjectWorkspaceRoute routeTab="stream" />} />
+        <Route path={ROUTE_PATHS.messages} element={<Navigate to={ROUTE_PATHS.teamDirectory} replace />} />
+        <Route path={ROUTE_PATHS.team} element={<Navigate to={ROUTE_PATHS.teamDirectory} replace />} />
         <Route path={ROUTE_PATHS.calendar} element={<RouteStateSync view="Calendar"><CalendarView /></RouteStateSync>} />
-        <Route path={ROUTE_PATHS.team} element={<TeamHubView />} />
         <Route path={ROUTE_PATHS.teamDirectory} element={<TeamHubView />} />
         <Route path={ROUTE_PATHS.organization} element={<RouteStateSync view="Organization"><TeamView /></RouteStateSync>} />
         <Route path={ROUTE_PATHS.settings} element={<RouteStateSync view="Settings"><SettingsView /></RouteStateSync>} />

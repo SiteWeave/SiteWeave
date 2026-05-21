@@ -51,6 +51,9 @@ export default function CreateFromTemplateModal({ onClose, onCreated }) {
         if (newProject) dispatch({ type: 'ADD_PROJECT', payload: newProject });
         onCreated?.(result.projectId);
         onClose();
+      } else if (result.error === 'PROJECT_LIMIT_REACHED') {
+        addToast('Project limit reached. Contact sales to upgrade.', 'warning');
+        onClose();
       } else {
         addToast(result.error || 'Failed to create project', 'error');
       }

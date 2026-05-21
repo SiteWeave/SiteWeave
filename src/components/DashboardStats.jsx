@@ -1,5 +1,5 @@
-import React, { memo, useMemo, useState } from 'react';
-import { useAppContext } from '../context/AppContext';
+import React, { memo, useEffect, useMemo, useState } from 'react';
+import { useAppContext, useLazyDataLoader } from '../context/AppContext';
 
 function formatOverdueDueDate(value) {
     if (value == null || value === '') return '';
@@ -36,9 +36,43 @@ function getTaskAssigneeLabel(task, contactById) {
     return 'Unassigned';
 }
 
+function groupTasksByProject(tasks, projects) {
+    const projectById = new Map((projects || []).map((project) => [String(project.id), project]));
+    const grouped = new Map();
+    (tasks || []).forEach((task) => {
+        const key = String(task.project_id || 'unassigned');
+        const project = projectById.get(key);
+        if (!grouped.has(key)) {
+            grouped.set(key, {
+                projectName: project?.name || 'No project',
+                items: [],
+            });
+        }
+        grouped.get(key).items.push(task);
+    });
+    return Array.from(grouped.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
+}
+
 const DashboardStats = memo(function DashboardStats() {
     const { state } = useAppContext();
+    const { loadTasksIfNeeded, tasksLoaded } = useLazyDataLoader();
     const [showOverdueModal, setShowOverdueModal] = useState(false);
+    const [showCompletedModal, setShowCompletedModal] = useState(false);
+    const [tasksLoading, setTasksLoading] = useState(false);
+
+    useEffect(() => {
+        if (!state.user || state.authLoading) return;
+        let cancelled = false;
+        (async () => {
+            if (!tasksLoaded) setTasksLoading(true);
+            try {
+                await loadTasksIfNeeded();
+            } finally {
+                if (!cancelled) setTasksLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [state.user, state.authLoading, tasksLoaded, loadTasksIfNeeded]);
 
     const projects = state.projects || [];
     const tasks = state.tasks || [];
@@ -61,24 +95,16 @@ const DashboardStats = memo(function DashboardStats() {
         return new Date(task.due_date) < new Date();
     }).length;
     const overdueGroups = useMemo(() => {
-        const overdueItems = (tasks || []).filter((task) => {
+        const overdueItems = tasks.filter((task) => {
             if (!task.due_date || task.completed) return false;
             return new Date(task.due_date) < new Date();
         });
-        const projectById = new Map((projects || []).map((project) => [String(project.id), project]));
-        const grouped = new Map();
-        overdueItems.forEach((task) => {
-            const key = String(task.project_id || 'unassigned');
-            const project = projectById.get(key);
-            if (!grouped.has(key)) {
-                grouped.set(key, {
-                    projectName: project?.name || 'No project',
-                    items: [],
-                });
-            }
-            grouped.get(key).items.push(task);
-        });
-        return Array.from(grouped.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
+        return groupTasksByProject(overdueItems, projects);
+    }, [tasks, projects]);
+
+    const completedGroups = useMemo(() => {
+        const completedItems = tasks.filter((task) => task.completed);
+        return groupTasksByProject(completedItems, projects);
     }, [tasks, projects]);
     
     const stats = [
@@ -123,14 +149,22 @@ const DashboardStats = memo(function DashboardStats() {
                 <button
                     key={index}
                     type="button"
-                    disabled={stat.title !== 'Overdue Tasks' || stat.value <= 0}
+                    disabled={
+                        (stat.title === 'Overdue Tasks' && stat.value <= 0)
+                        || (stat.title === 'Tasks Completed' && stat.value <= 0)
+                    }
                     onClick={() => {
                         if (stat.title === 'Overdue Tasks' && stat.value > 0) {
                             setShowOverdueModal(true);
                         }
+                        if (stat.title === 'Tasks Completed' && stat.value > 0) {
+                            setShowCompletedModal(true);
+                        }
                     }}
                     className={`p-5 rounded-lg border text-left w-full ${
-                        stat.title === 'Overdue Tasks' && stat.value > 0 ? 'cursor-pointer hover:shadow-md transition-shadow' : 'cursor-default'
+                        (stat.title === 'Overdue Tasks' || stat.title === 'Tasks Completed') && stat.value > 0
+                            ? 'cursor-pointer hover:shadow-md transition-shadow'
+                            : 'cursor-default'
                     } ${getColorClasses(stat.color)}`}
                 >
                     <div className="flex items-center justify-between">
@@ -164,7 +198,9 @@ const DashboardStats = memo(function DashboardStats() {
                         </button>
                     </div>
                     <div className="p-5 overflow-y-auto max-h-[65vh] space-y-4">
-                        {overdueGroups.length === 0 ? (
+                        {tasksLoading ? (
+                            <p className="text-sm text-gray-500">Loading tasks…</p>
+                        ) : overdueGroups.length === 0 ? (
                             <p className="text-sm text-gray-500">No overdue tasks.</p>
                         ) : overdueGroups.map((group) => (
                             <div key={group.projectName} className="border border-gray-100 rounded-lg p-3">
@@ -183,6 +219,43 @@ const DashboardStats = memo(function DashboardStats() {
                                                 >
                                                     {formatOverdueDueDate(task.due_date)}
                                                 </time>
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        )}
+        {showCompletedModal && (
+            <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
+                <div className="w-full max-w-3xl bg-white rounded-xl shadow-xl border border-gray-200 max-h-[80vh] overflow-hidden">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                        <h3 className="text-lg font-semibold text-gray-900">Completed Tasks by Project</h3>
+                        <button
+                            type="button"
+                            onClick={() => setShowCompletedModal(false)}
+                            className="text-sm text-gray-600 hover:text-gray-900"
+                        >
+                            Close
+                        </button>
+                    </div>
+                    <div className="p-5 overflow-y-auto max-h-[65vh] space-y-4">
+                        {tasksLoading ? (
+                            <p className="text-sm text-gray-500">Loading tasks…</p>
+                        ) : completedGroups.length === 0 ? (
+                            <p className="text-sm text-gray-500">No completed tasks.</p>
+                        ) : completedGroups.map((group) => (
+                            <div key={group.projectName} className="border border-gray-100 rounded-lg p-3">
+                                <p className="text-sm font-semibold text-gray-800 mb-2">{group.projectName}</p>
+                                <ul className="space-y-1">
+                                    {group.items.map((task) => (
+                                        <li key={task.id} className="text-sm text-gray-700">
+                                            <span className="font-medium text-gray-800">{task.text}</span>
+                                            <span className="mt-0.5 block text-xs text-gray-500">
+                                                Assigned to {getTaskAssigneeLabel(task, contactById)}
                                             </span>
                                         </li>
                                     ))}

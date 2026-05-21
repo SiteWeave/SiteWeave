@@ -127,6 +127,9 @@ export function resolveNotificationRoute(data = {}) {
   }
 
   if (data.project_id) {
+    if (data.source_type === 'stream_post' || (typeof data.screen === 'string' && data.screen.includes('/stream'))) {
+      return `/projects/${data.project_id}`;
+    }
     return `/projects/${data.project_id}`;
   }
 
@@ -239,6 +242,43 @@ export async function acknowledgeNotification(supabase, options = {}) {
  * @param {Function} onNotificationTapped - Callback when notification tapped
  * @returns {Function} Cleanup function
  */
+/**
+ * When a new user_notification row arrives (from stream/task edge fn), show a local banner in foreground.
+ * Push still delivered via Expo when app is backgrounded.
+ */
+export function subscribeUserNotificationInserts(supabase, userId, userEmail) {
+  if (!supabase || !userId) return () => {};
+
+  const channel = supabase
+    .channel(`user_notifications_push:${userId}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'user_notifications' },
+      async (payload) => {
+        const row = payload.new;
+        if (!row) return;
+        if (row.recipient_user_id && row.recipient_user_id !== userId) return;
+        if (
+          !row.recipient_user_id &&
+          userEmail &&
+          row.recipient_email &&
+          row.recipient_email.toLowerCase() !== userEmail.toLowerCase()
+        ) {
+          return;
+        }
+        await scheduleLocalNotification(row.title || 'SiteWeave', row.body || '', {
+          project_id: row.project_id,
+          screen: row.metadata?.screen,
+          source_type: row.source_type,
+          task_id: row.metadata?.task_id,
+        });
+      },
+    )
+    .subscribe();
+
+  return () => supabase.removeChannel(channel);
+}
+
 export function setupNotificationListeners(onNotificationReceived, onNotificationTapped) {
   // Listener for notifications received while app is foregrounded
   const receivedListener = Notifications.addNotificationReceivedListener(notification => {

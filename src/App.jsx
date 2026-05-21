@@ -5,8 +5,11 @@ import { supabaseClient } from './context/AppContext'
 import LoadingSpinner from './components/LoadingSpinner'
 import ErrorBoundary from './components/ErrorBoundary'
 import Sidebar from './components/Sidebar'
-import LoginForm from './components/LoginForm'
 import InviteAcceptPage from './components/InviteAcceptPage'
+import ProjectInviteAcceptPage from './components/ProjectInviteAcceptPage'
+import SignUpView from './views/SignUpView'
+import LoginView from './views/LoginView'
+import GuestTaskShareView from './views/GuestTaskShareView'
 import SetupWizardModal from './components/SetupWizardModal'
 import DirectoryManagementModal from './components/DirectoryManagementModal'
 import PermissionGuard from './components/PermissionGuard'
@@ -141,13 +144,14 @@ function App() {
       return
     }
 
+    const isPersonal = state.currentOrganization.workspace_type === 'personal'
     const isOrgAdmin = state.userRole?.name === 'Org Admin'
     const isFoundingAdmin =
       state.currentOrganization.created_by_user_id != null &&
       state.currentOrganization.created_by_user_id === state.user.id
     const wizardPending = !state.currentOrganization.setup_wizard_completed_at
 
-    if (isOrgAdmin && isFoundingAdmin && wizardPending) {
+    if (!isPersonal && isOrgAdmin && isFoundingAdmin && wizardPending) {
       setShowSetupWizard(true)
     } else {
       setShowSetupWizard(false)
@@ -183,12 +187,27 @@ function App() {
     )
   }
 
+  // Public routes — available signed in or out (invite links, guest task shares)
+  if (location.pathname.startsWith('/guest/tasks/')) {
+    return <GuestTaskShareView />
+  }
+  if (location.pathname.startsWith('/project-invite/')) {
+    return <ProjectInviteAcceptPage />
+  }
+  if (location.pathname.startsWith('/invite/')) {
+    return <InviteAcceptPage />
+  }
+
   // Show login if not authenticated
   if (!state.user) {
     return (
       <Routes>
         <Route path="/invite/:token" element={<InviteAcceptPage />} />
-        <Route path="*" element={<LoginForm />} />
+        <Route path="/project-invite/:token" element={<ProjectInviteAcceptPage />} />
+        <Route path="/guest/tasks/:token" element={<GuestTaskShareView />} />
+        <Route path="/signup" element={<SignUpView />} />
+        <Route path="/login" element={<LoginView />} />
+        <Route path="*" element={<LoginView />} />
       </Routes>
     )
   }
