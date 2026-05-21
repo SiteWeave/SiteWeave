@@ -6,8 +6,6 @@ import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 import Avatar from './Avatar';
 import { normalizeAssigneePhone } from '@siteweave/core-logic';
 
-const PERCENT_PRESETS = [0, 25, 50, 75, 100];
-
 const percentFieldClass =
   'w-16 select-text rounded border border-gray-200 bg-white px-2 py-0.5 text-xs tabular-nums text-gray-700 [-moz-appearance:textfield] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
 
@@ -302,7 +300,7 @@ const TaskItem = memo(function TaskItem({
                         </span>
                     }
                 >
-                    <div className="flex shrink-0 flex-col gap-1" title="Percent complete (100% marks task done)">
+                    <div className="flex shrink-0" title="Percent complete (100% marks task done)">
                         <label className="flex items-center gap-1 text-xs text-gray-500">
                             <input
                                 type="text"
@@ -343,30 +341,6 @@ const TaskItem = memo(function TaskItem({
                             />
                             <span className="text-gray-400">%</span>
                         </label>
-                        <div className="flex max-w-[7.5rem] flex-nowrap gap-0.5 overflow-x-auto">
-                            {PERCENT_PRESETS.map((p) => (
-                                <button
-                                    key={p}
-                                    type="button"
-                                    onMouseDown={(ev) => ev.preventDefault()}
-                                    onClick={(ev) => {
-                                        ev.stopPropagation();
-                                        onEdit(task.id, {
-                                            percent_complete: p,
-                                            completed: p >= 100,
-                                        });
-                                        setPercentDraft(null);
-                                    }}
-                                    className={`rounded px-1 py-0.5 text-[10px] font-medium tabular-nums transition-colors ${
-                                        progressPercent === p
-                                            ? 'bg-blue-600 text-white'
-                                            : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    {p}
-                                </button>
-                            ))}
-                        </div>
                     </div>
                 </PermissionGuard>
                 <div className="flex-1 min-w-0">

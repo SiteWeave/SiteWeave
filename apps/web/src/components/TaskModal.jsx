@@ -22,8 +22,6 @@ const selectClass = `${fieldClass} cursor-pointer appearance-none bg-white`;
 const chipClass =
     'rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 shadow-xs transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
 
-const PERCENT_PRESETS = [0, 25, 50, 75, 100];
-
 const percentNumericInputClass =
     'w-16 shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm tabular-nums [-moz-appearance:textfield] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none';
 
@@ -373,22 +371,6 @@ function TaskModal({ project, onClose, onSave, isLoading = false, allTasks = [] 
                                             className={percentNumericInputClass}
                                             aria-label="Task percent complete"
                                         />
-                                    </div>
-                                    <div className="mt-2 flex flex-wrap gap-1.5">
-                                        {PERCENT_PRESETS.map((p) => (
-                                            <button
-                                                key={p}
-                                                type="button"
-                                                onClick={() => setPercentComplete(p)}
-                                                className={`rounded-md px-2 py-1 text-xs font-medium tabular-nums transition-colors ${
-                                                    (Number(percentComplete) || 0) === p
-                                                        ? 'bg-blue-600 text-white'
-                                                        : 'border border-gray-200 bg-white text-gray-700 shadow-xs hover:bg-gray-50'
-                                                }`}
-                                            >
-                                                {p}%
-                                            </button>
-                                        ))}
                                     </div>
                                 </div>
                                 <div className="min-w-0">

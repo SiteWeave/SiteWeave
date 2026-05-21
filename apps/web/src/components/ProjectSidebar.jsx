@@ -1,51 +1,7 @@
-import React, { useMemo } from 'react';
-import { useAppContext } from '../context/AppContext';
+import React from 'react';
 import BuildPath from './BuildPath';
-import Avatar from './Avatar';
-import { formatActivityLine } from '../utils/formatActivityLine';
-import { activityLineT } from '../utils/activityLineT';
-import PermissionGuard from './PermissionGuard';
 
 function ProjectSidebar({ project, showProjectPhases = true }) {
-    const { state } = useAppContext();
-    const activityLog = state.activityLog || [];
-    const projectNamesById = useMemo(() => {
-        const m = {};
-        (state.projects || []).forEach((p) => {
-            m[p.id] = p.name;
-        });
-        return m;
-    }, [state.projects]);
-
-    // Get recent activity for this specific project (filtered by RLS)
-    const projectActivity = activityLog
-        .filter(activity => activity.project_id === project.id)
-        .slice(0, 2)
-        .map(activity => ({
-            id: activity.id,
-            user: { 
-                name: activity.user_name, 
-                avatar: activity.user_avatar || null // null means use default Avatar component
-            },
-            description: formatActivityLine(activity, activityLineT, { projectNamesById }),
-            time: formatTimeAgo(activity.created_at)
-        }));
-
-    // Helper function to format time ago
-    function formatTimeAgo(dateString) {
-        const now = new Date();
-        const activityDate = new Date(dateString);
-        const diffInMinutes = Math.floor((now - activityDate) / (1000 * 60));
-        
-        if (diffInMinutes < 60) {
-            return `${diffInMinutes}m ago`;
-        } else if (diffInMinutes < 1440) {
-            return `${Math.floor(diffInMinutes / 60)}h ago`;
-        } else {
-            return `${Math.floor(diffInMinutes / 1440)}d ago`;
-        }
-    }
-
     const formatDate = (dateString) => {
         if (!dateString) return '';
         return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -74,31 +30,6 @@ function ProjectSidebar({ project, showProjectPhases = true }) {
                 <BuildPath project={project} />
             </div>
             )}
-
-            <PermissionGuard permission="can_view_activity_history">
-            <div className="p-6 app-card">
-                <h3 className="font-bold text-slate-900 mb-3">Recent Activity</h3>
-                 <div className="space-y-3">
-                    {projectActivity.length > 0 ? projectActivity.map(activity => (
-                        <div key={activity.id} className="flex items-start gap-3 text-sm">
-                            {activity.user.avatar ? (
-                                <img src={activity.user.avatar} alt={activity.user.name} className="w-8 h-8 rounded-full mt-1" />
-                            ) : (
-                                <div className="mt-1">
-                                    <Avatar name={activity.user.name} size="sm" />
-                                </div>
-                            )}
-                            <div>
-                                <p><span className="font-semibold">{activity.user.name}</span> {activity.description}</p>
-                                <p className="text-xs text-gray-400">{activity.time}</p>
-                            </div>
-                        </div>
-                    )) : (
-                        <p className="text-sm text-center py-4 text-gray-400">No recent activity for this project.</p>
-                    )}
-                </div>
-            </div>
-            </PermissionGuard>
         </div>
     );
 }

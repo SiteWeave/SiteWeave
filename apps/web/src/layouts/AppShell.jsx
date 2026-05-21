@@ -57,7 +57,7 @@ export default function AppShell({ session }) {
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] min-h-screen">
-        <aside className="hidden lg:flex flex-col border-r border-slate-200 bg-white/95 backdrop-blur-xs">
+        <aside className="hidden lg:flex flex-col h-screen sticky top-0 overflow-hidden border-r border-slate-200 bg-white/95 backdrop-blur-xs">
           <div className="h-16 px-6 border-b border-slate-200 flex items-center justify-between">
             <Link to="/" className="text-lg font-bold tracking-tight text-slate-900">SiteWeave</Link>
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold">
@@ -91,7 +91,7 @@ export default function AppShell({ session }) {
               </>
             )}
           </div>
-          <nav className="px-3 py-3 space-y-1 flex-1">
+          <nav className="px-3 py-3 space-y-1 flex-1 min-h-0 overflow-y-auto">
             {PRIMARY_NAV_ITEMS.map((item) => (
               <NavLink
                 key={item.to}
@@ -103,7 +103,7 @@ export default function AppShell({ session }) {
             ))}
           </nav>
 
-          <div className="p-4 border-t border-slate-200 mt-auto">
+          <div className="shrink-0 p-4 border-t border-slate-200 mt-auto">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <Avatar name={displayName} size="lg" />
@@ -126,8 +126,8 @@ export default function AppShell({ session }) {
         </aside>
 
         <div className="flex flex-col min-h-screen">
-          <header className="lg:hidden h-14 bg-white/95 border-b border-slate-200 backdrop-blur-xs px-4 flex items-center">
-            <nav className="flex items-center gap-1 flex-wrap w-full">
+          <header className="lg:hidden bg-white/95 border-b border-slate-200 backdrop-blur-xs px-4 py-2 space-y-2">
+            <nav className="flex items-center gap-1 flex-wrap">
               {PRIMARY_NAV_ITEMS.map((item) => (
                 <NavLink
                   key={item.to}
@@ -138,6 +138,24 @@ export default function AppShell({ session }) {
                 </NavLink>
               ))}
             </nav>
+            <div className="flex items-center justify-between gap-2 pb-1">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <Avatar name={displayName} size="sm" />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-slate-800 truncate">{displayName}</p>
+                  <p className="text-[11px] text-slate-500 truncate">{roleLabel}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+                title="Sign out"
+                aria-label="Sign out"
+              >
+                <Icon path="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" className="w-4 h-4" />
+              </button>
+            </div>
           </header>
 
           <main className="flex-1 p-4 sm:p-6">

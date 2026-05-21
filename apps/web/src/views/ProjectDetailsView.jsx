@@ -422,12 +422,6 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
         return Math.round((100 * done) / taskList.length);
     };
 
-    const projectActivity = (state.activityLog || []).filter((activity) => {
-        const sameProject = activity.project_id && String(activity.project_id) === String(project?.id);
-        const metadataProject = activity.metadata?.project_id && String(activity.metadata.project_id) === String(project?.id);
-        return sameProject || metadataProject;
-    }).slice(0, 30);
-    
     if (!project) {
         return (
             <div className="flex items-center justify-center h-full">
@@ -1848,7 +1842,7 @@ function ProjectDetailsView({ routeTab = 'tasks', onTabChange = null }) {
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
                 {/* Main content — full width on Gantt and Tasks (desktop parity) */}
-                <div className={activeTab === 'gantt' || activeTab === 'tasks' || activeTab === 'stream' ? 'lg:col-span-5' : 'lg:col-span-3'}>
+                <div className={activeTab === 'gantt' || activeTab === 'tasks' || activeTab === 'updates' ? 'lg:col-span-5' : 'lg:col-span-3'}>
                     {/* Tab Navigation */}
                     <div className="border-b border-slate-200 mb-6 app-card-soft px-4">
                         <nav className="-mb-px flex space-x-8">
