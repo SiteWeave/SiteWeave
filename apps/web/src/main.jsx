@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './AppStandalone.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import './i18n/config.js'
 import './index.css'
 
 // Narrow suppression: noisy Supabase Realtime websocket failures only.
