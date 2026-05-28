@@ -1,16 +1,18 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { STREAM_POST_TYPES } from '@siteweave/core-logic';
-
-const PLACEHOLDERS = {
-  general: 'Share a project update…',
-  daily_log: "Summarize today's site progress, crew on-site, and any blockers…",
-  announcement: 'What does the whole team need to know?',
-  milestone: 'Describe the milestone and what it means for the project…',
-};
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
+const POST_TYPE_I18N = {
+  general: 'stream.post_type_general',
+  daily_log: 'stream.post_type_daily_log',
+  announcement: 'stream.post_type_announcement',
+  milestone: 'stream.post_type_milestone',
+};
+
 export default function StreamComposer({ onSubmit }) {
+  const { t } = useTranslation();
   const [postType, setPostType] = React.useState('general');
   const [title, setTitle] = React.useState('');
   const [body, setBody] = React.useState('');
@@ -52,7 +54,7 @@ export default function StreamComposer({ onSubmit }) {
     const picked = e.target.files?.[0];
     if (!picked) return;
     if (picked.size > MAX_FILE_BYTES) {
-      alert('File must be under 15 MB.');
+      alert(t('stream.file_too_large'));
       e.target.value = '';
       return;
     }
@@ -62,18 +64,18 @@ export default function StreamComposer({ onSubmit }) {
   return (
     <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200/80 bg-white px-6 py-5 shadow-xs">
       <div className="mb-4 flex flex-wrap gap-2">
-        {STREAM_POST_TYPES.map((t) => (
+        {STREAM_POST_TYPES.map((type) => (
           <button
-            key={t.value}
+            key={type.value}
             type="button"
-            onClick={() => setPostType(t.value)}
+            onClick={() => setPostType(type.value)}
             className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              postType === t.value
+              postType === type.value
                 ? 'bg-slate-900 text-white'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            {t.label}
+            {t(POST_TYPE_I18N[type.value] || type.label)}
           </button>
         ))}
       </div>
@@ -83,7 +85,7 @@ export default function StreamComposer({ onSubmit }) {
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder={postType === 'milestone' ? 'Milestone title' : 'Announcement headline'}
+          placeholder={postType === 'milestone' ? t('stream.milestone_title_placeholder') : t('stream.announcement_title_placeholder')}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         />
       ) : null}
@@ -93,7 +95,7 @@ export default function StreamComposer({ onSubmit }) {
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={handleKeyDown}
         rows={4}
-        placeholder={PLACEHOLDERS[postType]}
+        placeholder={t(`stream.placeholder_${postType}`)}
         className="w-full resize-y rounded-lg border border-slate-200 px-3 py-2.5 text-sm leading-relaxed focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
       />
 
@@ -108,7 +110,7 @@ export default function StreamComposer({ onSubmit }) {
               if (fileInputRef.current) fileInputRef.current.value = '';
             }}
           >
-            Remove
+            {t('stream.remove_file')}
           </button>
         </div>
       ) : null}
@@ -127,16 +129,16 @@ export default function StreamComposer({ onSubmit }) {
             onClick={() => fileInputRef.current?.click()}
             className="text-xs font-medium text-slate-500 hover:text-slate-800"
           >
-            Attach file
+            {t('stream.attach_file')}
           </button>
-          <p className="text-[11px] text-slate-400 select-none">⌘ Enter to post</p>
+          <p className="text-[11px] text-slate-400 select-none">{t('stream.post_hint')}</p>
         </div>
         <button
           type="submit"
           disabled={!canSubmit}
           className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
         >
-          {submitting ? 'Posting…' : 'Post to stream'}
+          {submitting ? t('stream.posting') : t('stream.post_to_stream')}
         </button>
       </div>
     </form>

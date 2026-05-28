@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
-import { ROUTE_PATHS } from '../config/routes';
 import { useToast } from '../context/ToastContext';
 import AddContactModal from '../components/AddContactModal';
 import ContactCard from '../components/ContactCard';
@@ -11,7 +10,7 @@ import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
 
 function ContactsView({ embedded = false, defaultProjectFilter = null }) {
-    const navigate = useNavigate();
+    const { t } = useTranslation();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const { canExport } = useWorkspaceTier();
@@ -26,12 +25,17 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const [contactToDelete, setContactToDelete] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('All');
-    const roleOptions = ['All Roles', 'Estimator', 'Foreman', 'Technician'];
-    const availabilityOptions = [
-        { label: 'Any Availability', value: 'Any Availability' },
-        { label: 'Available Now', value: 'Available' },
-        { label: 'On Site', value: 'Busy' }
-    ];
+    const roleOptions = useMemo(() => [
+        { value: 'All Roles', label: t('contacts.all_roles') },
+        { value: 'Estimator', label: t('contacts.role_estimator') },
+        { value: 'Foreman', label: t('contacts.role_foreman') },
+        { value: 'Technician', label: t('contacts.role_technician') },
+    ], [t]);
+    const availabilityOptions = useMemo(() => [
+        { value: 'Any Availability', label: t('contacts.any_availability') },
+        { value: 'Available', label: t('contacts.available_now') },
+        { value: 'Busy', label: t('contacts.on_site') },
+    ], [t]);
     const [roleFilter, setRoleFilter] = useState('All Roles');
     const [projectFilter, setProjectFilter] = useState('All Projects');
     const [availabilityFilter, setAvailabilityFilter] = useState('Any Availability');
@@ -115,7 +119,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                 .eq('id', contactData.id);
             
             if (error) {
-                addToast('Error updating contact: ' + error.message, 'error');
+                addToast(t('contacts.update_error', { message: error.message }), 'error');
             } else {
                 const trackKeys = ['name', 'role', 'type', 'company', 'trade', 'email', 'phone', 'status'];
                 const changes = {};
@@ -135,12 +139,12 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     const hasEmail = contactData.email && String(contactData.email).includes('@');
                     addToast(
                         hasEmail
-                            ? 'Saved. They can receive task emails once assigned to a project.'
-                            : 'Saved. Add an email address if you want automated task reminders for this trade partner.',
+                            ? t('contacts.saved_with_email')
+                            : t('contacts.saved_add_email'),
                         'success',
                     );
                 } else {
-                    addToast('Contact updated successfully!', 'success');
+                    addToast(t('contacts.updated_success'), 'success');
                 }
                 dispatch({ type: 'UPDATE_CONTACT', payload: contactData });
                 setShowAddModal(false);
@@ -161,18 +165,18 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                 .single();
             
             if (error) {
-                addToast('Error creating contact: ' + error.message, 'error');
+                addToast(t('contacts.create_error', { message: error.message }), 'error');
             } else {
                 if (contactData.type === 'Subcontractor') {
                     const hasEmail = contactData.email && String(contactData.email).includes('@');
                     addToast(
                         hasEmail
-                            ? 'Saved. They can receive task emails once assigned to a project.'
-                            : 'Saved. Add an email address if you want automated task reminders for this trade partner.',
+                            ? t('contacts.saved_with_email')
+                            : t('contacts.saved_add_email'),
                         'success',
                     );
                 } else {
-                    addToast('Contact created successfully!', 'success');
+                    addToast(t('contacts.created_success'), 'success');
                 }
                 dispatch({ type: 'ADD_CONTACT', payload: data });
                 if (state.user) logContactCreated(data, state.user, null);
@@ -202,9 +206,9 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             .eq('id', contactToDelete.id);
         
         if (error) {
-            addToast('Error deleting contact: ' + error.message, 'error');
+            addToast(t('contacts.delete_error', { message: error.message }), 'error');
         } else {
-            addToast('Contact deleted successfully!', 'success');
+            addToast(t('contacts.deleted_success'), 'success');
             dispatch({ type: 'DELETE_CONTACT', payload: contactToDelete.id });
         }
         
@@ -238,11 +242,11 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                             return contact;
                         }).filter(contact => contact.name); // Filter out empty rows
                         
-                        addToast(`Found ${contacts.length} contacts to import`, 'info');
+                        addToast(t('contacts.import_found', { count: contacts.length }), 'info');
                         // Here you would typically show a preview modal before importing
                         
                     } catch (error) {
-                        addToast('Error parsing CSV file', 'error');
+                        addToast(t('contacts.import_parse_error'), 'error');
                     }
                 };
                 reader.readAsText(file);
@@ -276,13 +280,13 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
         
-        addToast('Contacts exported successfully!', 'success');
+        addToast(t('contacts.exported_success'), 'success');
         setShowExportModal(false);
     };
 
     const handleAssignToProject = (contact) => {
         if (projects.length === 0) {
-            addToast('No projects available to assign', 'warning');
+            addToast(t('contacts.no_projects_to_assign'), 'warning');
             return;
         }
         setAssignContact(contact);
@@ -306,7 +310,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
         }
 
         if (assignContact.project_contacts?.some(pc => String(pc.project_id) === selectedAssignProject)) {
-            addToast('Contact is already assigned to that project', 'info');
+            addToast(t('contacts.already_assigned_project'), 'info');
             return;
         }
 
@@ -325,17 +329,17 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                 });
 
             if (error && error.code !== '23505') {
-                addToast('Error assigning contact: ' + error.message, 'error');
+                addToast(t('contacts.assign_error', { message: error.message }), 'error');
             } else {
                 dispatch({ 
                     type: 'ADD_PROJECT_CONTACT', 
                     payload: { project_id: selectedAssignProject, contact_id: assignContact.id } 
                 });
-                addToast(`${assignContact.name} assigned to project`, 'success');
+                addToast(t('contacts.assigned_to_project', { name: assignContact.name }), 'success');
                 closeAssignModal();
             }
         } catch (error) {
-            addToast('Error assigning contact: ' + error.message, 'error');
+            addToast(t('contacts.assign_error', { message: error.message }), 'error');
         } finally {
             setIsAssigningContact(false);
         }
@@ -351,13 +355,13 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                 .single();
 
             if (error) {
-                addToast('Error deactivating contact: ' + error.message, 'error');
+                addToast(t('contacts.deactivate_error', { message: error.message }), 'error');
             } else if (data) {
                 dispatch({ type: 'UPDATE_CONTACT', payload: data });
-                addToast(`${contact.name} deactivated`, 'success');
+                addToast(t('contacts.deactivated', { name: contact.name }), 'success');
             }
         } catch (error) {
-            addToast('Error deactivating contact: ' + error.message, 'error');
+            addToast(t('contacts.deactivate_error', { message: error.message }), 'error');
         }
     };
 
@@ -367,10 +371,9 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
         if (firstProjectId) {
             dispatch({ type: 'SET_PROJECT', payload: firstProjectId });
             dispatch({ type: 'SET_VIEW', payload: 'Projects' });
-            navigate(ROUTE_PATHS.projectStream.replace(':id', firstProjectId));
             return;
         }
-        addToast('Assign this contact to a project first to open the project stream.', 'info');
+        addToast(t('contacts.message_assign_first'), 'info');
     };
 
     return (
@@ -378,12 +381,10 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             <header className={`flex items-center justify-between ${embedded ? 'mb-4' : 'mb-6'}`}>
                 <div>
                     <h1 className={`${embedded ? 'text-2xl' : 'text-3xl'} font-bold text-gray-900`}>
-                        {embedded ? 'Directory' : 'Contacts'}
+                        {embedded ? t('contacts.directory_title') : t('contacts.title')}
                     </h1>
                     <p className="text-gray-500">
-                        {embedded
-                            ? 'Manage your team members, trade partners, and project assignments'
-                            : 'Manage your team members and trade partners'}
+                        {embedded ? t('contacts.subtitle_embedded') : t('contacts.subtitle')}
                     </p>
                 </div>
                 <div className="flex gap-3">
@@ -391,20 +392,20 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                         onClick={() => setShowImportModal(true)} 
                         className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                     >
-                        Import
+                        {t('contacts.import')}
                     </button>
                     <button 
                         onClick={() => setShowExportModal(true)} 
                         className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                     >
-                        Export
+                        {t('contacts.export')}
                     </button>
                     <button 
                         onClick={() => setShowAddModal(true)} 
                         data-onboarding="add-contact-btn"
                         className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 transition-colors"
                     >
-                        + Add Contact
+                        {t('contacts.add_contact')}
                     </button>
                 </div>
             </header>
@@ -414,7 +415,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                 <div className="flex-1">
                     <input
                         type="text"
-                        placeholder="Search contacts..."
+                        placeholder={t('contacts.search_placeholder')}
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -426,42 +427,42 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                         onChange={e => setStatusFilter(e.target.value)}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
-                        <option value="All">All Status</option>
-                        <option value="Available">Available</option>
-                        <option value="Busy">Busy</option>
-                        <option value="Offline">Offline</option>
+                        <option value="All">{t('contacts.filter_all_status')}</option>
+                        <option value="Available">{t('contacts.status_available')}</option>
+                        <option value="Busy">{t('contacts.status_busy')}</option>
+                        <option value="Offline">{t('contacts.status_offline')}</option>
                     </select>
                 </div>
             </div>
 
             <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                    <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Role</label>
+                    <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">{t('contacts.filter_role')}</label>
                     <select
                         value={roleFilter}
                         onChange={e => setRoleFilter(e.target.value)}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                         {roleOptions.map(role => (
-                            <option key={role} value={role}>{role}</option>
+                            <option key={role.value} value={role.value}>{role.label}</option>
                         ))}
                     </select>
                 </div>
                 <div>
-                    <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Project</label>
+                    <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">{t('contacts.filter_project')}</label>
                     <select
                         value={projectFilter}
                         onChange={e => setProjectFilter(e.target.value)}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
-                        <option value="All Projects">All Projects</option>
+                        <option value="All Projects">{t('contacts.all_projects')}</option>
                         {projects.map(project => (
                             <option key={project.id} value={String(project.id)}>{project.name}</option>
                         ))}
                     </select>
                 </div>
                 <div>
-                    <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">Availability</label>
+                    <label className="text-xs font-semibold text-gray-500 uppercase mb-1 block">{t('contacts.filter_availability')}</label>
                     <select
                         value={availabilityFilter}
                         onChange={e => setAvailabilityFilter(e.target.value)}
@@ -479,20 +480,20 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     onClick={() => setActiveTab('Team')} 
                     className={`px-4 py-2 text-sm font-semibold ${activeTab === 'Team' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
                 >
-                    Team ({teamMembers.length})
+                    {t('contacts.tab_team', { count: teamMembers.length })}
                 </button>
                 <button 
                     onClick={() => setActiveTab('Subcontractors')} 
                     className={`px-4 py-2 text-sm font-semibold ${activeTab === 'Subcontractors' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
                 >
-                    Trade Partners ({subcontractors.length})
+                    {t('contacts.tab_trade_partners', { count: subcontractors.length })}
                 </button>
             </div>
             
             {activeTab === 'Team' ? (
                 <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="contacts-list">
                     <h2 className="text-xl font-bold mb-4">
-                        Team Members ({filteredContacts.length})
+                        {t('contacts.team_members_heading', { count: filteredContacts.length })}
                     </h2>
                     <ul className="space-y-3">
                         {filteredContacts.map(c => (
@@ -511,8 +512,8 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     {filteredContacts.length === 0 && (
                         <div className="text-center py-8 text-gray-500">
                             {searchTerm || statusFilter !== 'All' 
-                                ? 'No contacts match your search criteria' 
-                                : 'No team members found'
+                                ? t('contacts.no_match') 
+                                : t('contacts.no_team')
                             }
                         </div>
                     )}
@@ -520,7 +521,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             ) : (
                 <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="contacts-list">
                     <h2 className="text-xl font-bold mb-4">
-                        All Trade Partners ({filteredContacts.length})
+                        {t('contacts.trade_partners_heading', { count: filteredContacts.length })}
                     </h2>
                     <ul className="space-y-3">
                         {filteredContacts.map(c => (
@@ -539,8 +540,8 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     {filteredContacts.length === 0 && (
                         <div className="text-center py-8 text-gray-500">
                             {searchTerm || statusFilter !== 'All' 
-                                ? 'No contacts match your search criteria' 
-                                : 'No trade partners found'
+                                ? t('contacts.no_match') 
+                                : t('contacts.no_trade_partners')
                             }
                         </div>
                     )}
@@ -569,9 +570,9 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                         setContactToDelete(null);
                     }}
                     onConfirm={confirmDeleteContact}
-                    title="Delete Contact"
-                    message={`Are you sure you want to delete "${contactToDelete?.name}"? This action cannot be undone.`}
-                    confirmText="Delete"
+                    title={t('contacts.delete_title')}
+                    message={t('contacts.delete_message', { name: contactToDelete?.name })}
+                    confirmText={t('common.delete')}
                     confirmClass="bg-red-600 hover:bg-red-700"
                     isLoading={isDeletingContact}
                 />
@@ -581,22 +582,22 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             {showImportModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
-                        <h2 className="text-2xl font-bold mb-6">Import Contacts</h2>
+                        <h2 className="text-2xl font-bold mb-6">{t('contacts.import_title')}</h2>
                         <p className="text-gray-600 mb-6">
-                            Import contacts from a CSV file. The file should have columns: Name, Role, Type, Company, Trade, Email, Phone, Status
+                            {t('contacts.import_description')}
                         </p>
                         <div className="flex justify-end gap-4">
                             <button 
                                 onClick={() => setShowImportModal(false)}
                                 className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
                             >
-                                Cancel
+                                {t('common.cancel')}
                             </button>
                             <button 
                                 onClick={handleImportContacts}
                                 className="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                             >
-                                Choose File
+                                {t('contacts.choose_file')}
                             </button>
                         </div>
                     </div>
@@ -607,22 +608,22 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             {showExportModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
-                        <h2 className="text-2xl font-bold mb-6">Export Contacts</h2>
+                        <h2 className="text-2xl font-bold mb-6">{t('contacts.export_title')}</h2>
                         <p className="text-gray-600 mb-6">
-                            Export {activeTab.toLowerCase()} contacts as a CSV file.
+                            {activeTab === 'Team' ? t('contacts.export_description_team') : t('contacts.export_description_trade')}
                         </p>
                         <div className="flex justify-end gap-4">
                             <button 
                                 onClick={() => setShowExportModal(false)}
                                 className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
                             >
-                                Cancel
+                                {t('common.cancel')}
                             </button>
                             <button 
                                 onClick={handleExportContacts}
                                 className="px-6 py-2 text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
                             >
-                                Export
+                                {t('contacts.export')}
                             </button>
                         </div>
                     </div>
@@ -639,16 +640,16 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                 return (
                     <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50 p-4">
                         <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
-                            <h2 className="text-2xl font-bold mb-2">Assign to Project</h2>
+                            <h2 className="text-2xl font-bold mb-2">{t('contacts.assign_title')}</h2>
                             <p className="text-gray-600 text-sm mb-4">
-                                Manage project assignments for <span className="font-semibold">{assignContact.name}</span>.
+                                {t('contacts.assign_description', { name: assignContact.name })}
                             </p>
                             
                             {/* Show currently assigned projects */}
                             {assignedProjects.length > 0 && (
                                 <div className="mb-6">
                                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                        Currently Assigned ({assignedProjects.length})
+                                        {t('contacts.currently_assigned', { count: assignedProjects.length })}
                                     </label>
                                     <div className="space-y-2">
                                         {assignedProjects.map(project => (
@@ -657,7 +658,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                                                 className="flex items-center justify-between px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg"
                                             >
                                                 <span className="text-sm font-medium text-blue-900">{project.name}</span>
-                                                <span className="text-xs text-blue-600 font-semibold">Assigned</span>
+                                                <span className="text-xs text-blue-600 font-semibold">{t('contacts.assigned_badge')}</span>
                                             </div>
                                         ))}
                                     </div>
@@ -667,7 +668,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                             {/* Select new project to assign */}
                             <div className="mb-6">
                                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                                    {assignedProjects.length > 0 ? 'Assign to Another Project' : 'Select Project'}
+                                    {assignedProjects.length > 0 ? t('contacts.assign_another') : t('contacts.select_project')}
                                 </label>
                                 <select
                                     value={selectedAssignProject}
@@ -677,8 +678,8 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                                 >
                                     <option value="" disabled>
                                         {unassignedProjects.length === 0 
-                                            ? 'All projects assigned' 
-                                            : 'Select a project'}
+                                            ? t('contacts.all_projects_assigned') 
+                                            : t('contacts.select_a_project')}
                                     </option>
                                     {unassignedProjects.map(project => (
                                         <option key={project.id} value={String(project.id)}>
@@ -688,11 +689,11 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                                 </select>
                                 {unassignedProjects.length === 0 && assignedProjects.length > 0 && (
                                     <p className="text-sm text-gray-500 mt-2">
-                                        This contact is already assigned to all available projects.
+                                        {t('contacts.already_all_projects')}
                                     </p>
                                 )}
                                 {assignContact && projects.length === 0 && (
-                                    <p className="text-sm text-amber-600 mt-2">Create a project to use this action.</p>
+                                    <p className="text-sm text-amber-600 mt-2">{t('contacts.create_project_hint')}</p>
                                 )}
                             </div>
                             
@@ -701,14 +702,14 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                                     onClick={closeAssignModal}
                                     className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
                                 >
-                                    Close
+                                    {t('common.close')}
                                 </button>
                                 <button
                                     onClick={handleConfirmAssign}
                                     disabled={isAssigningContact || !selectedAssignProject || unassignedProjects.length === 0}
                                     className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400"
                                 >
-                                    {isAssigningContact ? 'Assigning...' : 'Assign'}
+                                    {isAssigningContact ? t('contacts.assigning') : t('contacts.assign')}
                                 </button>
                             </div>
                         </div>

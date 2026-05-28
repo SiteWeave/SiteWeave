@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import MessageItem from '../components/MessageItem';
@@ -23,6 +24,7 @@ import {
 } from '@siteweave/core-logic';
 
 function MessagesView({ showTeamPanel = false, onOpenDirectory = null }) {
+    const { t } = useTranslation();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
 
@@ -665,7 +667,7 @@ function MessagesView({ showTeamPanel = false, onOpenDirectory = null }) {
                                         value={newMessage}
                                         onChange={handleInputChange}
                                         onKeyDown={handleKeyDown}
-                                        placeholder="Type a message..."
+                                        placeholder={t('messages.type_message')}
                                         data-onboarding="message-input"
                                         className="w-full p-3 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                         rows="1"

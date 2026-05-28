@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, Modal, ScrollView, Animated, Dimensions } from 'react-native';
 import { useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { completeTask } from '@siteweave/core-logic';
@@ -9,6 +10,7 @@ import { useHaptics } from '../hooks/useHaptics';
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function MyDayItemModal({ visible, item, onClose, onComplete }) {
+  const { t } = useTranslation();
   const { supabase } = useAuth();
   const haptics = useHaptics();
   
@@ -214,7 +216,7 @@ export default function MyDayItemModal({ visible, item, onClose, onComplete }) {
                 hapticType="medium"
               >
                 <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                <Text style={styles.completeButtonText}>Mark Complete</Text>
+                <Text style={styles.completeButtonText}>{t('mobile.mark_complete')}</Text>
               </PressableWithFade>
             </View>
           )}

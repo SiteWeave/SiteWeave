@@ -15,9 +15,11 @@
     "sync:progress-report-templates": "node scripts/sync-progress-report-templates.mjs",
     "verify:progress-report-sync": "node scripts/verify-progress-report-sync.mjs",
     "test:progress-report-stability": "node scripts/test-progress-report-stability.mjs",
-    "regen:win-update-meta": "node scripts/regen-win-update-metadata.mjs"
+    "regen:win-update-meta": "node scripts/regen-win-update-metadata.mjs",
+    "check:i18n": "node scripts/check-i18n-keys.mjs"
   },
   "dependencies": {
+    "@siteweave/i18n": "file:./packages/i18n",
     "@fullcalendar/core": "^6.1.20",
     "@fullcalendar/daygrid": "^6.1.20",
     "@fullcalendar/interaction": "^6.1.20",

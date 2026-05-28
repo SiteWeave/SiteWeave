@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import PermissionGuard from './PermissionGuard';
@@ -19,6 +20,7 @@ function debounce(func, wait) {
 }
 
 function BuildPath({ project }) {
+    const { t } = useTranslation();
     const { dispatch, state } = useAppContext();
     const { addToast } = useToast();
     const [phases, setPhases] = useState([]);
@@ -390,7 +392,7 @@ function BuildPath({ project }) {
     return (
         <div className="h-full flex flex-col">
             <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg">Progress Status</h3>
+                <h3 className="font-bold text-lg">{t('build_path.progress_status')}</h3>
                 {isAuthorized() && (
                     <div className="flex gap-2">
                         <button

@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, FlatList, ScrollView } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { fetchEventsByDate, fetchCalendarEvents } from '@siteweave/core-logic';
@@ -11,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useHaptics } from '../../hooks/useHaptics';
 
 export default function CalendarScreen() {
+  const { t } = useTranslation();
   const { supabase } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -184,7 +186,7 @@ export default function CalendarScreen() {
                 }}
               >
                 <Ionicons name="checkmark-done-outline" size={16} color="#1D4ED8" />
-                <Text style={styles.eventActionText}>Open project tasks</Text>
+                <Text style={styles.eventActionText}>{t('mobile.open_project_tasks')}</Text>
               </PressableWithFade>
             )}
           </View>
@@ -212,7 +214,7 @@ export default function CalendarScreen() {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Ionicons name="calendar-outline" size={48} color="#9CA3AF" />
-              <Text style={styles.emptyText}>No events scheduled for this day.</Text>
+              <Text style={styles.emptyText}>{t('mobile.no_events_day')}</Text>
             </View>
           }
         />

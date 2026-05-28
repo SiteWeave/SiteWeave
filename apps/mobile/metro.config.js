@@ -29,6 +29,7 @@ config.resolver.nodeModulesPaths = [mobileNodeModules];
 // Map local packages
 config.resolver.extraNodeModules = {
   '@siteweave/core-logic': path.resolve(packagesRoot, 'core-logic'),
+  '@siteweave/i18n': path.resolve(packagesRoot, 'i18n'),
 };
 
 // Custom resolver to force React modules to always resolve from mobile app
@@ -58,6 +59,13 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     return {
       type: 'sourceFile',
       filePath: coreLogicPath,
+    };
+  }
+
+  if (moduleName === '@siteweave/i18n') {
+    return {
+      type: 'sourceFile',
+      filePath: path.resolve(packagesRoot, 'i18n', 'index.js'),
     };
   }
   

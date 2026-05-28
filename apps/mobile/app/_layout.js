@@ -1,6 +1,9 @@
 import 'react-native-gesture-handler';
 import 'react-native-reanimated';
+import '../i18n';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import { I18nextProvider } from 'react-i18next';
+import i18n from '../i18n';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { BrandingProvider } from '../context/BrandingContext';
 import { useEffect } from 'react';
@@ -63,11 +66,13 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <BrandingProvider>
-        <RootLayoutNav />
-      </BrandingProvider>
-    </AuthProvider>
+    <I18nextProvider i18n={i18n}>
+      <AuthProvider>
+        <BrandingProvider>
+          <RootLayoutNav />
+        </BrandingProvider>
+      </AuthProvider>
+    </I18nextProvider>
   );
 }
 

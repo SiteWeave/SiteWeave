@@ -1,10 +1,12 @@
 import React, { useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
 import { startGoogleCalendarOAuth, startOutlookCalendarOAuth, prepareCalendarEventsForInsert } from '../utils/calendarIntegration';
 
 const CalendarImportModal = ({ onClose, importType = 'file' }) => {
+    const { t, i18n } = useTranslation();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [isImporting, setIsImporting] = useState(false);
@@ -22,10 +24,10 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
             const events = parseICSFile(text);
             setImportedEvents(events);
             setShowPreview(true);
-            addToast(`Found ${events.length} events to import`, 'success');
+            addToast(t('calendar.import_found_events', { count: events.length }), 'success');
         } catch (error) {
             console.error('Error parsing file:', error);
-            addToast('Error parsing calendar file. Please ensure it\'s a valid ICS file.', 'error');
+            addToast(t('calendar.import_parse_error'), 'error');
         } finally {
             setIsImporting(false);
         }
@@ -115,21 +117,23 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
         const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
         if (!clientId) {
-            addToast('Google Calendar integration not configured. Please contact administrator.', 'error');
+            addToast(t('calendar.import_failed', { message: 'Google Calendar integration not configured. Please contact administrator.' }), 'error');
             return;
         }
 
+        // Desktop: use loopback OAuth (same as Outlook) so redirect does not open a separate browser
+        // context at localhost without the app's Supabase session.
         if (window.electronAPI?.isElectron) {
             const clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
             if (!clientSecret) {
-                addToast('Google Calendar desktop import requires VITE_GOOGLE_CLIENT_SECRET.', 'error');
+                addToast(t('calendar.import_failed', { message: 'Google Calendar desktop import requires VITE_GOOGLE_CLIENT_SECRET.' }), 'error');
                 return;
             }
             setIsImporting(true);
             try {
                 const events = await startGoogleCalendarOAuth();
                 if (!state?.user?.id) {
-                    addToast('Please sign in before importing Google events.', 'error');
+                    addToast(t('calendar.import_failed', { message: 'Please sign in before importing Google events.' }), 'error');
                     return;
                 }
                 if (events && events.length > 0) {
@@ -145,14 +149,14 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                         dispatch({ type: 'ADD_EVENT', payload: event });
                     });
 
-                    addToast(`Successfully imported ${data.length} Google events!`, 'success');
+                    addToast(t('calendar.import_success', { count: data.length }), 'success');
                     onClose();
                 } else {
-                    addToast('No Google Calendar events found to import.', 'info');
+                    addToast(t('calendar.no_events_to_import'), 'info');
                 }
             } catch (e) {
                 console.error('Google import failed:', e);
-                addToast('Google import failed: ' + e.message, 'error');
+                addToast(t('calendar.import_failed', { message: e.message }), 'error');
             } finally {
                 setIsImporting(false);
             }
@@ -166,7 +170,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
         const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&response_type=code&access_type=offline&prompt=consent`;
 
         window.open(authUrl, '_blank', 'width=500,height=600');
-        addToast('Please complete the Google Calendar authorization in the popup window.', 'info');
+        addToast(t('calendar.import_error', { message: 'Please complete the Google Calendar authorization in the popup window.' }), 'info');
     };
 
     const handleOutlookCalendarImport = async () => {
@@ -176,7 +180,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
             try {
                 const events = await startOutlookCalendarOAuth();
                 if (!state?.user?.id) {
-                    addToast('Please sign in before importing Outlook events.', 'error');
+                    addToast(t('calendar.import_failed', { message: 'Please sign in before importing Outlook events.' }), 'error');
                     setIsImporting(false);
                     return;
                 }
@@ -194,14 +198,14 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                         dispatch({ type: 'ADD_EVENT', payload: event });
                     });
 
-                    addToast(`Successfully imported ${data.length} Outlook events!`, 'success');
+                    addToast(t('calendar.import_success', { count: data.length }), 'success');
                     onClose();
                 } else {
-                    addToast('No Outlook events found to import.', 'info');
+                    addToast(t('calendar.no_events_to_import'), 'info');
                 }
             } catch (e) {
                 console.error('Outlook import failed:', e);
-                addToast('Outlook import failed: ' + e.message, 'error');
+                addToast(t('calendar.import_failed', { message: e.message }), 'error');
             } finally {
                 setIsImporting(false);
             }
@@ -211,7 +215,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
         // Browser fallback: redirect to web OAuth flow (Calendar route)
         const clientId = import.meta.env.VITE_MICROSOFT_CLIENT_ID;
         if (!clientId) {
-            addToast('Outlook integration not configured. Missing VITE_MICROSOFT_CLIENT_ID.', 'error');
+            addToast(t('calendar.import_failed', { message: 'Outlook integration not configured. Missing VITE_MICROSOFT_CLIENT_ID.' }), 'error');
             return;
         }
 
@@ -241,11 +245,11 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                 dispatch({ type: 'ADD_EVENT', payload: event });
             });
 
-            addToast(`Successfully imported ${data.length} events!`, 'success');
+            addToast(t('calendar.import_success', { count: data.length }), 'success');
             onClose();
         } catch (error) {
             console.error('Error importing events:', error);
-            addToast('Error importing events: ' + error.message, 'error');
+            addToast(t('calendar.import_failed', { message: error.message }), 'error');
         } finally {
             setIsImporting(false);
         }
@@ -264,9 +268,9 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
             <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-bold">
-                        {importType === 'google' ? 'Import from Google Calendar' : 
-                         importType === 'outlook' ? 'Import from Outlook Calendar' : 
-                         'Import Calendar'}
+                        {importType === 'google' ? t('calendar.import_google') : 
+                         importType === 'outlook' ? t('calendar.import_outlook') : 
+                         t('calendar.import_file_title')}
                     </h2>
                     <button
                         onClick={onClose}
@@ -280,21 +284,21 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                     <div className="space-y-6">
                         {importType === 'file' && (
                             <div>
-                                <h3 className="text-lg font-semibold mb-4">Choose Import Method</h3>
+                                <h3 className="text-lg font-semibold mb-4">{t('calendar.import_file_title')}</h3>
                                 <div className="space-y-4">
                                     {/* File Import */}
                                     <div className="border border-gray-200 rounded-lg p-4">
                                         <div className="flex items-center justify-between">
                                             <div>
-                                                <h4 className="font-semibold">Import from File</h4>
-                                                <p className="text-sm text-gray-600">Upload an ICS file from Google Calendar, Outlook, or other calendar applications</p>
+                                                <h4 className="font-semibold">{t('calendar.import_select_file')}</h4>
+                                                <p className="text-sm text-gray-600">{t('calendar.import_select_file')}</p>
                                             </div>
                                             <button
                                                 onClick={() => fileInputRef.current?.click()}
                                                 disabled={isImporting}
                                                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                                             >
-                                                Choose File
+                                                {t('calendar.import_select_file')}
                                             </button>
                                         </div>
                                         <input
@@ -310,15 +314,15 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                     <div className="border border-gray-200 rounded-lg p-4">
                                         <div className="flex items-center justify-between">
                                             <div>
-                                                <h4 className="font-semibold">Import from Google Calendar</h4>
-                                                <p className="text-sm text-gray-600">Connect your Google Calendar account to import events</p>
+                                                <h4 className="font-semibold">{t('calendar.import_google')}</h4>
+                                                <p className="text-sm text-gray-600">{t('calendar.import_connect_google')}</p>
                                             </div>
                                             <button
                                                 onClick={handleGoogleCalendarImport}
                                                 disabled={isImporting}
                                                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                                             >
-                                                Connect Google
+                                                {t('calendar.import_connect_google')}
                                             </button>
                                         </div>
                                     </div>
@@ -327,15 +331,15 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                     <div className="border border-gray-200 rounded-lg p-4">
                                         <div className="flex items-center justify-between">
                                             <div>
-                                                <h4 className="font-semibold">Import from Outlook Calendar</h4>
-                                                <p className="text-sm text-gray-600">Connect your Outlook/Microsoft Calendar account to import events</p>
+                                                <h4 className="font-semibold">{t('calendar.import_outlook')}</h4>
+                                                <p className="text-sm text-gray-600">{t('calendar.import_connect_outlook')}</p>
                                             </div>
                                             <button
                                                 onClick={handleOutlookCalendarImport}
                                                 disabled={isImporting}
                                                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
                                             >
-                                                Connect Outlook
+                                                {t('calendar.import_connect_outlook')}
                                             </button>
                                         </div>
                                     </div>
@@ -354,9 +358,9 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                                         </svg>
                                     </div>
-                                    <h3 className="text-xl font-semibold mb-2">Connect Google Calendar</h3>
+                                    <h3 className="text-xl font-semibold mb-2">{t('calendar.import_connect_google')}</h3>
                                     <p className="text-gray-600 mb-6">
-                                        Import your events from Google Calendar. You'll be redirected to Google to authorize access to your calendar.
+                                        {t('calendar.import_google')}
                                     </p>
                                 </div>
                                 <button
@@ -364,7 +368,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                     disabled={isImporting}
                                     className="px-8 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-lg font-semibold"
                                 >
-                                    {isImporting ? 'Connecting...' : 'Connect Google Calendar'}
+                                    {isImporting ? t('calendar.importing') : t('calendar.import_connect_google')}
                                 </button>
                             </div>
                         )}
@@ -377,9 +381,9 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                             <path d="M7.5 21H2V9h5.5v12zm7.25-18h-5.5v18h5.5V3zM22 9h-5.5v12H22V9z"/>
                                         </svg>
                                     </div>
-                                    <h3 className="text-xl font-semibold mb-2">Connect Outlook Calendar</h3>
+                                    <h3 className="text-xl font-semibold mb-2">{t('calendar.import_connect_outlook')}</h3>
                                     <p className="text-gray-600 mb-6">
-                                        Import your events from Outlook Calendar. You'll be redirected to Microsoft to authorize access to your calendar.
+                                        {t('calendar.import_outlook')}
                                     </p>
                                     
                                 </div>
@@ -388,21 +392,21 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                     disabled={isImporting}
                                     className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-lg font-semibold"
                                 >
-                                    {isImporting ? 'Connecting...' : 'Connect Outlook Calendar'}
+                                    {isImporting ? t('calendar.importing') : t('calendar.import_connect_outlook')}
                                 </button>
                             </div>
                         )}
 
                         {isImporting && (
                             <div className="flex items-center justify-center py-8">
-                                <LoadingSpinner size="lg" text="Processing calendar..." />
+                                <LoadingSpinner size="lg" text={t('calendar.importing')} />
                             </div>
                         )}
                     </div>
                 ) : (
                     <div className="space-y-6">
                         <div>
-                            <h3 className="text-lg font-semibold mb-4">Preview Import ({importedEvents.length} events)</h3>
+                            <h3 className="text-lg font-semibold mb-4">{t('calendar.import_preview_title')} ({importedEvents.length})</h3>
                             <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg">
                                 {importedEvents.map((event, index) => (
                                     <div key={index} className="p-3 border-b border-gray-100 last:border-b-0">
@@ -410,7 +414,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                             <div className="flex-1">
                                                 <h4 className="font-semibold text-sm">{event.title}</h4>
                                                 <p className="text-xs text-gray-600 mt-1">
-                                                    {new Date(event.start_time).toLocaleDateString()} - {new Date(event.end_time).toLocaleDateString()}
+                                                    {new Date(event.start_time).toLocaleDateString(i18n.language)} - {new Date(event.end_time).toLocaleDateString(i18n.language)}
                                                 </p>
                                                 {event.location && (
                                                     <p className="text-xs text-gray-500 mt-1">📍 {event.location}</p>
@@ -432,7 +436,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                 disabled={isImporting}
                                 className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50"
                             >
-                                Cancel
+                                {t('common.cancel')}
                             </button>
                             <button
                                 onClick={handleImportEvents}
@@ -442,10 +446,10 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                 {isImporting ? (
                                     <>
                                         <LoadingSpinner size="sm" text="" />
-                                        Importing...
+                                        {t('calendar.importing')}
                                     </>
                                 ) : (
-                                    `Import ${importedEvents.length} Events`
+                                    t('calendar.import_confirm', { count: importedEvents.length })
                                 )}
                             </button>
                         </div>

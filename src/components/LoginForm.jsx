@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -10,6 +11,7 @@ import {
 } from '../utils/workspaceClient';
 
 function LoginForm({ mode = 'signIn', onAuthSuccess }) {
+  const { t } = useTranslation();
   const isSignUp = mode === 'signUp';
   const { addToast } = useToast();
   const [email, setEmail] = useState('');
@@ -45,7 +47,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
 
   useEffect(() => {
     const handleOAuthError = (event) => {
-      const message = event?.detail?.message || 'OAuth sign-in failed. Please try again.';
+      const message = event?.detail?.message || t('auth.oauth_failed');
       setIsLoading(false);
       if (oauthTimeoutRef.current) {
         clearTimeout(oauthTimeoutRef.current);
@@ -82,7 +84,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
     if (oauthTimeoutRef.current) clearTimeout(oauthTimeoutRef.current);
     oauthTimeoutRef.current = setTimeout(() => {
       setIsLoading(false);
-      addToast('OAuth sign-in timed out. Please try again.', 'error');
+      addToast(t('auth.oauth_timeout'), 'error');
     }, 30000);
   };
 
@@ -99,24 +101,24 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
         },
       });
       if (error) {
-        addToast('Sign up failed: ' + error.message, 'error');
+        addToast(t('auth.signup_failed', { message: error.message }), 'error');
         setIsLoading(false);
         return;
       }
       if (data?.user) {
         try {
           await runPostAuthBootstrap(data.user, accountIntent);
-          addToast('Account created!', 'success');
+          addToast(t('auth.account_created'), 'success');
         } catch (err) {
-          addToast(err?.message || 'Setup failed', 'error');
+          addToast(err?.message || t('auth.setup_failed'), 'error');
         }
       }
     } else {
       const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
       if (error) {
-        addToast('Login failed: ' + error.message, 'error');
+        addToast(t('auth.login_failed', { message: error.message }), 'error');
       } else if (data?.user) {
-        addToast('Login successful!', 'success');
+        addToast(t('auth.login_successful'), 'success');
         onAuthSuccess?.();
       }
     }
@@ -125,14 +127,14 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
 
   const handleForgotPassword = async () => {
     if (!email) {
-      addToast('Enter your email first', 'warning');
+      addToast(t('auth.enter_email_first'), 'warning');
       return;
     }
     const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}${ROUTE_PATHS.login}`,
     });
     if (error) addToast(error.message, 'error');
-    else addToast('Password reset email sent', 'success');
+    else addToast(t('auth.password_reset_sent'), 'success');
   };
 
   const startProviderOAuth = async (provider, extraOptions = {}) => {
@@ -163,7 +165,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
           window.open(data.url, '_blank');
         }
       } catch (err) {
-        return { error: { message: err?.message || 'Failed to open OAuth window' } };
+        return { error: { message: err?.message || t('auth.oauth_open_failed') } };
       }
     }
     return { error: null };
@@ -173,7 +175,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
     startOAuthLoadingGuard();
     const { error } = await startProviderOAuth('google');
     if (error) {
-      addToast('Google login failed: ' + error.message, 'error');
+      addToast(t('auth.google_login_failed', { message: error.message }), 'error');
       setIsLoading(false);
       if (oauthTimeoutRef.current) {
         clearTimeout(oauthTimeoutRef.current);
@@ -186,7 +188,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
     startOAuthLoadingGuard();
     const { error } = await startProviderOAuth('azure', { scopes: 'openid email profile' });
     if (error) {
-      addToast('Microsoft login failed: ' + error.message, 'error');
+      addToast(t('auth.microsoft_login_failed', { message: error.message }), 'error');
       setIsLoading(false);
       if (oauthTimeoutRef.current) {
         clearTimeout(oauthTimeoutRef.current);
@@ -216,26 +218,26 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
           <div className="mx-auto mb-6 flex h-14 w-full max-w-[200px] items-center justify-center sm:h-16">
             <img
               src="/logo.svg"
-              alt="SiteWeave"
+              alt={t('auth.logo_alt')}
               className="h-full w-full object-contain"
             />
           </div>
           <h2 className="text-2xl font-bold text-gray-900">
-            {isSignUp ? 'Welcome to Site Weave!' : 'Welcome back!'}
+            {isSignUp ? t('auth.welcome_signup') : t('auth.welcome_back')}
           </h2>
           <p className="mt-2 text-sm text-gray-600">
             {isSignUp ? (
               <>
-                Already have an account?{' '}
+                {t('auth.already_have_account')}{' '}
                 <Link to={ROUTE_PATHS.login} className="font-medium text-blue-600 hover:text-blue-500">
-                  Sign in
+                  {t('auth.sign_in_link')}
                 </Link>
               </>
             ) : (
               <>
-                Don&apos;t have an account?{' '}
+                {t('auth.no_account')}{' '}
                 <Link to={ROUTE_PATHS.signup} className="font-medium text-blue-600 hover:text-blue-500">
-                  Sign up
+                  {t('auth.sign_up_link')}
                 </Link>
               </>
             )}
@@ -255,7 +257,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
             </svg>
-            Continue with Google
+            {t('auth.continue_with_google')}
           </button>
           <button
             type="button"
@@ -269,7 +271,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
               <path fill="#7fba00" d="M1 13h10v10H1z" />
               <path fill="#ffb900" d="M13 13h10v10H13z" />
             </svg>
-            Continue with Microsoft
+            {t('auth.continue_with_microsoft')}
           </button>
         </div>
 
@@ -278,7 +280,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
             <div className="w-full border-t border-gray-300" />
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-white text-gray-500">or</span>
+            <span className="px-2 bg-white text-gray-500">{t('auth.or')}</span>
           </div>
         </div>
 
@@ -301,7 +303,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
                     onChange={() => setAccountIntent('workspace_owner')}
                     className="sr-only"
                   />
-                  <span className="text-sm font-semibold leading-tight">Manage Projects?</span>
+                  <span className="text-sm font-semibold leading-tight">{t('auth.manage_projects')}</span>
                 </label>
                 <label
                   className={`flex min-h-[3.25rem] cursor-pointer items-center justify-center rounded-lg border px-2 py-3 text-center transition-colors ${
@@ -318,12 +320,12 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
                     onChange={() => setAccountIntent('guest_only')}
                     className="sr-only"
                   />
-                  <span className="text-sm font-semibold leading-tight">Invited to a Project?</span>
+                  <span className="text-sm font-semibold leading-tight">{t('auth.invited_to_project')}</span>
                 </label>
               </div>
               {accountIntent === 'guest_only' && (
                 <p className="text-center text-xs leading-tight text-gray-500">
-                  Open your project invite link, then sign in with any email.
+                  {t('auth.invite_link_hint')}
                 </p>
               )}
               <input
@@ -331,7 +333,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
                 required
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="Full name"
+                placeholder={t('auth.full_name')}
                 className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
               />
             </>
@@ -343,7 +345,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="Work email"
+            placeholder={t('auth.work_email')}
             className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
           />
 
@@ -354,7 +356,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
               autoComplete={isSignUp ? 'new-password' : 'current-password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
+              placeholder={t('auth.password')}
               className="block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md text-sm"
             />
             <button
@@ -363,7 +365,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
               className="absolute inset-y-0 right-0 px-3 text-gray-400 text-xs"
               tabIndex={-1}
             >
-              {showPassword ? 'Hide' : 'Show'}
+              {showPassword ? t('auth.hide_password') : t('auth.show_password')}
             </button>
           </div>
 
@@ -372,7 +374,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
             disabled={isLoading || !canSubmit}
             className="w-full py-2.5 px-4 rounded-md text-sm font-semibold text-white bg-gray-800 hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? <LoadingSpinner size="sm" text="" /> : isSignUp ? 'Create account' : 'Log In'}
+            {isLoading ? <LoadingSpinner size="sm" text="" /> : isSignUp ? t('auth.create_account') : t('auth.log_in')}
           </button>
 
           {!isSignUp && (
@@ -382,7 +384,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
                 onClick={handleForgotPassword}
                 className="text-sm text-blue-600 hover:text-blue-500"
               >
-                Forgot Password?
+                {t('auth.forgot_password')}
               </button>
             </div>
           )}

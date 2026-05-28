@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { getLocalizedProjectStatus, PROJECT_STATUS_CANONICAL } from '@siteweave/i18n';
 import { useAppContext } from '../context/AppContext';
 import { supabaseClient } from '../context/AppContext';
 import { duplicateProject } from '../utils/projectDuplicationService';
@@ -11,7 +13,24 @@ import PermissionGuard from './PermissionGuard';
 import MsProjectImportModal from './MsProjectImportModal';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 
+const PROJECT_STATUS_OPTIONS = [
+    PROJECT_STATUS_CANONICAL.planning,
+    PROJECT_STATUS_CANONICAL.in_progress,
+    PROJECT_STATUS_CANONICAL.on_hold,
+    PROJECT_STATUS_CANONICAL.completed,
+];
+
+const PROJECT_TYPE_OPTIONS = [
+    { value: 'Residential', labelKey: 'projectModal.type_residential' },
+    { value: 'Commercial', labelKey: 'projectModal.type_commercial' },
+    { value: 'Industrial', labelKey: 'projectModal.type_industrial' },
+    { value: 'Infrastructure', labelKey: 'projectModal.type_infrastructure' },
+    { value: 'Multi-family', labelKey: 'projectModal.type_multifamily' },
+    { value: 'Other', labelKey: 'projectModal.type_other' },
+];
+
 function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
+    const { t } = useTranslation();
     const { state } = useAppContext();
     const { addToast } = useToast();
     const [name, setName] = useState('');
@@ -198,7 +217,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
         );
 
         if (rejectedOwnEmail) {
-            addToast('You are automatically added to projects you create.', 'info');
+            addToast(t('projectModal.auto_added_toast'), 'info');
         }
 
         if (newEmails.length > 0) {
@@ -228,12 +247,12 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
 
     const handleDuplicateProject = async () => {
         if (!duplicateName || !duplicateStartDate) {
-            addToast('Please provide a name and start date for the duplicated project', 'error');
+            addToast(t('projectModal.duplicate_name_date_required'), 'error');
             return;
         }
 
         if (!state.currentOrganization?.id) {
-            addToast('Organization context is missing', 'error');
+            addToast(t('projectModal.org_context_missing'), 'error');
             return;
         }
 
@@ -250,17 +269,17 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             );
 
             if (result.success) {
-                addToast('Project duplicated successfully!', 'success');
+                addToast(t('projectModal.duplicated_success'), 'success');
                 setShowDuplicateDialog(false);
                 onClose();
                 // Refresh the page or trigger data reload
                 window.location.reload();
             } else {
-                addToast(result.error || 'Failed to duplicate project', 'error');
+                addToast(result.error || t('projectModal.duplicate_failed'), 'error');
             }
         } catch (error) {
             console.error('Error duplicating project:', error);
-            addToast('Failed to duplicate project', 'error');
+            addToast(t('projectModal.duplicate_failed'), 'error');
         } finally {
             setIsDuplicating(false);
         }
@@ -271,35 +290,35 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             <button
                 type="button"
                 onClick={() => {
-                    const t = localDateIso();
-                    setStartDate(t);
-                    setDueDate(t);
+                    const todayIso = localDateIso();
+                    setStartDate(todayIso);
+                    setDueDate(todayIso);
                 }}
                 className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
-                Today
+                {t('projectModal.today')}
             </button>
             <button
                 type="button"
                 onClick={() => {
-                    const t = localDateIso();
-                    setStartDate((s) => s || t);
-                    setDueDate(addDaysIso(t, 7) || t);
+                    const todayIso = localDateIso();
+                    setStartDate((s) => s || todayIso);
+                    setDueDate(addDaysIso(todayIso, 7) || todayIso);
                 }}
                 className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
-                +1 week
+                {t('projectModal.plus_one_week')}
             </button>
             <button
                 type="button"
                 onClick={() => {
-                    const t = localDateIso();
-                    setStartDate((s) => s || t);
-                    setDueDate(addDaysIso(t, 14) || t);
+                    const todayIso = localDateIso();
+                    setStartDate((s) => s || todayIso);
+                    setDueDate(addDaysIso(todayIso, 14) || todayIso);
                 }}
                 className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
-                +2 weeks
+                {t('projectModal.plus_two_weeks')}
             </button>
         </>
     );
@@ -308,36 +327,35 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
         return (
             <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
                 <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
-                    <h2 className="text-2xl font-bold mb-6">Duplicate Project</h2>
+                    <h2 className="text-2xl font-bold mb-6">{t('projectModal.duplicate_title')}</h2>
                     <div className="mb-4">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">New Project Name</label>
+                        <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.duplicate_name_label')}</label>
                         <input 
                             type="text" 
                             value={duplicateName} 
                             onChange={e => setDuplicateName(e.target.value)} 
                             className="w-full p-2 border rounded-lg" 
-                            placeholder={`${project.name} - Copy`}
+                            placeholder={`${project.name}${t('projectModal.copy_suffix')}`}
                             required 
                         />
                     </div>
                     <div className="mb-4">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">Address (optional)</label>
-                        <input type="text" value={duplicateAddress} onChange={e => setDuplicateAddress(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="Same as original if blank" />
+                        <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.duplicate_address_label')}</label>
+                        <input type="text" value={duplicateAddress} onChange={e => setDuplicateAddress(e.target.value)} className="w-full p-2 border rounded-lg" placeholder={t('projectModal.same_as_original')} />
                     </div>
                     <div className="mb-4">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">Project Number (optional)</label>
-                        <input type="text" value={duplicateProjectNumber} onChange={e => setDuplicateProjectNumber(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="Same as original if blank" />
+                        <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.duplicate_number_label')}</label>
+                        <input type="text" value={duplicateProjectNumber} onChange={e => setDuplicateProjectNumber(e.target.value)} className="w-full p-2 border rounded-lg" placeholder={t('projectModal.same_as_original')} />
                     </div>
                     <DateDropdown 
                         value={duplicateStartDate} 
                         onChange={setDuplicateStartDate} 
-                        label="New Start Date"
+                        label={t('projectModal.duplicate_start_date')}
                         className="mb-6"
                         required
                     />
                     <p className="text-sm text-gray-600 mb-6">
-                        This will create a copy of the project structure (phases, tasks, dependencies) with dates adjusted. 
-                        Transactional data (comments, files, activity logs) will not be copied.
+                        {t('projectModal.duplicate_description')}
                     </p>
                     <div className="flex gap-3">
                         <button
@@ -346,7 +364,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
                             disabled={isDuplicating}
                         >
-                            Cancel
+                            {t('common.cancel')}
                         </button>
                         <button
                             type="button"
@@ -354,7 +372,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                             className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                             disabled={isDuplicating}
                         >
-                            {isDuplicating ? 'Duplicating...' : 'Duplicate'}
+                            {isDuplicating ? t('projectModal.duplicating') : t('projectModal.duplicate')}
                         </button>
                     </div>
                 </div>
@@ -366,7 +384,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
         <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
-                    <h2 className="text-2xl font-bold min-w-0">{isEditMode ? 'Edit Project' : 'Create New Project'}</h2>
+                    <h2 className="text-2xl font-bold min-w-0">{isEditMode ? t('projectModal.edit_project') : t('projectModal.create_project')}</h2>
                     <div className="relative shrink-0" ref={actionsMenuRef}>
                         <button
                             type="button"
@@ -375,7 +393,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                             aria-expanded={actionsMenuOpen}
                             aria-haspopup="menu"
                         >
-                            Actions
+                            {t('projectModal.actions')}
                             <span className="text-gray-500" aria-hidden>▾</span>
                         </button>
                         {actionsMenuOpen && (
@@ -392,7 +410,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                         setActionsMenuOpen(false);
                                     }}
                                 >
-                                    Smart task notifications
+                                    {t('projectModal.smart_task_notifications')}
                                 </button>
                                 {isEditMode && (
                                     <PermissionGuard permission="can_create_projects">
@@ -401,7 +419,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                             role="menuitem"
                                             className="w-full px-3 py-2 text-left text-gray-800 hover:bg-gray-50"
                                             onClick={() => {
-                                                setDuplicateName(`${project.name} - Copy`);
+                                                setDuplicateName(`${project.name}${t('projectModal.copy_suffix')}`);
                                                 setDuplicateAddress(project.address || '');
                                                 setDuplicateProjectNumber(project.project_number || '');
                                                 setDuplicateStartDate('');
@@ -409,7 +427,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                                 setActionsMenuOpen(false);
                                             }}
                                         >
-                                            Duplicate project
+                                            {t('projectModal.duplicate_project')}
                                         </button>
                                     </PermissionGuard>
                                 )}
@@ -420,106 +438,106 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                 <form onSubmit={handleSubmit}>
                     {isEditMode && project && state.currentOrganization && (
                         <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-700">
-                            <span className="font-medium text-slate-800">Smart task emails: </span>
+                            <span className="font-medium text-slate-800">{t('projectModal.smart_emails_label')} </span>
                             {project.task_notifications_use_org_defaults !== false ? (
                                 <>
-                                    Using organization defaults (
-                                    {state.currentOrganization.task_start_notifications_enabled !== false ? 'on' : 'off'}
-                                    ).
+                                    {t('projectModal.using_org_defaults', {
+                                        status: state.currentOrganization.task_start_notifications_enabled !== false
+                                            ? t('projectModal.on')
+                                            : t('projectModal.off'),
+                                    })}
                                 </>
                             ) : project.task_start_notifications_enabled !== false ? (
-                                <>On for this project.</>
+                                <>{t('projectModal.on_for_project')}</>
                             ) : (
-                                <>Off for this project.</>
+                                <>{t('projectModal.off_for_project')}</>
                             )}{' '}
                             <button
                                 type="button"
                                 className="font-semibold text-blue-600 hover:text-blue-800"
                                 onClick={() => setSmartTaskNotifOpen(true)}
                             >
-                                Edit notification settings
+                                {t('projectModal.edit_notification_settings')}
                             </button>
                         </div>
                     )}
                     <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[7fr_3fr] lg:grid-cols-1">
                         <div className="min-w-0 lg:col-span-1">
-                            <label className="block text-sm font-semibold mb-1 text-gray-600">Project Name</label>
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.project_name')}</label>
                             <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border rounded-lg" required />
                         </div>
                         <div className="min-w-0 lg:hidden">
-                            <label className="block text-sm font-semibold mb-1 text-gray-600">Project Number</label>
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.project_number')}</label>
                             <input
                                 type="text"
                                 value={project_number}
                                 onChange={(e) => setProjectNumber(e.target.value)}
                                 className="w-full p-2 border rounded-lg"
-                                placeholder="Optional"
+                                placeholder={t('projectModal.optional')}
                             />
                         </div>
                     </div>
                     <div className="mb-4">
-                        <label className="block text-sm font-semibold mb-1 text-gray-600">Address</label>
+                        <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.address')}</label>
                         <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full p-2 border rounded-lg" />
                     </div>
                     <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-[3fr_7fr]">
                         <div className="min-w-0">
-                            <label className="block text-sm font-semibold mb-1 text-gray-600">Project Type</label>
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.project_type')}</label>
                             <select value={project_type} onChange={(e) => setProjectType(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
-                                <option value="Residential">Residential</option>
-                                <option value="Commercial">Commercial</option>
-                                <option value="Industrial">Industrial</option>
-                                <option value="Infrastructure">Infrastructure</option>
-                                <option value="Multi-family">Multi-family</option>
-                                <option value="Other">Other</option>
+                                {PROJECT_TYPE_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
+                                ))}
                             </select>
                         </div>
                         <div className="min-w-0 hidden lg:block">
-                            <label className="block text-sm font-semibold mb-1 text-gray-600">Project Number</label>
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.project_number')}</label>
                             <input
                                 type="text"
                                 value={project_number}
                                 onChange={(e) => setProjectNumber(e.target.value)}
                                 className="w-full p-2 border rounded-lg"
-                                placeholder="Optional"
+                                placeholder={t('projectModal.optional')}
                             />
                         </div>
                     </div>
                     {project_type === 'Other' && (
                         <div className="mb-4">
-                            <label className="block text-sm font-semibold mb-1 text-gray-600">Custom project type</label>
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.custom_project_type')}</label>
                             <input
                                 type="text"
                                 value={project_type_custom}
                                 onChange={(e) => setProjectTypeCustom(e.target.value)}
-                                placeholder="Enter project type"
+                                placeholder={t('projectModal.custom_type_placeholder')}
                                 className="w-full p-2 border rounded-lg"
                             />
                         </div>
                     )}
                     <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[3fr_7fr]">
                         <div className="min-w-0">
-                            <label className="block text-sm font-semibold mb-1 text-gray-600">Status</label>
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.status')}</label>
                             <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
-                                <option value="Planning">Planning</option>
-                                <option value="In Progress">In Progress</option>
-                                <option value="On Hold">On Hold</option>
-                                <option value="Completed">Completed</option>
+                                {PROJECT_STATUS_OPTIONS.map((statusValue) => (
+                                    <option key={statusValue} value={statusValue}>
+                                        {getLocalizedProjectStatus(statusValue, t)}
+                                    </option>
+                                ))}
                             </select>
                         </div>
                         <div className="min-w-0">
-                            <label className="block text-sm font-semibold mb-1 text-gray-600">Next Milestone</label>
+                            <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.next_milestone')}</label>
                             <input
                                 type="text"
                                 value={next_milestone}
                                 onChange={(e) => setNextMilestone(e.target.value)}
                                 className="w-full p-2 border rounded-lg"
-                                placeholder="e.g., Foundation Complete"
+                                placeholder={t('projectModal.milestone_placeholder')}
                             />
                         </div>
                     </div>
-                    <p className="text-xs text-gray-500 -mt-2 mb-4">Status color will be automatically determined</p>
+                    <p className="text-xs text-gray-500 -mt-2 mb-4">{t('projectModal.status_color_hint')}</p>
                     <DateRangePicker
-                        label="Schedule"
+                        label={t('projectModal.schedule')}
                         startValue={start_date}
                         endValue={due_date}
                         onChange={({ start, end }) => {
@@ -533,17 +551,17 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                     {smartTaskNotifOpen && (
                     <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
                         <div className="mb-3 flex items-start justify-between gap-2">
-                            <h3 className="text-sm font-semibold text-gray-800">Smart Task Notifications</h3>
+                            <h3 className="text-sm font-semibold text-gray-800">{t('projectModal.smart_notif_title')}</h3>
                             <button
                                 type="button"
                                 onClick={() => setSmartTaskNotifOpen(false)}
                                 className="shrink-0 rounded px-2 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-200"
                             >
-                                Close
+                                {t('common.close')}
                             </button>
                         </div>
                         <p className="text-xs text-gray-500 mb-3">
-                            Smart notifications email assignees before task start dates and when dependencies unlock so crews can prepare in advance.
+                            {t('projectModal.smart_notif_desc')}
                         </p>
                         <label className="flex items-center gap-2 text-sm text-gray-700 mb-2">
                             <input
@@ -552,7 +570,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                 onChange={(e) => setTaskNotifUseOrgDefaults(e.target.checked)}
                                 className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             />
-                            Use organization defaults
+                            {t('projectModal.use_org_defaults')}
                         </label>
                         {!taskNotifUseOrgDefaults && (
                             <div className="space-y-2">
@@ -563,16 +581,16 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                         onChange={(e) => setTaskNotifEnabled(e.target.checked)}
                                         className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                     />
-                                    Email assignees before task start
+                                    {t('projectModal.email_before_start')}
                                 </label>
                                 <div>
-                                    <label className="block text-xs text-gray-500 mb-1">Lead days before start (comma-separated)</label>
+                                    <label className="block text-xs text-gray-500 mb-1">{t('projectModal.lead_days_label')}</label>
                                     <input
                                         type="text"
                                         value={taskNotifLeadDays}
                                         onChange={(e) => setTaskNotifLeadDays(e.target.value)}
                                         className="w-full p-2 border rounded-lg text-sm"
-                                        placeholder="14, 7"
+                                        placeholder={t('projectModal.lead_days_placeholder')}
                                     />
                                 </div>
                             </div>
@@ -585,10 +603,10 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                     onChange={(e) => setProjectBatchingEnabled(e.target.checked)}
                                     className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                 />
-                                Batch low-urgency notifications for this project
+                                {t('projectModal.batch_notifications')}
                             </label>
                             <div>
-                                <label className="block text-xs text-gray-500 mb-1">Batch window (minutes)</label>
+                                <label className="block text-xs text-gray-500 mb-1">{t('projectModal.batch_window_label')}</label>
                                 <input
                                     type="number"
                                     min="1"
@@ -605,7 +623,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                     onChange={(e) => setDependencyNotifEnabled(e.target.checked)}
                                     className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                 />
-                                Email assignees when dependencies unlock
+                                {t('projectModal.email_on_dependency_unlock')}
                             </label>
                         </div>
                     </div>
@@ -613,7 +631,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
 
                     <div className="mb-6">
                         <label className="block text-sm font-semibold mb-2 text-gray-600">
-                            {isEditMode ? 'Team Members' : 'Add Team Members'} (Optional)
+                            {isEditMode ? t('projectModal.team_members') : t('projectModal.add_team_members')} {t('projectModal.optional_paren')}
                         </label>
                         
                         {/* Add email addresses input */}
@@ -624,7 +642,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                     value={emailInput}
                                     onChange={(e) => setEmailInput(e.target.value)}
                                     onKeyPress={handleKeyPress}
-                                    placeholder="Enter email addresses (comma or space separated)"
+                                    placeholder={t('projectModal.email_input_placeholder')}
                                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 />
                                 <button
@@ -632,12 +650,12 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                     onClick={handleAddEmails}
                                     className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
                                 >
-                                    Add
+                                    {t('projectModal.add')}
                                 </button>
                             </div>
                             <p className="text-xs text-gray-500 mt-1">
-                                Add email addresses for people who don&apos;t have accounts yet. They&apos;ll be invited to join.
-                                {ownerContactId && ' You are added to the project automatically.'}
+                                {t('projectModal.email_invite_hint')}
+                                {ownerContactId && t('projectModal.auto_added_hint')}
                             </p>
                         </div>
 
@@ -695,15 +713,15 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                         {ownerContactId && (
                             <p className="mt-2 text-xs italic text-gray-500">
                                 {isEditMode
-                                    ? 'The project owner is always on the team and cannot be removed.'
-                                    : 'You are automatically on the project team.'}
+                                    ? t('projectModal.owner_always_on')
+                                    : t('projectModal.auto_on_team')}
                             </p>
                         )}
 
                         {(selectedContacts.length > 0 || emailAddresses.length > 0) && (
                             <p className="text-xs text-gray-500 mt-2">
-                                {selectedContacts.length} existing contact{selectedContacts.length !== 1 ? 's' : ''} selected
-                                {emailAddresses.length > 0 && `, ${emailAddresses.length} email${emailAddresses.length !== 1 ? 's' : ''} to invite`}
+                                {t(selectedContacts.length === 1 ? 'projectModal.contacts_selected_one' : 'projectModal.contacts_selected_other', { count: selectedContacts.length })}
+                                {emailAddresses.length > 0 && t(emailAddresses.length === 1 ? 'projectModal.emails_to_invite_one' : 'projectModal.emails_to_invite_other', { count: emailAddresses.length })}
                             </p>
                         )}
                     </div>
@@ -715,18 +733,18 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                 disabled={isLoading}
                                 className="px-6 py-2 bg-gray-100 text-gray-800 rounded-lg disabled:opacity-50 hover:bg-gray-200"
                             >
-                                Import MS Project XML
+                                {t('projectModal.import_ms_project')}
                             </button>
                         )}
-                        <button type="button" onClick={onClose} disabled={isLoading} className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg disabled:opacity-50">Cancel</button>
+                        <button type="button" onClick={onClose} disabled={isLoading} className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg disabled:opacity-50">{t('common.cancel')}</button>
                         <button type="submit" disabled={isLoading} className="px-6 py-2 text-white bg-blue-600 rounded-lg disabled:opacity-50 flex items-center gap-2">
                             {isLoading ? (
                                 <>
                                     <LoadingSpinner size="sm" text="" />
-                                    {isEditMode ? 'Updating...' : 'Creating...'}
+                                    {isEditMode ? t('projectModal.updating') : t('projectModal.creating')}
                                 </>
                             ) : (
-                                isEditMode ? 'Update Project' : 'Create Project'
+                                isEditMode ? t('projectModal.update_project') : t('projectModal.create_project_btn')
                             )}
                         </button>
                     </div>

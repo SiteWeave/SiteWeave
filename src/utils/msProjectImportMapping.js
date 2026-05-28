@@ -161,9 +161,10 @@ export function buildScheduleFromMappedRows(opts) {
             if (atMinLevel.length === 1) {
                 // Sole summary at the shallowest level — this is the project-level container.
                 projectContainerUid = atMinLevel[0].uid;
-                warnings.push(
-                    `"${atMinLevel[0].name}" was detected as the project-level summary container and was excluded from phases. If this is incorrect, re-import with the row strategy set to "Import all rows as tasks".`
-                );
+                warnings.push({
+                    key: 'ms_import.warn_project_container',
+                    params: { name: atMinLevel[0].name },
+                });
             }
         }
     }
@@ -278,7 +279,7 @@ export function buildScheduleFromMappedRows(opts) {
     }
 
     if (!hasPredecessorMapping && rows.some((row) => row.predecessorLinks?.length > 0)) {
-        warnings.push('Predecessor links were detected in the XML but are not mapped, so dependencies will be skipped.');
+        warnings.push('ms_import.warn_predecessors_unmapped');
     }
 
     const filteredDeps = dependencyEdges.filter(
@@ -296,11 +297,11 @@ export function buildScheduleFromMappedRows(opts) {
 export function getImportBlockingIssues(sourceFieldMappings, rowRules) {
     const issues = [];
     if (!hasTargetMapping(sourceFieldMappings, SW_TARGET.ROW_NAME)) {
-        issues.push('Map at least one source field to Row / task / phase name before importing.');
+        issues.push('ms_import.issue_map_row_name');
     }
     if ((rowRules?.strategy || 'summary_to_phase') === 'summary_to_phase' &&
         !hasTargetMapping(sourceFieldMappings, SW_TARGET.ROW_SUMMARY)) {
-        issues.push('Map a source field to Summary row (phase vs task), or switch row strategy to Import all rows as tasks only.');
+        issues.push('ms_import.issue_map_summary_row');
     }
     return issues;
 }
@@ -312,10 +313,10 @@ export function getImportWarnings(sourceFieldMappings) {
         hasTargetMapping(sourceFieldMappings, SW_TARGET.TASK_DUE) ||
         hasTargetMapping(sourceFieldMappings, SW_TARGET.TASK_DURATION);
     if (!hasAnyScheduleDate) {
-        warnings.push('No date or duration field is mapped, so imported rows may not show a usable schedule.');
+        warnings.push('ms_import.warn_no_schedule_dates');
     }
     if (!hasTargetMapping(sourceFieldMappings, SW_TARGET.TASK_PERCENT)) {
-        warnings.push('No percent-complete field is mapped, so imported progress will default to 0% for schedule rows.');
+        warnings.push('ms_import.warn_no_percent');
     }
     return warnings;
 }
@@ -356,9 +357,10 @@ function compressLinearFinishToStartEdges(edges, warnings) {
     });
 
     if (compressedCount > 0) {
-        warnings.push(
-            `Dependency compression removed ${compressedCount} linear FS links (opt-in mode) while preserving branch/merge dependencies.`
-        );
+        warnings.push({
+            key: 'ms_import.warn_dependency_compression',
+            params: { count: compressedCount },
+        });
     }
     return kept;
 }

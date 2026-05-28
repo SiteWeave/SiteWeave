@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -7,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHaptics } from '../../hooks/useHaptics';
 
 export default function LoginScreen() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -18,7 +20,7 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (!email || !password) {
       haptics.error();
-      Alert.alert('Error', 'Please enter email and password');
+      Alert.alert(t('common.error'), t('auth.enter_email_first'));
       return;
     }
 
@@ -37,7 +39,7 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     } catch (error) {
       haptics.error();
-      Alert.alert('Login Failed', error.message);
+      Alert.alert(t('common.error'), t('auth.login_failed', { message: error.message }));
     } finally {
       setLoading(false);
     }
@@ -59,7 +61,7 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     } catch (error) {
       haptics.error();
-      Alert.alert('Login Failed', error.message);
+      Alert.alert(t('common.error'), t('auth.login_failed', { message: error.message }));
     } finally {
       setLoading(false);
     }
@@ -81,7 +83,7 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     } catch (error) {
       haptics.error();
-      Alert.alert('Login Failed', error.message);
+      Alert.alert(t('common.error'), t('auth.login_failed', { message: error.message }));
     } finally {
       setLoading(false);
     }
@@ -103,7 +105,7 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     } catch (error) {
       haptics.error();
-      Alert.alert('Login Failed', error.message);
+      Alert.alert(t('common.error'), t('auth.login_failed', { message: error.message }));
     } finally {
       setLoading(false);
     }
@@ -118,7 +120,7 @@ export default function LoginScreen() {
         showsVerticalScrollIndicator={false}
       >
       <View style={styles.content}>
-        <Text style={styles.title}>Sign in to SiteWeave</Text>
+        <Text style={styles.title}>{t('mobile.sign_in_title')}</Text>
       
       <TouchableOpacity 
         onPress={() => {
@@ -128,17 +130,18 @@ export default function LoginScreen() {
         style={styles.signupLink}
       >
         <Text style={styles.signupText}>
-          Don't have an account? <Text style={styles.signupLinkText}>Sign up</Text>
+          {t('auth.no_account')}{' '}
+          <Text style={styles.signupLinkText}>{t('auth.sign_up_link')}</Text>
         </Text>
       </TouchableOpacity>
 
       <Text style={styles.inviteHint}>
-        Invited to a project? Sign in with any email — then open the invite link from your contractor.
+        {t('auth.invited_to_project')} {t('auth.invite_link_hint')}
       </Text>
 
       <TextInput
         style={styles.input}
-        placeholder="Email address"
+        placeholder={t('auth.email_address')}
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
@@ -148,7 +151,7 @@ export default function LoginScreen() {
 
       <TextInput
         style={styles.input}
-        placeholder="Password"
+        placeholder={t('auth.password')}
         value={password}
         onChangeText={setPassword}
         secureTextEntry={true}
@@ -162,13 +165,13 @@ export default function LoginScreen() {
         disabled={!!loading}
       >
         <Text style={styles.buttonText}>
-          {loading ? 'Signing in...' : 'Sign In'}
+          {loading ? `${t('auth.sign_in')}...` : t('auth.sign_in')}
         </Text>
       </TouchableOpacity>
 
       <View style={styles.dividerContainer}>
         <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>Or continue with</Text>
+        <Text style={styles.dividerText}>{t('auth.or_continue_with')}</Text>
         <View style={styles.dividerLine} />
       </View>
 
@@ -179,7 +182,7 @@ export default function LoginScreen() {
           disabled={!!loading}
         >
           <FontAwesome5 name="apple" size={20} color="#000000" style={{ marginRight: 8 }} />
-          <Text style={styles.socialButtonText}>Apple</Text>
+          <Text style={styles.socialButtonText}>{t('mobile.apple')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -188,7 +191,7 @@ export default function LoginScreen() {
           disabled={!!loading}
         >
           <FontAwesome5 name="google" size={20} color="#4285F4" style={{ marginRight: 8 }} />
-          <Text style={styles.socialButtonText}>Google</Text>
+          <Text style={styles.socialButtonText}>{t('auth.google')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -197,7 +200,7 @@ export default function LoginScreen() {
           disabled={!!loading}
         >
           <FontAwesome5 name="microsoft" size={20} color="#00A4EF" style={{ marginRight: 8 }} />
-          <Text style={styles.socialButtonText}>Microsoft</Text>
+          <Text style={styles.socialButtonText}>{t('auth.microsoft')}</Text>
         </TouchableOpacity>
       </View>
       </View>

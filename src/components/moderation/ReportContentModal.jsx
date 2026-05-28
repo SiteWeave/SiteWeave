@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Modal from '../Modal';
 import { useAppContext, supabaseClient } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -12,6 +13,7 @@ export default function ReportContentModal({
   reportedUserId,
   reportedUserName,
 }) {
+  const { t } = useTranslation();
   const { state } = useAppContext();
   const { addToast } = useToast();
   const [selectedReason, setSelectedReason] = useState(null);
@@ -21,7 +23,7 @@ export default function ReportContentModal({
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedReason) {
-      addToast('Please select a reason for reporting.', 'error');
+      addToast(t('moderation.select_reason'), 'error');
       return;
     }
     if (!state.user?.id) return;
@@ -36,13 +38,13 @@ export default function ReportContentModal({
         reason: selectedReason,
         description: description.trim() || null,
       });
-      addToast('Report submitted. We will review it and take appropriate action.', 'success');
+      addToast(t('moderation.report_submitted'), 'success');
       setSelectedReason(null);
       setDescription('');
       onClose();
     } catch (error) {
       console.error('Error reporting content:', error);
-      addToast('Failed to submit report. Please try again.', 'error');
+      addToast(t('moderation.report_failed'), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -57,16 +59,17 @@ export default function ReportContentModal({
   };
 
   return (
-    <Modal show={show} onClose={handleClose} title="Report Content" size="large">
+    <Modal show={show} onClose={handleClose} title={t('moderation.report_content')} size="large">
       {reportedUserName && (
         <p className="text-sm text-gray-600 mb-4 bg-gray-50 rounded-lg p-3">
-          Reporting content from: <span className="font-semibold text-gray-900">{reportedUserName}</span>
+          {t('moderation.reporting_from')}{' '}
+          <span className="font-semibold text-gray-900">{reportedUserName}</span>
         </p>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <fieldset className="border-0 p-0 m-0">
-          <legend className="text-sm font-semibold text-gray-900 mb-2">Reason for report</legend>
+          <legend className="text-sm font-semibold text-gray-900 mb-2">{t('moderation.reason_for_report')}</legend>
           <div className="space-y-2">
             {REPORT_REASONS.map((reason) => (
               <label
@@ -94,12 +97,12 @@ export default function ReportContentModal({
 
         <div>
           <label className="block text-sm font-semibold text-gray-900 mb-2">
-            Additional details (optional)
+            {t('moderation.additional_details_optional')}
           </label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Provide any additional context..."
+            placeholder={t('moderation.additional_context_placeholder')}
             rows={4}
             disabled={submitting}
             className="w-full border border-gray-300 rounded-lg p-3 text-sm text-gray-900 resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -113,14 +116,14 @@ export default function ReportContentModal({
             disabled={submitting}
             className="flex-1 px-4 py-2 rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 disabled:opacity-50"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="submit"
             disabled={!selectedReason || submitting}
             className="flex-1 px-4 py-2 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50"
           >
-            {submitting ? 'Submitting...' : 'Submit Report'}
+            {submitting ? t('moderation.submitting') : t('moderation.submit_report')}
           </button>
         </div>
       </form>

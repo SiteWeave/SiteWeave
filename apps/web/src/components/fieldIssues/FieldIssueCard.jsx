@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { getFieldIssueDisplayStatus } from '../../utils/fieldIssueStatus';
 
 const PRIORITY_STYLES = {
@@ -26,6 +27,7 @@ function initials(name) {
 }
 
 export default function FieldIssueCard({ issue, selected, onSelect }) {
+  const { t } = useTranslation();
   const displayStatus = getFieldIssueDisplayStatus(issue);
   const priorityKey = (issue.priority || 'medium').toLowerCase();
   const priorityClass = PRIORITY_STYLES[priorityKey] || PRIORITY_STYLES.medium;
@@ -56,7 +58,7 @@ export default function FieldIssueCard({ issue, selected, onSelect }) {
             <span
               className={`shrink-0 px-1.5 py-0.5 text-[10px] font-semibold rounded-full border ${priorityClass}`}
             >
-              {issue.priority || 'Medium'}
+              {t(`fieldIssues.priority_${priorityKey}`) || issue.priority || t('fieldIssues.priority_medium')}
             </span>
           </div>
           {issue.description ? (
@@ -70,7 +72,7 @@ export default function FieldIssueCard({ issue, selected, onSelect }) {
                   : 'bg-slate-200 text-slate-600'
               }`}
             >
-              {displayStatus === 'open' ? 'Open' : 'Closed'}
+              {displayStatus === 'open' ? t('fieldIssues.status_open') : t('fieldIssues.status_closed')}
             </span>
             <span>{formatWhen(issue.updated_at || issue.created_at)}</span>
             {assigneeName ? <span>· {assigneeName}</span> : null}

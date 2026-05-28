@@ -1,4 +1,10 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  getLocalizedProjectStatus,
+  normalizeStatusDisplay,
+  PROJECT_STATUS_CANONICAL,
+} from '@siteweave/i18n';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import {
@@ -241,26 +247,34 @@ function StandardPreviewSections({
   showTaskPhaseTag,
   showTaskPhotos,
   showProjectNameOnTasks,
+  t,
 }) {
   const d = data;
+  const p = (key, opts) => t(`progressReports.preview.${key}`, opts);
+
+  const formatTaskStartDate = (value) => {
+    const parsed = parsePreviewDay(value);
+    return parsed ? parsed.toLocaleDateString(locale) : value;
+  };
+
   return (
     <>
       {reportSections.vitals !== false && d.vitals && (
         <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-3 border border-gray-200 rounded-lg bg-gray-50 px-4 py-3 text-center">
           <div>
             <p className="text-xl font-semibold text-gray-900 tabular-nums">{d.vitals.tasks_completed_count ?? 0}</p>
-            <p className="text-xs text-gray-500 mt-0.5 max-w-[9rem]">Done (all time)</p>
+            <p className="text-xs text-gray-500 mt-0.5 max-w-[9rem]">{p('done_all_time')}</p>
           </div>
           <div>
             <p className="text-xl font-semibold text-gray-900 tabular-nums">{d.vitals.open_tasks_count ?? 0}</p>
-            <p className="text-xs text-gray-500 mt-0.5 max-w-[9rem]">Not complete</p>
+            <p className="text-xs text-gray-500 mt-0.5 max-w-[9rem]">{p('not_complete')}</p>
           </div>
           {d.vitals.project_end_date && (
             <div className="sm:border-l sm:border-gray-200 sm:pl-10">
               <p className="text-lg font-semibold text-gray-800 leading-tight">
                 {new Date(d.vitals.project_end_date).toLocaleDateString(locale)}
               </p>
-              <p className="text-xs text-gray-500 mt-1 font-medium">Latest task due</p>
+              <p className="text-xs text-gray-500 mt-1 font-medium">{p('latest_task_due')}</p>
             </div>
           )}
           {d.vitals.schedule_day_total != null && (
@@ -269,9 +283,9 @@ function StandardPreviewSections({
                 {d.vitals.schedule_day_current} / {d.vitals.schedule_day_total}
               </p>
               {d.vitals.schedule_progress_pct != null && (
-                <p className="text-xs text-gray-500 mt-0.5">{d.vitals.schedule_progress_pct}% through schedule</p>
+                <p className="text-xs text-gray-500 mt-0.5">{d.vitals.schedule_progress_pct}%</p>
               )}
-              <p className="text-xs text-gray-500 mt-1 font-medium">Schedule (business days)</p>
+              <p className="text-xs text-gray-500 mt-1 font-medium">{p('schedule_business_days')}</p>
             </div>
           )}
         </div>
@@ -279,12 +293,12 @@ function StandardPreviewSections({
 
       {reportSections.status_changes !== false && (d.status_changes || []).length > 0 && (
         <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/80 p-3">
-          <h2 className="text-sm font-semibold text-emerald-900 mb-2 uppercase tracking-wide">Status update</h2>
+          <h2 className="text-sm font-semibold text-emerald-900 mb-2 uppercase tracking-wide">{p('status_update')}</h2>
           {(d.status_changes || []).map((change, i) => (
             <div key={i} className="p-2.5 bg-white border border-emerald-200 rounded mb-2 last:mb-0">
               <p className="font-medium text-gray-900 text-sm">{change.project_name}</p>
               <p className="text-xs text-gray-700 mt-0.5">
-                <span className="line-through text-gray-400">{change.old_status}</span>
+                <span className="line-through text-gray-400">{translateStatus(change.old_status)}</span>
                 <span className="mx-1.5 text-emerald-600">→</span>
                 <strong className="text-emerald-800">{translateStatus(change.new_status)}</strong>
                 {reportSections.show_who_changed && change.changed_by && (
@@ -298,7 +312,7 @@ function StandardPreviewSections({
 
       {reportSections.task_completion !== false && (d.completed_tasks || []).length > 0 && (
         <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/80 p-3">
-          <h2 className="text-sm font-semibold text-emerald-900 mb-2 uppercase tracking-wide">Completed work</h2>
+          <h2 className="text-sm font-semibold text-emerald-900 mb-2 uppercase tracking-wide">{p('completed_work')}</h2>
           {(reportSections.show_assignees || reportSections.show_dates) && !showTaskPhotos ? (
             <table className="w-full text-sm">
               <tbody>
@@ -386,7 +400,7 @@ function StandardPreviewSections({
 
       {reportSections.phase_changes !== false && (d.phase_progress || []).length > 0 && (
         <div className="rounded-lg border-2 border-blue-200 bg-blue-50/80 p-3">
-          <h2 className="text-sm font-semibold text-blue-900 mb-2 uppercase tracking-wide">Phase progress</h2>
+          <h2 className="text-sm font-semibold text-blue-900 mb-2 uppercase tracking-wide">{p('phase_progress')}</h2>
           {(d.phase_progress || []).map((phase, i) => (
             <div key={i} className="mb-2.5 last:mb-0">
               <div className="flex justify-between text-xs mb-1">
@@ -407,16 +421,20 @@ function StandardPreviewSections({
 
       {reportSections.show_weather_impacts && (d.weather_impacts || []).length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-          <h2 className="text-sm font-semibold text-amber-900 mb-2 uppercase tracking-wide">Weather / Schedule impacts</h2>
+          <h2 className="text-sm font-semibold text-amber-900 mb-2 uppercase tracking-wide">{p('weather_impacts')}</h2>
           <ul className="space-y-2">
             {(d.weather_impacts || []).map((impact, i) => (
               <li key={i} className="text-sm text-amber-900">
-                <span className="font-semibold">{impact.title || 'Weather impact'}</span>
+                <span className="font-semibold">{impact.title || p('weather_impact_fallback')}</span>
                 {showProjectNameOnTasks && impact.project_name ? (
                   <span className="text-gray-500 font-normal"> ({impact.project_name})</span>
                 ) : null}
-                {typeof impact.days_lost === 'number' ? ` — ${impact.days_lost} day(s) lost` : ''}
-                {impact.schedule_shift_applied ? ' · schedule updated' : ' · logged only'}
+                {typeof impact.days_lost === 'number'
+                  ? ` — ${t('weather.impact_days_lost', { count: impact.days_lost })}`
+                  : ''}
+                {impact.schedule_shift_applied
+                  ? ` · ${t('weather.schedule_updated')}`
+                  : ` · ${t('weather.logged_only')}`}
                 {impact.description ? (
                   <span className="block text-xs text-amber-800 mt-1">{impact.description}</span>
                 ) : null}
@@ -428,61 +446,65 @@ function StandardPreviewSections({
 
       {reportSections.weekly_plan !== false && (
         <div className="rounded-lg border border-gray-200 p-3 space-y-3">
-          <h2 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Weekly plan</h2>
+          <h2 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{p('weekly_plan')}</h2>
           <p className="text-[11px] text-gray-500 leading-snug">
-            Lists use scheduled start dates for this/next week (not every open task).
+            {t('progressReports.builder.projects_in_report_hint')}
           </p>
 
           <div>
-            <h3 className="text-xs font-semibold text-emerald-800 mb-1">We did this last week</h3>
+            <h3 className="text-xs font-semibold text-emerald-800 mb-1">{p('last_week')}</h3>
             {(d.last_week_done || []).length > 0 ? (
               <ul className="space-y-1">
-                {(d.last_week_done || []).map((t, i) => (
+                {(d.last_week_done || []).map((task, i) => (
                   <li key={`last-${i}`} className="text-sm text-gray-700">
-                    <span className="inline">{t.text}</span>
-                    <TaskPhaseTag show={showTaskPhaseTag} name={t.phase_name} />
-                    {showProjectNameOnTasks ? <TaskProjectNameTag name={t.project_name} /> : null}
+                    <span className="inline">{task.text}</span>
+                    <TaskPhaseTag show={showTaskPhaseTag} name={task.phase_name} />
+                    {showProjectNameOnTasks ? <TaskProjectNameTag name={task.project_name} /> : null}
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-xs text-gray-500">No completed tasks in the last week.</p>
+              <p className="text-xs text-gray-500">{p('no_completed_last_week')}</p>
             )}
           </div>
 
           <div>
-            <h3 className="text-xs font-semibold text-blue-800 mb-1">Here&apos;s what we are doing this week</h3>
+            <h3 className="text-xs font-semibold text-blue-800 mb-1">{p('this_week')}</h3>
             {(d.this_week_plan || []).length > 0 ? (
               <ul className="space-y-1">
-                {(d.this_week_plan || []).map((t, i) => (
+                {(d.this_week_plan || []).map((task, i) => (
                   <li key={`this-${i}`} className="text-sm text-gray-700">
-                    <span className="inline">{t.text}</span>
-                    <TaskPhaseTag show={showTaskPhaseTag} name={t.phase_name} />
-                    {showProjectNameOnTasks ? <TaskProjectNameTag name={t.project_name} /> : null}
-                    {t.start_date && <span className="text-gray-400 ml-1.5 text-xs">starts {t.start_date}</span>}
+                    <span className="inline">{task.text}</span>
+                    <TaskPhaseTag show={showTaskPhaseTag} name={task.phase_name} />
+                    {showProjectNameOnTasks ? <TaskProjectNameTag name={task.project_name} /> : null}
+                    {task.start_date && (
+                      <span className="text-gray-400 ml-1.5 text-xs">{formatTaskStartDate(task.start_date)}</span>
+                    )}
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-xs text-gray-500">No tasks scheduled this week.</p>
+              <p className="text-xs text-gray-500">{p('no_tasks_this_week')}</p>
             )}
           </div>
 
           <div>
-            <h3 className="text-xs font-semibold text-indigo-800 mb-1">Here&apos;s what we will do next week</h3>
+            <h3 className="text-xs font-semibold text-indigo-800 mb-1">{p('next_week')}</h3>
             {(d.next_week_plan || []).length > 0 ? (
               <ul className="space-y-1">
-                {(d.next_week_plan || []).map((t, i) => (
+                {(d.next_week_plan || []).map((task, i) => (
                   <li key={`next-${i}`} className="text-sm text-gray-700">
-                    <span className="inline">{t.text}</span>
-                    <TaskPhaseTag show={showTaskPhaseTag} name={t.phase_name} />
-                    {showProjectNameOnTasks ? <TaskProjectNameTag name={t.project_name} /> : null}
-                    {t.start_date && <span className="text-gray-400 ml-1.5 text-xs">starts {t.start_date}</span>}
+                    <span className="inline">{task.text}</span>
+                    <TaskPhaseTag show={showTaskPhaseTag} name={task.phase_name} />
+                    {showProjectNameOnTasks ? <TaskProjectNameTag name={task.project_name} /> : null}
+                    {task.start_date && (
+                      <span className="text-gray-400 ml-1.5 text-xs">{formatTaskStartDate(task.start_date)}</span>
+                    )}
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-xs text-gray-500">No tasks scheduled for next week.</p>
+              <p className="text-xs text-gray-500">{p('no_tasks_next_week')}</p>
             )}
           </div>
         </div>
@@ -497,7 +519,9 @@ function StandardPreviewSections({
  * Preview layout follows the schedule report type (Standard vs Brief); there is no separate preview toggle.
  */
 function ProgressReportPreview({ formData, recipients, scheduleId, projectId: projectIdProp = null }) {
-  const locale = typeof navigator !== 'undefined' ? navigator.language : 'en-US';
+  const { t, i18n } = useTranslation();
+  const locale = i18n?.language || (typeof navigator !== 'undefined' ? navigator.language : 'en-US');
+  const p = (key, opts) => t(`progressReports.preview.${key}`, opts);
   const { state } = useAppContext();
   const { addToast } = useToast();
   const [isSendingTest, setIsSendingTest] = useState(false);
@@ -673,19 +697,19 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
 
   const handleSendTest = async () => {
     if (!scheduleId) {
-      addToast('Please save the schedule first before sending a test', 'error');
+      addToast(p('save_before_test'), 'error');
       return;
     }
     if (!state.user?.email) {
-      addToast('User email not found', 'error');
+      addToast(p('user_email_not_found'), 'error');
       return;
     }
     setIsSendingTest(true);
     try {
       await testSendProgressReport(supabaseClient, scheduleId, state.user.email);
-      addToast('Test email sent! Check your inbox.', 'success');
+      addToast(p('test_sent'), 'success');
     } catch (error) {
-      addToast('Error sending test email: ' + error.message, 'error');
+      addToast(p('test_send_error', { message: error.message }), 'error');
     } finally {
       setIsSendingTest(false);
     }
@@ -701,7 +725,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
   const periodStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const previewWindowStartIso = periodStart.toISOString();
   const previewWindowEndIso = now.toISOString();
-  const organizationName = state.currentOrganization?.name || 'Organization';
+  const organizationName = state.currentOrganization?.name || t('navigation.organization');
   const projectName = selectedProject?.name || null;
 
   const scopedTasks = dedupeTasksByNamePhaseStartDate(
@@ -897,7 +921,11 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
       start_date: row.start_date,
       end_date: row.end_date,
       schedule_shift_applied: row.schedule_shift_applied === true,
-      project_name: row.projects?.name || projectNameForTask(row) || projectName || 'Project',
+      project_name:
+        row.projects?.name
+        || projectNameForTask(row)
+        || projectName
+        || t('progressReports.builder.untitled_project'),
     }));
 
   const orgAggregateVitals = React.useMemo(() => {
@@ -922,7 +950,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
         id: String(pid),
         project,
         slice: computeOrgProjectPreviewSlice({
-          project: project || { id: pid, name: 'Project' },
+          project: project || { id: pid, name: t('progressReports.builder.untitled_project') },
           projectTasks,
           projectPhases,
           locale,
@@ -947,6 +975,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
     reportSections,
     showTaskPhotos,
     showTaskPhaseTag,
+    t,
   ]);
 
   const baseData = {
@@ -1024,63 +1053,72 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
       const parts = [];
       if (!selectedProject && totalProjectsInScope > 0) {
         parts.push(
-          `Summary covers ${totalProjectsInScope} selected project${totalProjectsInScope !== 1 ? 's' : ''}`,
+          p(totalProjectsInScope === 1 ? 'summary_covers_one' : 'summary_covers_other', {
+            count: totalProjectsInScope,
+          }),
         );
       }
       if (periodCompleted > 0) {
         parts.push(
-          `${periodCompleted} task${periodCompleted !== 1 ? 's' : ''} completed in this reporting period`,
+          p(periodCompleted === 1 ? 'tasks_completed_period_one' : 'tasks_completed_period_other', {
+            count: periodCompleted,
+          }),
         );
       }
       if (v?.schedule_day_current != null && v?.schedule_day_total != null) {
         const schedPct = v.schedule_progress_pct;
         parts.push(
-          `day ${v.schedule_day_current} of ${v.schedule_day_total} on the schedule${schedPct != null ? ` (${schedPct}% through)` : ''}`,
+          p('schedule_day', {
+            current: v.schedule_day_current,
+            total: v.schedule_day_total,
+            pctSuffix: schedPct != null ? p('schedule_pct_suffix', { pct: schedPct }) : '',
+          }),
         );
       }
       if (openCount > 0) {
-        parts.push(`${openCount} open task${openCount !== 1 ? 's' : ''}`);
+        parts.push(p(openCount === 1 ? 'open_tasks_one' : 'open_tasks_other', { count: openCount }));
       }
       if (wiCount > 0) {
         parts.push(
-          `${wiCount} weather/schedule impact record${wiCount !== 1 ? 's' : ''} in this period`,
+          p(wiCount === 1 ? 'weather_records_one' : 'weather_records_other', { count: wiCount }),
         );
       }
 
       const executive_summary =
         parts.length > 0
-          ? parts.join(', ').replace(/,([^,]*)$/, ' and$1') + '.'
-          : 'No significant changes recorded in this reporting period.';
+          ? `${new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(parts)}.`
+          : p('no_changes');
 
       const highlights = [];
       if (periodCompleted > 0) {
-        highlights.push(
-          `${periodCompleted} task${periodCompleted !== 1 ? 's' : ''} completed this period`,
-        );
+        highlights.push({ type: 'period_completed', count: periodCompleted });
       }
       if (v?.schedule_day_total != null && v?.schedule_day_current != null) {
-        highlights.push(
-          `Schedule: day ${v.schedule_day_current} of ${v.schedule_day_total}${
-            v.schedule_progress_pct != null ? ` (${v.schedule_progress_pct}% through schedule)` : ''
-          }`,
-        );
+        highlights.push({
+          type: 'schedule',
+          current: v.schedule_day_current,
+          total: v.schedule_day_total,
+          pct: v.schedule_progress_pct ?? null,
+        });
       }
       if (data.last_week_done?.length) {
-        highlights.push(`${data.last_week_done.length} task(s) completed last week (by completion date)`);
+        highlights.push({ type: 'last_week', count: data.last_week_done.length });
       }
       if (data.this_week_plan?.length) {
-        highlights.push(`${data.this_week_plan.length} task(s) planned this week`);
+        highlights.push({ type: 'this_week', count: data.this_week_plan.length });
       }
       if (data.next_week_plan?.length) {
-        highlights.push(`${data.next_week_plan.length} task(s) starting next week`);
+        highlights.push({ type: 'next_week', count: data.next_week_plan.length });
       }
       if (v?.open_tasks_count > 0) {
-        highlights.push(
-          `${v.open_tasks_count} open task${v.open_tasks_count !== 1 ? 's' : ''} across ${totalProjectsInScope} project(s)`,
-        );
+        highlights.push({
+          type: 'open_tasks',
+          count: v.open_tasks_count,
+          projects: totalProjectsInScope,
+        });
       }
       if (wiCount > 0) {
-        highlights.push(`${wiCount} weather/schedule impact${wiCount !== 1 ? 's' : ''} logged this period`);
+        highlights.push({ type: 'weather', count: wiCount });
       }
 
       return {
@@ -1100,23 +1138,58 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
   const previewData = getPreviewData(baseData, previewMode);
 
   const clientFriendly = reportSections.client_friendly_labels !== false;
-  const translateStatus = (s) => {
-    if (!clientFriendly) return s;
-    const m = { 'In Progress': 'Active', 'On Hold': 'Paused', 'Completed': 'Finished' };
-    return m[s] || s;
+  const translateStatus = (status) => {
+    if (!status) return '';
+    if (!clientFriendly) {
+      return getLocalizedProjectStatus(status, t);
+    }
+    const canonical = normalizeStatusDisplay(status);
+    const friendlyByCanonical = {
+      [PROJECT_STATUS_CANONICAL.in_progress]: p('status_in_progress'),
+      [PROJECT_STATUS_CANONICAL.on_hold]: p('status_on_hold'),
+      [PROJECT_STATUS_CANONICAL.completed]: p('status_completed'),
+    };
+    return friendlyByCanonical[canonical] || getLocalizedProjectStatus(status, t);
   };
 
+  const subjectName = previewMode === 'executive'
+    ? previewData.organization_name || t('navigation.organization')
+    : previewData.project_name || previewData.organization_name || p('your_project');
+
   const defaultSubject = previewMode === 'executive'
-    ? `Brief: ${previewData.organization_name || 'Organization'} Status`
-    : `Progress Update: ${previewData.project_name || previewData.organization_name || 'Your Project'}`;
+    ? p('brief_subject', { name: subjectName })
+    : p('progress_subject', { name: subjectName });
+
+  const renderExecutiveHighlight = (item) => {
+    switch (item?.type) {
+      case 'period_completed':
+        return `${item.count} ${p('done_all_time').toLowerCase()}`;
+      case 'schedule':
+        return `${p('schedule_business_days')}: ${item.current}/${item.total}${
+          item.pct != null ? ` (${item.pct}%)` : ''
+        }`;
+      case 'last_week':
+        return `${item.count} — ${p('last_week')}`;
+      case 'this_week':
+        return `${item.count} — ${p('this_week')}`;
+      case 'next_week':
+        return `${item.count} — ${p('next_week')}`;
+      case 'open_tasks':
+        return `${item.count} ${p('not_complete').toLowerCase()} · ${item.projects} ${t('progressReports.builder.projects_in_report').toLowerCase()}`;
+      case 'weather':
+        return `${item.count} ${p('weather_impacts')}`;
+      default:
+        return '';
+    }
+  };
 
   const toDisplay = recipients.length > 0
     ? recipients.slice(0, 3).map((r) => r.email).join(', ')
-    + (recipients.length > 3 ? ` +${recipients.length - 3} more` : '')
-    : 'recipients@example.com';
+    + (recipients.length > 3 ? p('recipients_more', { count: recipients.length - 3 }) : '')
+    : p('recipients_placeholder');
   const fromDisplay = state.currentOrganization?.name
     ? `${state.currentOrganization.name} <notifications@siteweave.org>`
-    : 'SiteWeave Notifications <notifications@siteweave.org>';
+    : p('from_fallback');
   const dateDisplay = now.toLocaleString(locale, {
     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -1127,9 +1200,9 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
       {/* Controls — single header row */}
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-semibold text-gray-900 min-w-0">
-          Preview:{' '}
+          {p('preview_title')}:{' '}
           <span className="font-semibold text-gray-700">
-            {previewMode === 'executive' ? 'Brief' : 'Standard'}
+            {previewMode === 'executive' ? p('mode_brief') : p('mode_standard')}
           </span>
         </p>
 
@@ -1142,14 +1215,14 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
             {isSendingTest ? (
               <>
                 <LoadingSpinner size="sm" text="" />
-                Sending...
+                {p('sending_test')}
               </>
             ) : (
               <>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
-                Send Test Email
+                {p('send_test')}
               </>
             )}
           </button>
@@ -1161,10 +1234,10 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
         {/* Email header */}
         <div className="bg-white border-b border-gray-200 px-3 py-2.5">
           {[
-            { label: 'From:', value: fromDisplay },
-            { label: 'To:', value: toDisplay },
-            { label: 'Date:', value: dateDisplay },
-            { label: 'Subject:', value: formData.custom_subject || defaultSubject, bold: true },
+            { label: p('email_from'), value: fromDisplay },
+            { label: p('email_to'), value: toDisplay },
+            { label: p('email_date'), value: dateDisplay },
+            { label: p('email_subject'), value: formData.custom_subject || defaultSubject, bold: true },
           ].map(({ label, value, bold }) => (
             <div key={label} className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-700 mt-1 first:mt-0">
               <span className="shrink-0 font-medium text-gray-500 w-14">{label}</span>
@@ -1183,10 +1256,10 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
                   className="text-xl font-bold text-gray-900 leading-snug"
                   style={{ fontFamily: 'Calibri, Segoe UI, sans-serif' }}
                 >
-                  {previewMode === 'executive' ? 'Brief' : 'Progress Update'}
+                  {previewMode === 'executive' ? p('mode_brief') : p('progress_update')}
                   <span className="text-gray-400 font-semibold"> — </span>
                   <span className="font-semibold text-blue-600">
-                    {previewData.project_name || previewData.organization_name || 'Your Project'}
+                    {previewData.project_name || previewData.organization_name || p('your_project')}
                   </span>
                 </p>
                 <p className="text-sm text-gray-600 mt-2">
@@ -1207,18 +1280,18 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
                 <>
                   {previewData.executive_summary && (
                     <div className="rounded-lg border-2 border-blue-200 bg-blue-50/90 p-4">
-                      <h2 className="text-base font-semibold text-blue-900 mb-2">Executive summary</h2>
+                      <h2 className="text-base font-semibold text-blue-900 mb-2">{p('executive_summary')}</h2>
                       <p className="text-sm text-blue-900">{previewData.executive_summary}</p>
                     </div>
                   )}
                   {previewData.at_a_glance && (
                     <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                      <h2 className="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">At a glance</h2>
+                      <h2 className="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">{p('at_a_glance')}</h2>
                       <div className="grid grid-cols-3 gap-2">
                         {[
-                          { label: 'On track', val: previewData.at_a_glance.on_track || 0, cls: 'bg-green-50 border-green-200', textCls: 'text-green-800', subCls: 'text-green-700' },
-                          { label: 'At risk',  val: previewData.at_a_glance.at_risk  || 0, cls: 'bg-amber-50 border-amber-200', textCls: 'text-amber-800', subCls: 'text-amber-700' },
-                          { label: 'Behind',   val: previewData.at_a_glance.behind   || 0, cls: 'bg-red-50 border-red-200',   textCls: 'text-red-800',   subCls: 'text-red-700'   },
+                          { label: p('on_track'), val: previewData.at_a_glance.on_track || 0, cls: 'bg-green-50 border-green-200', textCls: 'text-green-800', subCls: 'text-green-700' },
+                          { label: p('at_risk'), val: previewData.at_a_glance.at_risk || 0, cls: 'bg-amber-50 border-amber-200', textCls: 'text-amber-800', subCls: 'text-amber-700' },
+                          { label: p('behind'), val: previewData.at_a_glance.behind || 0, cls: 'bg-red-50 border-red-200', textCls: 'text-red-800', subCls: 'text-red-700' },
                         ].map(({ label, val, cls, textCls, subCls }) => (
                           <div key={label} className={`p-3 border rounded text-center ${cls}`}>
                             <p className={`text-2xl font-bold ${textCls}`}>{val}</p>
@@ -1230,12 +1303,12 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
                   )}
                   {Array.isArray(previewData.key_highlights) && previewData.key_highlights.length > 0 && (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                      <h2 className="text-sm font-semibold text-amber-900 mb-2 uppercase tracking-wide">Key highlights</h2>
+                      <h2 className="text-sm font-semibold text-amber-900 mb-2 uppercase tracking-wide">{p('key_highlights')}</h2>
                       <ul className="space-y-1.5">
                         {previewData.key_highlights.map((h, i) => (
                           <li key={i} className="flex items-start gap-2 text-sm text-amber-900">
                             <span className="text-amber-500 font-bold shrink-0">•</span>
-                            <span>{h}</span>
+                            <span>{renderExecutiveHighlight(h)}</span>
                           </li>
                         ))}
                       </ul>
@@ -1254,6 +1327,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
                   showTaskPhaseTag={showTaskPhaseTag}
                   showTaskPhotos={showTaskPhotos}
                   showProjectNameOnTasks={false}
+                  t={t}
                 />
               )}
               {previewMode === 'standard' && !selectedProject && orgProjectPreviewSlices && (
@@ -1263,15 +1337,15 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
                       <p className="text-sm text-slate-800 leading-snug">
                         <span className="font-semibold">{orgAggregateVitals.project_count}</span>
                         {' '}
-                        project{orgAggregateVitals.project_count !== 1 ? 's' : ''} in this report
+                        {t('progressReports.builder.projects_in_report').toLowerCase()}
                         <span className="text-slate-400 mx-1.5">·</span>
                         <span className="font-semibold tabular-nums">{orgAggregateVitals.tasks_completed_count}</span>
                         {' '}
-                        done (all tasks, selected projects)
+                        {p('done_all_time').toLowerCase()}
                         <span className="text-slate-400 mx-1.5">·</span>
                         <span className="font-semibold tabular-nums">{orgAggregateVitals.open_tasks_count}</span>
                         {' '}
-                        not complete
+                        {p('not_complete').toLowerCase()}
                       </p>
                     </div>
                   )}
@@ -1282,9 +1356,13 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
                         className="rounded-lg border border-gray-200 bg-gray-50/90 p-3 sm:p-4 shadow-sm space-y-4"
                       >
                         <div className="border-b border-gray-200 pb-2">
-                          <h2 className="text-base font-bold text-gray-900">{project?.name || 'Project'}</h2>
+                          <h2 className="text-base font-bold text-gray-900">
+                            {project?.name || t('progressReports.builder.untitled_project')}
+                          </h2>
                           {project?.status ? (
-                            <p className="text-xs text-gray-500 mt-0.5">Status: {translateStatus(project.status)}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {p('status_label', { status: translateStatus(project.status) })}
+                            </p>
                           ) : null}
                         </div>
                         <StandardPreviewSections
@@ -1295,6 +1373,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
                           showTaskPhaseTag={showTaskPhaseTag}
                           showTaskPhotos={showTaskPhotos}
                           showProjectNameOnTasks={false}
+                          t={t}
                         />
                       </section>
                     ))}
@@ -1313,18 +1392,17 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
                       height={36}
                     />
                     <div className="min-w-0">
-                      <p className="text-[11px] text-gray-400 m-0 leading-snug">Generated by SiteWeave</p>
+                      <p className="text-[11px] text-gray-400 m-0 leading-snug">{p('generated_by')}</p>
                       <p className="text-[11px] text-gray-400 m-0 mt-0.5 leading-snug">
-                        Automated progress report from{' '}
-                        {state.currentOrganization?.name || 'SiteWeave'}
+                        {state.currentOrganization?.name || t('navigation.organization')}
                       </p>
                     </div>
                   </div>
                 ) : (
                   <div>
-                    <p className="text-[11px] text-gray-400 m-0">Generated by SiteWeave</p>
+                    <p className="text-[11px] text-gray-400 m-0">{p('generated_by')}</p>
                     <p className="text-[11px] text-gray-400 m-0 mt-0.5">
-                      Automated progress report from {state.currentOrganization?.name || 'SiteWeave'}
+                      {state.currentOrganization?.name || t('navigation.organization')}
                     </p>
                   </div>
                 )}
@@ -1335,9 +1413,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
       </div>
 
       <p className="text-xs text-gray-400 italic">
-        {selectedProject
-          ? 'Preview uses current project data and a rolling 7-day weather impact window.'
-          : 'Organization preview stacks one block per selected project (same sections as a single-project report). Uses current task data and a rolling 7-day weather window.'}
+        {selectedProject ? p('preview_hint_project') : p('preview_hint_org')}
       </p>
     </div>
   );

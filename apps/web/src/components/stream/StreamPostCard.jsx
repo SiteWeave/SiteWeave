@@ -1,14 +1,9 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatRelativeTime } from '@siteweave/i18n';
 import { updateStreamPost, deleteStreamPost, enrichStreamPost } from '@siteweave/core-logic';
 import { useToast } from '../../context/ToastContext';
 import StreamReplyThread from './StreamReplyThread';
-
-const TYPE_LABELS = {
-  general: 'Update',
-  daily_log: 'Daily log',
-  announcement: 'Announcement',
-  milestone: 'Milestone',
-};
 
 const TYPE_STYLES = {
   general: 'bg-slate-100 text-slate-700',
@@ -19,18 +14,12 @@ const TYPE_STYLES = {
 
 const BODY_TRUNCATE_AT = 320;
 
-function formatWhen(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now - d;
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHrs = Math.floor(diffMins / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
+const POST_TYPE_I18N = {
+  general: 'stream.post_type_general',
+  daily_log: 'stream.post_type_daily_log',
+  announcement: 'stream.post_type_announcement',
+  milestone: 'stream.post_type_milestone',
+};
 
 function initials(name) {
   if (!name) return '?';
@@ -72,6 +61,7 @@ export default function StreamPostCard({
   onPostDelete,
   onReplyCountChange,
 }) {
+  const { t } = useTranslation();
   const { addToast } = useToast();
   const [expanded, setExpanded] = React.useState(false);
   const [bodyExpanded, setBodyExpanded] = React.useState(false);
@@ -82,7 +72,7 @@ export default function StreamPostCard({
   const [deleting, setDeleting] = React.useState(false);
 
   const isAuthor = post.author_id === currentUserId;
-  const authorName = post.author?.name || 'Team member';
+  const authorName = post.author?.name || t('stream.team_member');
   const isLongBody = post.body?.length > BODY_TRUNCATE_AT;
   const displayBody = isLongBody && !bodyExpanded
     ? `${post.body.slice(0, BODY_TRUNCATE_AT).trimEnd()}…`
@@ -100,25 +90,25 @@ export default function StreamPostCard({
       const enriched = await enrichStreamPost(supabaseClient, updated, { reply_count: replyCount });
       onPostChange?.(enriched);
       setEditing(false);
-      addToast('Post updated.', 'success');
+      addToast(t('stream.post_updated'), 'success');
     } catch (e) {
       console.error(e);
-      addToast(e.message || 'Could not update post.', 'error');
+      addToast(e.message || t('stream.update_error'), 'error');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Delete this post and all its replies?')) return;
+    if (!window.confirm(t('stream.delete_post_confirm'))) return;
     setDeleting(true);
     try {
       await deleteStreamPost(supabaseClient, post.id);
       onPostDelete?.(post.id);
-      addToast('Post deleted.', 'success');
+      addToast(t('stream.post_deleted'), 'success');
     } catch (e) {
       console.error(e);
-      addToast('Could not delete post.', 'error');
+      addToast(e.message || t('stream.delete_error'), 'error');
     } finally {
       setDeleting(false);
     }
@@ -135,10 +125,10 @@ export default function StreamPostCard({
               <span
                 className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-medium ${TYPE_STYLES[post.post_type] || TYPE_STYLES.general}`}
               >
-                {TYPE_LABELS[post.post_type] || TYPE_LABELS.general}
+                {t(POST_TYPE_I18N[post.post_type] || POST_TYPE_I18N.general)}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">{formatWhen(post.created_at)}</p>
+            <p className="text-[11px] text-slate-400">{formatRelativeTime(post.created_at, t)}</p>
           </div>
         </div>
 
@@ -154,7 +144,7 @@ export default function StreamPostCard({
                 }}
                 className="text-[11px] font-medium text-slate-500 hover:text-slate-800"
               >
-                {editing ? 'Cancel' : 'Edit'}
+                {editing ? t('common.cancel') : t('common.edit')}
               </button>
               <button
                 type="button"
@@ -162,7 +152,7 @@ export default function StreamPostCard({
                 disabled={deleting}
                 className="text-[11px] font-medium text-red-500 hover:text-red-700 disabled:opacity-50"
               >
-                Delete
+                {t('common.delete')}
               </button>
             </>
           ) : null}
@@ -172,7 +162,7 @@ export default function StreamPostCard({
               onClick={() => onReport(post)}
               className="text-[11px] text-slate-400 hover:text-slate-600"
             >
-              Report
+              {t('stream.report')}
             </button>
           ) : null}
         </div>
@@ -200,7 +190,7 @@ export default function StreamPostCard({
             disabled={saving || !editBody.trim()}
             className="rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
           >
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? t('common.saving') : t('common.save')}
           </button>
         </div>
       ) : (
@@ -217,7 +207,7 @@ export default function StreamPostCard({
               onClick={() => setBodyExpanded((v) => !v)}
               className="mt-1 text-xs font-medium text-blue-600 hover:text-blue-700"
             >
-              {bodyExpanded ? 'Show less' : 'Show more'}
+              {bodyExpanded ? t('stream.show_less') : t('stream.show_more')}
             </button>
           ) : null}
         </>
@@ -230,7 +220,7 @@ export default function StreamPostCard({
           rel="noopener noreferrer"
           className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
         >
-          {post.file_name || 'Attachment'}
+          {post.file_name || t('stream.attachment')}
         </a>
       ) : null}
 
@@ -244,10 +234,10 @@ export default function StreamPostCard({
             <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
           </svg>
           {expanded
-            ? 'Hide replies'
+            ? t('stream.hide_replies')
             : replyCount === 0
-            ? 'Reply'
-            : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`}
+            ? t('stream.reply')
+            : t(replyCount === 1 ? 'stream.reply_count_one' : 'stream.reply_count_other', { count: replyCount })}
         </button>
       </footer>
 

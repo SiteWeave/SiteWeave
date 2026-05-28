@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getLocalizedEventCategoryName } from '@siteweave/i18n';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
 import Icon from './Icon';
@@ -9,12 +10,12 @@ import { parseRecurrence, validateRecurrence } from '../utils/recurrenceService'
 import { getStoredCalendarToken } from '../utils/calendarIntegration';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 
-const DEFAULT_CATEGORIES = [
-    { id: 'meeting', name: 'Meeting', color: '#3B82F6' },
-    { id: 'work', name: 'Work', color: '#F59E0B' },
-    { id: 'personal', name: 'Personal', color: '#10B981' },
-    { id: 'deadline', name: 'Deadline', color: '#EF4444' },
-    { id: 'other', name: 'Other', color: '#8B5CF6' }
+const DEFAULT_CATEGORY_SPECS = [
+    { id: 'meeting', color: '#3B82F6' },
+    { id: 'work', color: '#F59E0B' },
+    { id: 'personal', color: '#10B981' },
+    { id: 'deadline', color: '#EF4444' },
+    { id: 'other', color: '#8B5CF6' },
 ];
 
 // Generate time options for dropdown (15-minute intervals)
@@ -35,8 +36,15 @@ const generateTimeOptions = (locale = 'en') => {
 };
 
 function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading = false }) {
-    const { i18n } = useTranslation();
+    const { t, i18n } = useTranslation();
     const TIME_OPTIONS = useMemo(() => generateTimeOptions(i18n.language || 'en'), [i18n.language]);
+    const defaultCategories = useMemo(
+        () => DEFAULT_CATEGORY_SPECS.map((spec) => ({
+            ...spec,
+            name: getLocalizedEventCategoryName(spec, t),
+        })),
+        [t]
+    );
     const { state } = useAppContext();
     const contacts = state.contacts || [];
     const projects = state.projects || [];
@@ -75,7 +83,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
         return [];
     });
     const [attendeeInput, setAttendeeInput] = useState('');
-    const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+    const [categories, setCategories] = useState(defaultCategories);
     
     // Recurrence state
     const [isRecurring, setIsRecurring] = useState(false);
@@ -163,7 +171,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                 setSyncToOutlook(true);
             }
         }
-    }, [event, date]);
+    }, [event, date, t]);
 
     const loadCategories = async () => {
         try {
@@ -174,14 +182,18 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
 
             if (error) {
                 console.error('Error loading categories:', error);
-                setCategories(DEFAULT_CATEGORIES);
+                setCategories(defaultCategories);
             } else {
-                const loadedCategories = data.length > 0 ? data : DEFAULT_CATEGORIES;
-                setCategories(loadedCategories);
+                const dbCategoryIds = new Set((data || []).map((cat) => cat.id));
+                const mergedCategories = [
+                    ...(data || []),
+                    ...defaultCategories.filter((cat) => !dbCategoryIds.has(cat.id)),
+                ];
+                setCategories(mergedCategories.length > 0 ? mergedCategories : defaultCategories);
             }
         } catch (error) {
             console.error('Error loading categories:', error);
-            setCategories(DEFAULT_CATEGORIES);
+            setCategories(defaultCategories);
         }
     };
     
@@ -228,7 +240,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
             
             const validation = validateRecurrence(recurrence);
             if (!validation.valid) {
-                alert(validation.error);
+                alert(t(validation.errorKey));
                 return;
             }
             
@@ -257,7 +269,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
             
             // Validate the dates are valid
             if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
-                alert('Invalid date/time format. Please check your dates and times.');
+                alert(t('calendar.invalid_datetime'));
                 return;
             }
             
@@ -265,7 +277,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
             startDateTime = startDateObj.toISOString();
             endDateTime = endDateObj.toISOString();
         } catch (e) {
-            alert('Invalid date/time format. Please check your dates and times.');
+            alert(t('calendar.invalid_datetime'));
             return;
         }
         
@@ -306,40 +318,57 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
         }
     };
 
+    const recurrenceIntervalLabel =
+        recurrencePattern === 'daily' ? t('calendar.interval_day')
+        : recurrencePattern === 'weekly' ? t('calendar.interval_week')
+        : recurrencePattern === 'monthly' ? t('calendar.interval_month')
+        : recurrencePattern === 'yearly' ? t('calendar.interval_year')
+        : t('calendar.interval_time');
+
+    const weekDays = useMemo(() => [
+        { value: 0, labelKey: 'calendar.day_sun' },
+        { value: 1, labelKey: 'calendar.day_mon' },
+        { value: 2, labelKey: 'calendar.day_tue' },
+        { value: 3, labelKey: 'calendar.day_wed' },
+        { value: 4, labelKey: 'calendar.day_thu' },
+        { value: 5, labelKey: 'calendar.day_fri' },
+        { value: 6, labelKey: 'calendar.day_sat' },
+    ], []);
+
     const datePresets = (
         <>
             <button
                 type="button"
                 onClick={() => {
-                    const t = localDateIso();
-                    setStartDate(t);
-                    setEndDate(t);
+                    const todayIso = localDateIso();
+                    setStartDate(todayIso);
+                    setEndDate(todayIso);
                 }}
                 className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
             >
-                Today
+                {t('calendar.today')}
             </button>
             <button
                 type="button"
                 onClick={() => {
-                    const t = localDateIso();
-                    setStartDate((s) => s || t);
-                    setEndDate(addDaysIso(t, 7) || t);
+                    const todayIso = localDateIso();
+                    setStartDate((s) => s || todayIso);
+                    setEndDate(addDaysIso(todayIso, 7) || todayIso);
                 }}
                 className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
             >
-                +1 week
+                {t('calendar.plus_one_week')}
             </button>
             <button
                 type="button"
                 onClick={() => {
-                    const t = localDateIso();
-                    setStartDate((s) => s || t);
-                    setEndDate(addDaysIso(t, 14) || t);
+                    const todayIso = localDateIso();
+                    setStartDate((s) => s || todayIso);
+                    setEndDate(addDaysIso(todayIso, 14) || todayIso);
                 }}
                 className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
             >
-                +2 weeks
+                {t('calendar.plus_two_weeks')}
             </button>
         </>
     );
@@ -349,7 +378,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
             <div className="bg-white rounded-lg shadow-2xl p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-xl font-bold">
-                        {isEditMode ? 'Edit Event' : 'Add New Event'}
+                        {isEditMode ? t('calendar.event_edit_title') : t('calendar.event_add_title')}
                     </h2>
                     {isEditMode && onDelete && (
                         <button
@@ -357,7 +386,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                             disabled={isLoading}
                             className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
                         >
-                            Delete
+                            {t('common.delete')}
                         </button>
                     )}
                 </div>
@@ -367,7 +396,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                     <div className="space-y-4">
                         {/* Event Title */}
                         <div>
-                            <label className="block text-xs font-semibold mb-1">Event Title *</label>
+                            <label className="block text-xs font-semibold mb-1">{t('calendar.event_title_label')}</label>
                             <input 
                                 type="text" 
                                 value={title} 
@@ -379,7 +408,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                         
                         {/* Attendees - Moved to Essential Section */}
                         <div>
-                            <label className="block text-xs font-semibold mb-1">Attendees</label>
+                            <label className="block text-xs font-semibold mb-1">{t('calendar.attendees')}</label>
                             <div className="space-y-2">
                                 <div className="flex gap-1.5">
                                     <input 
@@ -388,14 +417,14 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                         onChange={e => setAttendeeInput(e.target.value)}
                                         onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), addAttendeesFromInput())}
                                         className="flex-1 p-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        placeholder="Enter email or select contact"
+                                        placeholder={t('calendar.attendee_placeholder')}
                                     />
                                     <button 
                                         type="button"
                                         onClick={addAttendeesFromInput}
                                         className="px-2 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg"
                                     >
-                                        Add
+                                        {t('calendar.add')}
                                     </button>
                                 </div>
                                 
@@ -408,7 +437,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                         }}
                                         className="w-full p-1.5 text-xs border rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
                                     >
-                                        <option value="">Select from contacts...</option>
+                                        <option value="">{t('calendar.select_from_contacts')}</option>
                                         {availableContacts.map(contact => (
                                             <option key={contact.id} value={contact.id}>
                                                 {contact.name} ({contact.email})
@@ -445,7 +474,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                         <div className="flex items-center gap-3 flex-wrap">
                             <div className="flex min-w-[260px] flex-1 flex-col gap-1.5">
                                 <DateRangePicker
-                                    label="Schedule"
+                                    label={t('calendar.schedule')}
                                     startValue={startDate}
                                     endValue={endDate}
                                     onChange={({ start, end }) => {
@@ -478,7 +507,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                     </div>
                                     
                                     {/* "to" Label */}
-                                    <span className="text-sm text-gray-600">to</span>
+                                    <span className="text-sm text-gray-600">{t('calendar.time_to')}</span>
                                     
                                     {/* End Time Dropdown */}
                                     <div className="relative flex-1 min-w-[120px]">
@@ -503,7 +532,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                             
                             {/* All Day Toggle Switch - Inline with date/time */}
                             <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-700">All day</span>
+                                <span className="text-sm text-gray-700">{t('calendar.all_day')}</span>
                                 <button
                                     type="button"
                                     onClick={() => setIsAllDay(!isAllDay)}
@@ -534,7 +563,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                     path="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
                                     className="w-4 h-4"
                                 />
-                                <span>Make recurring</span>
+                                <span>{t('calendar.make_recurring')}</span>
                             </button>
                         </div>
                     </div>
@@ -547,7 +576,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                             className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-800 transition-colors"
                         >
                             <span>{showOptionalFields ? '▼' : '▶'}</span>
-                            <span>{showOptionalFields ? 'Hide' : 'Show'} Additional Options</span>
+                            <span>{showOptionalFields ? t('calendar.hide_options') : t('calendar.show_options')}</span>
                         </button>
                     </div>
 
@@ -556,13 +585,13 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                         <div className="space-y-4 pt-3 border-t">
                             {/* Project */}
                             <div>
-                                <label className="block text-xs font-semibold mb-1">Project (Optional)</label>
+                                <label className="block text-xs font-semibold mb-1">{t('calendar.project_optional')}</label>
                                 <select 
                                     value={projectId} 
                                     onChange={e => setProjectId(e.target.value)} 
                                     className="w-full p-2 text-sm border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 >
-                                    <option value="">None</option>
+                                    <option value="">{t('calendar.none')}</option>
                                     {projects.map(p => (
                                         <option key={p.id} value={p.id}>{p.name}</option>
                                     ))}
@@ -579,29 +608,29 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                 onChange={e => setIsRecurring(e.target.checked)}
                                 className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                             />
-                            <label htmlFor="isRecurring" className="text-xs font-semibold">Repeat</label>
+                            <label htmlFor="isRecurring" className="text-xs font-semibold">{t('calendar.repeat')}</label>
                         </div>
 
                         {isRecurring && (
                             <div className="ml-6 space-y-3 bg-gray-50 p-3 rounded-lg">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                     <div>
-                                        <label className="block text-xs font-semibold mb-1">Pattern</label>
+                                        <label className="block text-xs font-semibold mb-1">{t('calendar.pattern')}</label>
                                         <select 
                                             value={recurrencePattern} 
                                             onChange={e => setRecurrencePattern(e.target.value)}
                                             className="w-full p-1.5 text-sm border rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
                                         >
-                                            <option value="daily">Daily</option>
-                                            <option value="weekly">Weekly</option>
-                                            <option value="monthly">Monthly</option>
-                                            <option value="yearly">Yearly</option>
-                                            <option value="weekdays">Weekdays (Mon-Fri)</option>
+                                            <option value="daily">{t('calendar.pattern_daily')}</option>
+                                            <option value="weekly">{t('calendar.pattern_weekly')}</option>
+                                            <option value="monthly">{t('calendar.pattern_monthly')}</option>
+                                            <option value="yearly">{t('calendar.pattern_yearly')}</option>
+                                            <option value="weekdays">{t('calendar.pattern_weekdays')}</option>
                                         </select>
                                     </div>
                                     
                                     <div>
-                                        <label className="block text-xs font-semibold mb-1">Repeat Every</label>
+                                        <label className="block text-xs font-semibold mb-1">{t('calendar.repeat_every')}</label>
                                         <div className="flex items-center gap-2">
                                             <input 
                                                 type="number" 
@@ -611,10 +640,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                                 className="w-16 p-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500"
                                             />
                                             <span className="text-xs text-gray-600">
-                                                {recurrencePattern === 'daily' ? 'day(s)' : 
-                                                 recurrencePattern === 'weekly' ? 'week(s)' :
-                                                 recurrencePattern === 'monthly' ? 'month(s)' :
-                                                 recurrencePattern === 'yearly' ? 'year(s)' : 'time(s)'}
+                                                {recurrenceIntervalLabel}
                                             </span>
                                         </div>
                                     </div>
@@ -622,17 +648,9 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
 
                                 {recurrencePattern === 'weekly' && (
                                     <div>
-                                        <label className="block text-xs font-semibold mb-1.5">Days of Week</label>
+                                        <label className="block text-xs font-semibold mb-1.5">{t('calendar.days_of_week')}</label>
                                         <div className="flex flex-wrap gap-1.5">
-                                            {[
-                                                { value: 0, label: 'Sun' },
-                                                { value: 1, label: 'Mon' },
-                                                { value: 2, label: 'Tue' },
-                                                { value: 3, label: 'Wed' },
-                                                { value: 4, label: 'Thu' },
-                                                { value: 5, label: 'Fri' },
-                                                { value: 6, label: 'Sat' }
-                                            ].map(day => (
+                                            {weekDays.map(day => (
                                                 <button
                                                     key={day.value}
                                                     type="button"
@@ -649,7 +667,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                                             : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                                                     }`}
                                                 >
-                                                    {day.label}
+                                                    {t(day.labelKey)}
                                                 </button>
                                             ))}
                                         </div>
@@ -657,15 +675,15 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                 )}
 
                                 <div>
-                                    <label className="block text-xs font-semibold mb-1">End</label>
+                                    <label className="block text-xs font-semibold mb-1">{t('calendar.recurrence_end')}</label>
                                     <select 
                                         value={recurrenceEndType} 
                                         onChange={e => setRecurrenceEndType(e.target.value)}
                                         className="w-full p-1.5 text-sm border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 mb-2"
                                     >
-                                        <option value="never">Never</option>
-                                        <option value="until">Until date</option>
-                                        <option value="after">After N occurrences</option>
+                                        <option value="never">{t('calendar.recurrence_never')}</option>
+                                        <option value="until">{t('calendar.recurrence_until')}</option>
+                                        <option value="after">{t('calendar.recurrence_after')}</option>
                                     </select>
 
                                     {recurrenceEndType === 'until' && (
@@ -673,7 +691,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                             compact
                                             value={recurrenceEndDate}
                                             onChange={setRecurrenceEndDate}
-                                            label="Until date"
+                                            label={t('calendar.until_date')}
                                             className="mt-1"
                                         />
                                     )}
@@ -688,7 +706,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                                 className="w-20 p-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500"
                                                 required
                                             />
-                                            <span className="text-xs text-gray-600">occurrences</span>
+                                            <span className="text-xs text-gray-600">{t('calendar.occurrences')}</span>
                                         </div>
                                     )}
                                 </div>
@@ -699,30 +717,30 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                             {/* Location and Description */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
-                            <label className="block text-xs font-semibold mb-1">Location</label>
+                            <label className="block text-xs font-semibold mb-1">{t('calendar.location')}</label>
                             <input 
                                 type="text" 
                                 value={location} 
                                 onChange={e => setLocation(e.target.value)} 
                                 className="w-full p-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                placeholder="Meeting room, address, etc."
+                                placeholder={t('calendar.location_placeholder')}
                             />
                         </div>
                         
                         <div>
-                            <label className="block text-xs font-semibold mb-1">Description</label>
+                            <label className="block text-xs font-semibold mb-1">{t('calendar.description')}</label>
                             <textarea 
                                 value={description} 
                                 onChange={e => setDescription(e.target.value)} 
                                 className="w-full p-2 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent h-16"
-                                placeholder="Add event details..."
+                                placeholder={t('calendar.description_placeholder')}
                             />
                         </div>
                     </div>
 
                             {/* Calendar Sync Section */}
                             <div className="space-y-2 pt-3 border-t">
-                        <label className="block text-xs font-semibold mb-1.5">Sync to External Calendars</label>
+                        <label className="block text-xs font-semibold mb-1.5">{t('calendar.sync_external')}</label>
                         <div className="space-y-2">
                             <div className="flex items-center gap-2">
                                 <input 
@@ -734,9 +752,9 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                     className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
                                 />
                                 <label htmlFor="syncToGoogle" className={`text-xs ${!getStoredCalendarToken('google') ? 'text-gray-400' : 'text-gray-700'}`}>
-                                    Sync to Google Calendar
+                                    {t('calendar.sync_google')}
                                     {!getStoredCalendarToken('google') && (
-                                        <span className="ml-1 text-xs text-gray-400">(Import first)</span>
+                                        <span className="ml-1 text-xs text-gray-400">{t('calendar.import_first')}</span>
                                     )}
                                 </label>
                             </div>
@@ -750,9 +768,9 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                     className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
                                 />
                                 <label htmlFor="syncToOutlook" className={`text-xs ${!getStoredCalendarToken('outlook') ? 'text-gray-400' : 'text-gray-700'}`}>
-                                    Sync to Outlook Calendar
+                                    {t('calendar.sync_outlook')}
                                     {!getStoredCalendarToken('outlook') && (
-                                        <span className="ml-1 text-xs text-gray-400">(Import first)</span>
+                                        <span className="ml-1 text-xs text-gray-400">{t('calendar.import_first')}</span>
                                     )}
                                 </label>
                             </div>
@@ -761,7 +779,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                     
                             {/* Category - Moved to Bottom of Optional Section */}
                             <div className="pt-3 border-t">
-                                <label className="block text-xs font-semibold mb-1">Category</label>
+                                <label className="block text-xs font-semibold mb-1">{t('calendar.category')}</label>
                                 <div className="flex flex-wrap gap-1.5">
                                     {categories.map(cat => (
                                         <button
@@ -778,7 +796,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                                 className="w-3 h-3 rounded-full border border-gray-300"
                                                 style={{ backgroundColor: cat.color }}
                                             ></div>
-                                            <span className="text-xs font-medium">{cat.name}</span>
+                                            <span className="text-xs font-medium">{getLocalizedEventCategoryName(cat, t)}</span>
                                         </button>
                                     ))}
                                 </div>
@@ -794,7 +812,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                             disabled={isLoading} 
                             className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 transition-colors"
                         >
-                            Cancel
+                            {t('common.cancel')}
                         </button>
                         <button 
                             type="submit" 
@@ -804,10 +822,10 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                             {isLoading ? (
                                 <>
                                     <LoadingSpinner size="sm" text="" />
-                                    {isEditMode ? 'Updating...' : 'Saving...'}
+                                    {isEditMode ? t('calendar.updating') : t('calendar.saving')}
                                 </>
                             ) : (
-                                isEditMode ? 'Update Event' : 'Save Event'
+                                isEditMode ? t('calendar.update_event') : t('calendar.save_event')
                             )}
                         </button>
                     </div>

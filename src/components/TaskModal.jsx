@@ -1,13 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
-import {
-    ASSIGNEE_EMAIL_LABEL,
-    ASSIGNEE_PHONE_LABEL,
-    SEND_EMAIL_NOTIFICATION_LABEL,
-    SEND_EMAIL_NOTIFICATION_HINT,
-    SEND_EMAIL_NO_EMAIL_HINT,
-} from '../utils/contactNotificationCopy';
 import DateDropdown from './DateDropdown';
 import DateRangePicker from './DateRangePicker';
 import TaskDependencyCombobox from './TaskDependencyCombobox';
@@ -31,6 +25,7 @@ function formatUsPhoneInput(value) {
 }
 
 function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = false, allTasks = [] }) {
+    const { t } = useTranslation();
     const { state } = useAppContext();
     const [text, setText] = useState('');
     const [startDate, setStartDate] = useState('');
@@ -127,7 +122,7 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
             
             const validation = validateRecurrence(recurrence);
             if (!validation.valid) {
-                alert(validation.error);
+                alert(t(validation.errorKey));
                 return;
             }
             
@@ -176,35 +171,35 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
             <button
                 type="button"
                 onClick={() => {
-                    const t = localDateIso();
-                    setStartDate(t);
-                    setDueDate(t);
+                    const todayIso = localDateIso();
+                    setStartDate(todayIso);
+                    setDueDate(todayIso);
                 }}
                 className={chipClass}
             >
-                Today
+                {t('common.today')}
             </button>
             <button
                 type="button"
                 onClick={() => {
-                    const t = localDateIso();
-                    setStartDate((s) => s || t);
-                    setDueDate(addDaysIso(t, 7) || t);
+                    const todayIso = localDateIso();
+                    setStartDate((s) => s || todayIso);
+                    setDueDate(addDaysIso(todayIso, 7) || todayIso);
                 }}
                 className={chipClass}
             >
-                +1 week
+                {t('common.plus_one_week')}
             </button>
             <button
                 type="button"
                 onClick={() => {
-                    const t = localDateIso();
-                    setStartDate((s) => s || t);
-                    setDueDate(addDaysIso(t, 14) || t);
+                    const todayIso = localDateIso();
+                    setStartDate((s) => s || todayIso);
+                    setDueDate(addDaysIso(todayIso, 14) || todayIso);
                 }}
                 className={chipClass}
             >
-                +2 weeks
+                {t('common.plus_two_weeks')}
             </button>
         </>
     );
@@ -213,13 +208,13 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 p-4 backdrop-blur-[2px]">
             <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl sm:p-8">
                 <h2 className="mb-6 text-xl font-semibold tracking-tight text-gray-900">
-                    Create New Task for {project.name}
+                    {t('taskModal.create_title', { project: project.name })}
                 </h2>
                 <form onSubmit={handleSubmit}>
                     <div className="grid gap-8 lg:grid-cols-[1fr,minmax(280px,340px)]">
                         <div className="min-w-0 space-y-5">
                             <div>
-                                <label className={labelClass} htmlFor="task-modal-description">Task Description</label>
+                                <label className={labelClass} htmlFor="task-modal-description">{t('taskModal.task_description')}</label>
                                 <input
                                     id="task-modal-description"
                                     type="text"
@@ -231,7 +226,7 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                             </div>
 
                             <DateRangePicker
-                                label="Schedule"
+                                label={t('tasks.schedule')}
                                 startValue={startDate}
                                 endValue={dueDate}
                                 onChange={({ start, end }) => {
@@ -244,11 +239,11 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                         </div>
 
                         <aside className="h-fit space-y-4 rounded-xl border border-gray-200 bg-gray-50/90 p-5 lg:sticky lg:top-0">
-                            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Details</p>
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{t('taskModal.details')}</p>
 
                             <PermissionGuard permission="can_assign_tasks">
                                 <div>
-                                    <label className={labelClass} htmlFor="task-modal-assignee">Assignee</label>
+                                    <label className={labelClass} htmlFor="task-modal-assignee">{t('taskModal.assignee')}</label>
                                     <select
                                         id="task-modal-assignee"
                                         value={assigneeId}
@@ -261,26 +256,26 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                         }}
                                         className={selectClass}
                                     >
-                                        <option value="">Unassigned</option>
+                                        <option value="">{t('common.unassigned')}</option>
                                         {allAssignableContacts.length > 0 ? (
                                             allAssignableContacts.map(contact => (
                                                 <option key={contact.id} value={contact.id}>
                                                     {contact.name}
-                                                    {orgAdmins.some(admin => admin.id === contact.id) && !projectContacts.some(pc => pc.id === contact.id) && ' (Admin)'}
+                                                    {orgAdmins.some(admin => admin.id === contact.id) && !projectContacts.some(pc => pc.id === contact.id) && t('taskModal.admin_suffix')}
                                                 </option>
                                             ))
                                         ) : (
-                                            <option value="" disabled>No team members assigned to this project</option>
+                                            <option value="" disabled>{t('taskModal.no_team_members')}</option>
                                         )}
                                     </select>
                                     {allAssignableContacts.length === 0 && (
                                         <p className="mt-1.5 text-xs text-gray-500">
-                                            Add team members to this project first using the &quot;+ Add Team Member&quot; button
+                                            {t('taskModal.add_team_members_hint')}
                                         </p>
                                     )}
                                     <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
                                         <div className="min-w-0">
-                                            <label className={labelClass} htmlFor="task-modal-assignee-email">{ASSIGNEE_EMAIL_LABEL}</label>
+                                            <label className={labelClass} htmlFor="task-modal-assignee-email">{t('taskModal.assignee_email')}</label>
                                             <input
                                                 id="task-modal-assignee-email"
                                                 type="email"
@@ -292,11 +287,11 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                                     }
                                                 }}
                                                 className={fieldClass}
-                                                placeholder="name@example.com"
+                                                placeholder={t('taskModal.email_placeholder')}
                                             />
                                         </div>
                                         <div className="min-w-0">
-                                            <label className={labelClass} htmlFor="task-modal-assignee-phone">{ASSIGNEE_PHONE_LABEL}</label>
+                                            <label className={labelClass} htmlFor="task-modal-assignee-phone">{t('taskModal.assignee_phone')}</label>
                                             <input
                                                 id="task-modal-assignee-phone"
                                                 type="tel"
@@ -311,7 +306,7 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                                     }
                                                 }}
                                                 className={fieldClass}
-                                                placeholder="(555) 123-4567"
+                                                placeholder={t('taskModal.phone_placeholder')}
                                             />
                                         </div>
                                     </div>
@@ -325,10 +320,10 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                                 onChange={(e) => setSendAssignmentEmail(e.target.checked)}
                                             />
                                             <span className="min-w-0">
-                                                <span className="block text-sm font-medium text-gray-800">{SEND_EMAIL_NOTIFICATION_LABEL}</span>
-                                                <span className="mt-0.5 block text-xs text-gray-500">{SEND_EMAIL_NOTIFICATION_HINT}</span>
+                                                <span className="block text-sm font-medium text-gray-800">{t('taskModal.send_email_notification')}</span>
+                                                <span className="mt-0.5 block text-xs text-gray-500">{t('taskModal.send_email_hint')}</span>
                                                 {!assigneeHasEmail && (
-                                                    <span className="mt-1 block text-xs text-amber-700">{SEND_EMAIL_NO_EMAIL_HINT}</span>
+                                                    <span className="mt-1 block text-xs text-amber-700">{t('taskModal.send_email_no_email')}</span>
                                                 )}
                                             </span>
                                         </label>
@@ -339,14 +334,14 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
                                 {projectPhases.length > 0 && (
                                     <div className="min-w-0">
-                                        <label className={labelClass} htmlFor="task-modal-phase">Phase</label>
+                                        <label className={labelClass} htmlFor="task-modal-phase">{t('taskModal.phase')}</label>
                                         <select
                                             id="task-modal-phase"
                                             value={phaseId}
                                             onChange={(e) => setPhaseId(e.target.value)}
                                             className={selectClass}
                                         >
-                                            <option value="">Unassigned</option>
+                                            <option value="">{t('common.unassigned')}</option>
                                             {projectPhases.map((p) => (
                                                 <option key={p.id} value={p.id}>
                                                     {p.name}
@@ -356,23 +351,23 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                     </div>
                                 )}
                                 <div className={`min-w-0 ${projectPhases.length === 0 ? 'sm:col-span-2' : ''}`}>
-                                    <label className={labelClass} htmlFor="task-modal-priority">Priority</label>
+                                    <label className={labelClass} htmlFor="task-modal-priority">{t('taskModal.priority')}</label>
                                     <select
                                         id="task-modal-priority"
                                         value={priority}
                                         onChange={(e) => setPriority(e.target.value)}
                                         className={selectClass}
                                     >
-                                        <option>Low</option>
-                                        <option>Medium</option>
-                                        <option>High</option>
+                                        <option value="Low">{t('tasks.priority_low')}</option>
+                                        <option value="Medium">{t('tasks.priority_medium')}</option>
+                                        <option value="High">{t('tasks.priority_high')}</option>
                                     </select>
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
                                 <div className="min-w-0">
-                                    <label className={labelClass} htmlFor="task-modal-percent-complete">Percent complete</label>
+                                    <label className={labelClass} htmlFor="task-modal-percent-complete">{t('tasks.percent_complete')}</label>
                                     <div className="flex items-center gap-3">
                                         <input
                                             id="task-modal-percent-complete"
@@ -391,7 +386,7 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                             value={Math.max(0, Math.min(100, Number(percentComplete) || 0))}
                                             onChange={(e) => setPercentComplete(Number(e.target.value))}
                                             className="w-16 shrink-0 rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm tabular-nums [-moz-appearance:textfield] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                            aria-label="Task percent complete"
+                                            aria-label={t('tasks.percent_complete')}
                                         />
                                     </div>
                                 </div>
@@ -416,29 +411,29 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                 onChange={(e) => setIsRecurring(e.target.checked)}
                                 className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             />
-                            <label htmlFor="isRecurringTask" className="text-sm font-medium text-gray-600">Repeat Task</label>
+                            <label htmlFor="isRecurringTask" className="text-sm font-medium text-gray-600">{t('taskModal.repeat')}</label>
                         </div>
 
                         {isRecurring && (
                             <div className="ml-0 space-y-4 rounded-lg border border-gray-200 bg-gray-50/80 p-4 sm:ml-6">
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
-                                        <label className={labelClass}>Pattern</label>
+                                        <label className={labelClass}>{t('taskModal.pattern')}</label>
                                         <select 
                                             value={recurrencePattern} 
                                             onChange={(e) => setRecurrencePattern(e.target.value)}
                                             className={selectClass}
                                         >
-                                            <option value="daily">Daily</option>
-                                            <option value="weekly">Weekly</option>
-                                            <option value="monthly">Monthly</option>
-                                            <option value="yearly">Yearly</option>
-                                            <option value="weekdays">Weekdays (Mon-Fri)</option>
+                                            <option value="daily">{t('taskModal.pattern_daily')}</option>
+                                            <option value="weekly">{t('taskModal.pattern_weekly')}</option>
+                                            <option value="monthly">{t('taskModal.pattern_monthly')}</option>
+                                            <option value="yearly">{t('taskModal.pattern_yearly')}</option>
+                                            <option value="weekdays">{t('taskModal.pattern_weekdays')}</option>
                                         </select>
                                     </div>
                                     
                                     <div>
-                                        <label className={labelClass}>Repeat Every</label>
+                                        <label className={labelClass}>{t('taskModal.repeat_every')}</label>
                                         <div className="flex items-center gap-2">
                                             <input 
                                                 type="number" 
@@ -448,10 +443,10 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                                 className={`${fieldClass} w-20`}
                                             />
                                             <span className="text-sm text-gray-600">
-                                                {recurrencePattern === 'daily' ? 'day(s)' : 
-                                                 recurrencePattern === 'weekly' ? 'week(s)' :
-                                                 recurrencePattern === 'monthly' ? 'month(s)' :
-                                                 recurrencePattern === 'yearly' ? 'year(s)' : 'time(s)'}
+                                                {recurrencePattern === 'daily' ? t('taskModal.interval_day') : 
+                                                 recurrencePattern === 'weekly' ? t('taskModal.interval_week') :
+                                                 recurrencePattern === 'monthly' ? t('taskModal.interval_month') :
+                                                 recurrencePattern === 'yearly' ? t('taskModal.interval_year') : t('taskModal.interval_time')}
                                             </span>
                                         </div>
                                     </div>
@@ -459,16 +454,16 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
 
                                 {recurrencePattern === 'weekly' && (
                                     <div>
-                                        <label className={`${labelClass} mb-2`}>Days of Week</label>
+                                        <label className={`${labelClass} mb-2`}>{t('taskModal.days_of_week')}</label>
                                         <div className="flex flex-wrap gap-2">
                                             {[
-                                                { value: 0, label: 'Sun' },
-                                                { value: 1, label: 'Mon' },
-                                                { value: 2, label: 'Tue' },
-                                                { value: 3, label: 'Wed' },
-                                                { value: 4, label: 'Thu' },
-                                                { value: 5, label: 'Fri' },
-                                                { value: 6, label: 'Sat' }
+                                                { value: 0, label: t('taskModal.day_sun') },
+                                                { value: 1, label: t('taskModal.day_mon') },
+                                                { value: 2, label: t('taskModal.day_tue') },
+                                                { value: 3, label: t('taskModal.day_wed') },
+                                                { value: 4, label: t('taskModal.day_thu') },
+                                                { value: 5, label: t('taskModal.day_fri') },
+                                                { value: 6, label: t('taskModal.day_sat') }
                                             ].map(day => (
                                                 <button
                                                     key={day.value}
@@ -494,22 +489,22 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                 )}
 
                                 <div>
-                                    <label className={labelClass}>End</label>
+                                    <label className={labelClass}>{t('taskModal.recurrence_end')}</label>
                                     <select 
                                         value={recurrenceEndType} 
                                         onChange={(e) => setRecurrenceEndType(e.target.value)}
                                         className={`${selectClass} mb-2`}
                                     >
-                                        <option value="never">Never</option>
-                                        <option value="until">Until date</option>
-                                        <option value="after">After N occurrences</option>
+                                        <option value="never">{t('taskModal.recurrence_never')}</option>
+                                        <option value="until">{t('taskModal.recurrence_until')}</option>
+                                        <option value="after">{t('taskModal.recurrence_after')}</option>
                                     </select>
 
                                     {recurrenceEndType === 'until' && (
                                         <DateDropdown
                                             value={recurrenceEndDate}
                                             onChange={setRecurrenceEndDate}
-                                            label="Until date"
+                                            label={t('taskModal.until_date')}
                                             className="mt-1"
                                             compact
                                         />
@@ -525,13 +520,13 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                                 className={`${fieldClass} w-24`}
                                                 required
                                             />
-                                            <span className="text-sm text-gray-600">occurrences</span>
+                                            <span className="text-sm text-gray-600">{t('taskModal.occurrences')}</span>
                                         </div>
                                     )}
                                 </div>
                                 
                                 <p className="text-xs text-gray-500">
-                                    When this task is completed, a new instance will be automatically created.
+                                    {t('taskModal.recurrence_auto_create_hint')}
                                 </p>
                             </div>
                         )}
@@ -544,7 +539,7 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                             disabled={isLoading}
                             className="rounded-lg border border-gray-200 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-xs transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
                         >
-                            Cancel
+                            {t('common.cancel')}
                         </button>
                         <button
                             type="submit"
@@ -554,10 +549,10 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                             {isLoading ? (
                                 <>
                                     <LoadingSpinner size="sm" text="" />
-                                    Adding...
+                                    {t('taskModal.saving')}
                                 </>
                             ) : (
-                                'Add Task'
+                                t('taskModal.add_task')
                             )}
                         </button>
                     </div>

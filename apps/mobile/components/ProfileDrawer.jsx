@@ -1,20 +1,25 @@
 import { View, Text, StyleSheet, Modal, Animated, Dimensions, Alert } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '../i18n';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import PressableWithFade from './PressableWithFade';
 import EditProfileModal from './EditProfileModal';
+import FeedbackModal from './FeedbackModal';
 import { useHaptics } from '../hooks/useHaptics';
 import { useRouter } from 'expo-router';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function ProfileDrawer({ visible, onClose }) {
+  const { t } = useTranslation();
   const { user, signOut, deleteAccount, supabase } = useAuth();
   const haptics = useHaptics();
   const router = useRouter();
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const insets = useSafeAreaInsets();
@@ -97,16 +102,16 @@ export default function ProfileDrawer({ visible, onClose }) {
   const handleDeleteAccount = () => {
     haptics.heavy();
     Alert.alert(
-      'Delete Account',
-      'Are you sure you want to permanently delete your account? This action cannot be undone and will delete all your data including projects, tasks, events, and messages.',
+      t('mobile.delete_account'),
+      t('mobile.delete_account_confirm'),
       [
         {
-          text: 'Cancel',
+          text: t('common.cancel'),
           style: 'cancel',
           onPress: () => haptics.light(),
         },
         {
-          text: 'Delete',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: confirmDeleteAccount,
         },
@@ -121,11 +126,11 @@ export default function ProfileDrawer({ visible, onClose }) {
       await deleteAccount();
       haptics.success();
       onClose();
-      Alert.alert('Account Deleted', 'Your account has been permanently deleted.');
+      Alert.alert(t('mobile.account_deleted'), t('mobile.account_deleted_message'));
     } catch (error) {
       console.error('Error deleting account:', error);
       haptics.error();
-      Alert.alert('Error', error.message || 'Failed to delete account. Please try again or contact support.');
+      Alert.alert(t('common.error'), error.message || t('mobile.delete_account_failed'));
     } finally {
       setDeleting(false);
     }
@@ -216,9 +221,36 @@ export default function ProfileDrawer({ visible, onClose }) {
                   hapticType="light"
                 >
                   <Ionicons name="person-outline" size={24} color="#111827" />
-                  <Text style={styles.menuItemText}>Edit Profile</Text>
+                  <Text style={styles.menuItemText}>{t('mobile.edit_profile')}</Text>
                   <Ionicons name="chevron-forward" size={20} color="#4B5563" />
                 </PressableWithFade>
+
+                <View style={styles.divider} />
+
+                <View style={styles.menuItem}>
+                  <Ionicons name="language-outline" size={24} color="#111827" />
+                  <Text style={styles.menuItemText}>{t('settings.language')}</Text>
+                  <View style={styles.languageRow}>
+                    <PressableWithFade
+                      style={[styles.langChip, i18n.language === 'en' && styles.langChipActive]}
+                      onPress={() => {
+                        haptics.light();
+                        i18n.changeLanguage('en');
+                      }}
+                    >
+                      <Text style={[styles.langChipText, i18n.language === 'en' && styles.langChipTextActive]}>EN</Text>
+                    </PressableWithFade>
+                    <PressableWithFade
+                      style={[styles.langChip, i18n.language === 'es' && styles.langChipActive]}
+                      onPress={() => {
+                        haptics.light();
+                        i18n.changeLanguage('es');
+                      }}
+                    >
+                      <Text style={[styles.langChipText, i18n.language === 'es' && styles.langChipTextActive]}>ES</Text>
+                    </PressableWithFade>
+                  </View>
+                </View>
 
                 <View style={styles.divider} />
 
@@ -234,7 +266,7 @@ export default function ProfileDrawer({ visible, onClose }) {
                   hapticType="light"
                 >
                   <Ionicons name="ban-outline" size={24} color="#111827" />
-                  <Text style={styles.menuItemText}>Blocked Users</Text>
+                  <Text style={styles.menuItemText}>{t('mobile.blocked_users_menu')}</Text>
                   <Ionicons name="chevron-forward" size={20} color="#4B5563" />
                 </PressableWithFade>
 
@@ -252,7 +284,7 @@ export default function ProfileDrawer({ visible, onClose }) {
                   hapticType="light"
                 >
                   <Ionicons name="shield-checkmark-outline" size={24} color="#111827" />
-                  <Text style={styles.menuItemText}>Privacy Policy</Text>
+                  <Text style={styles.menuItemText}>{t('mobile.privacy_policy')}</Text>
                   <Ionicons name="chevron-forward" size={20} color="#4B5563" />
                 </PressableWithFade>
 
@@ -270,7 +302,24 @@ export default function ProfileDrawer({ visible, onClose }) {
                   hapticType="light"
                 >
                   <Ionicons name="document-text-outline" size={24} color="#111827" />
-                  <Text style={styles.menuItemText}>Terms of Service</Text>
+                  <Text style={styles.menuItemText}>{t('mobile.terms_of_service')}</Text>
+                  <Ionicons name="chevron-forward" size={20} color="#4B5563" />
+                </PressableWithFade>
+
+                <View style={styles.divider} />
+
+                <PressableWithFade
+                  style={styles.menuItem}
+                  onPress={() => {
+                    haptics.light();
+                    setShowFeedback(true);
+                  }}
+                  activeOpacity={0.7}
+                  disabled={deleting}
+                  hapticType="light"
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={24} color="#111827" />
+                  <Text style={styles.menuItemText}>{t('mobile.send_feedback')}</Text>
                   <Ionicons name="chevron-forward" size={20} color="#4B5563" />
                 </PressableWithFade>
 
@@ -289,7 +338,7 @@ export default function ProfileDrawer({ visible, onClose }) {
                       hapticType="light"
                     >
                       <Ionicons name="shield-checkmark-outline" size={24} color="#111827" />
-                      <Text style={styles.menuItemText}>Content Reports</Text>
+                      <Text style={styles.menuItemText}>{t('mobile.content_reports')}</Text>
                       <Ionicons name="chevron-forward" size={20} color="#4B5563" />
                     </PressableWithFade>
                   </>
@@ -306,7 +355,7 @@ export default function ProfileDrawer({ visible, onClose }) {
                 >
                   <Ionicons name="trash-outline" size={24} color="#EF4444" />
                   <Text style={[styles.menuItemText, styles.deleteAccountText]}>
-                    {deleting ? 'Deleting...' : 'Delete Account'}
+                    {deleting ? t('mobile.deleting_account') : t('mobile.delete_account')}
                   </Text>
                   <Ionicons name="chevron-forward" size={20} color="#4B5563" />
                 </PressableWithFade>
@@ -321,7 +370,7 @@ export default function ProfileDrawer({ visible, onClose }) {
                   hapticType="medium"
                 >
                   <Ionicons name="log-out-outline" size={24} color="#111827" />
-                  <Text style={styles.menuItemText}>Sign Out</Text>
+                  <Text style={styles.menuItemText}>{t('mobile.sign_out')}</Text>
                 </PressableWithFade>
               </View>
             </View>
@@ -335,6 +384,11 @@ export default function ProfileDrawer({ visible, onClose }) {
         onProfileUpdated={() => {
           // AuthContext will automatically update via onAuthStateChange listener
         }}
+      />
+
+      <FeedbackModal
+        visible={showFeedback}
+        onClose={() => setShowFeedback(false)}
       />
     </Modal>
   );
@@ -434,6 +488,31 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#E5E7EB',
     marginVertical: 8,
+  },
+  languageRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  langChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    minWidth: 44,
+    alignItems: 'center',
+  },
+  langChipActive: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  langChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  langChipTextActive: {
+    color: '#fff',
   },
 });
 

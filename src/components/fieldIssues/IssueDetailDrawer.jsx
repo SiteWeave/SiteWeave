@@ -1,4 +1,6 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { getLocalizedPriority } from '@siteweave/i18n';
 import {
   updateProjectIssue,
   deleteProjectIssue,
@@ -24,6 +26,7 @@ export default function IssueDetailDrawer({
   onUpdated,
   onDeleted,
 }) {
+  const { t } = useTranslation();
   const { addToast } = useToast();
   const [detail, setDetail] = React.useState(issue);
   const [saving, setSaving] = React.useState(false);
@@ -67,7 +70,7 @@ export default function IssueDetailDrawer({
 
   const handleSave = async () => {
     if (!form.title.trim()) {
-      addToast('Title is required', 'error');
+      addToast(t('fieldIssues.title_required_short'), 'error');
       return;
     }
     setSaving(true);
@@ -88,9 +91,9 @@ export default function IssueDetailDrawer({
       setDetail(updated);
       onUpdated?.(updated);
       await logFieldIssueUpdated(updated, currentUser, project.id);
-      addToast('Issue saved.', 'success');
+      addToast(t('fieldIssues.saved'), 'success');
     } catch (e) {
-      addToast(e.message || 'Could not save issue.', 'error');
+      addToast(e.message || t('fieldIssues.save_error'), 'error');
     } finally {
       setSaving(false);
     }
@@ -111,23 +114,23 @@ export default function IssueDetailDrawer({
       if (next === 'closed') {
         await logFieldIssueClosed(updated, currentUser, project.id);
       }
-      addToast(next === 'closed' ? 'Issue closed.' : 'Issue reopened.', 'success');
+      addToast(next === 'closed' ? t('fieldIssues.closed') : t('fieldIssues.reopened'), 'success');
     } catch (e) {
-      addToast(e.message || 'Could not update status.', 'error');
+      addToast(e.message || t('fieldIssues.status_error'), 'error');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Delete this issue permanently?')) return;
+    if (!window.confirm(t('fieldIssues.delete_confirm'))) return;
     try {
       await deleteProjectIssue(supabaseClient, detail.id);
       onDeleted?.(detail.id);
-      addToast('Issue deleted.', 'success');
+      addToast(t('fieldIssues.deleted'), 'success');
       onClose?.();
     } catch (e) {
-      addToast(e.message || 'Could not delete issue.', 'error');
+      addToast(e.message || t('fieldIssues.delete_error'), 'error');
     }
   };
 
@@ -146,9 +149,9 @@ export default function IssueDetailDrawer({
       const fresh = await fetchProjectIssueById(supabaseClient, detail.id);
       setDetail(fresh);
       onUpdated?.(fresh);
-      addToast('File attached.', 'success');
+      addToast(t('fieldIssues.file_attached'), 'success');
     } catch (err) {
-      addToast(err.message || 'Upload failed.', 'error');
+      addToast(err.message || t('fieldIssues.upload_failed'), 'error');
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -175,15 +178,15 @@ export default function IssueDetailDrawer({
             type="text"
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
-            placeholder="Issue title"
+            placeholder={t('fieldIssues.issue_title')}
             className="min-w-0 flex-1 rounded-md border-0 bg-transparent px-1 py-0.5 text-base font-semibold text-slate-900 placeholder:text-slate-400 ring-1 ring-transparent focus:bg-white focus:ring-blue-500"
-            aria-label="Issue title"
+            aria-label={t('fieldIssues.issue_title')}
           />
           <button
             type="button"
             onClick={onClose}
             className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             <Icon path="M6 18L18 6M6 6l12 12" className="w-5 h-5" />
           </button>
@@ -200,19 +203,19 @@ export default function IssueDetailDrawer({
                   ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
                   : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
               }`}
-              title={displayStatus === 'open' ? 'Mark closed' : 'Reopen'}
+              title={displayStatus === 'open' ? t('fieldIssues.mark_closed') : t('fieldIssues.reopen')}
             >
-              {displayStatus === 'open' ? 'Open' : 'Closed'}
+              {displayStatus === 'open' ? t('fieldIssues.status_open') : t('fieldIssues.status_closed')}
             </button>
             <select
               value={form.priority}
               onChange={(e) => setForm({ ...form, priority: e.target.value })}
               className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              aria-label="Priority"
+              aria-label={t('fieldIssues.priority_label')}
             >
               {PRIORITIES.map((p) => (
                 <option key={p} value={p}>
-                  {p}
+                  {getLocalizedPriority(p, t)}
                 </option>
               ))}
             </select>
@@ -221,12 +224,12 @@ export default function IssueDetailDrawer({
               onClick={handleDelete}
               className="ml-auto text-[11px] font-medium text-red-600 hover:text-red-800"
             >
-              Delete
+              {t('common.delete')}
             </button>
           </div>
           <div>
             <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
-              Due date
+              {t('fieldIssues.due_date')}
             </label>
             <input
               type="date"
@@ -244,21 +247,21 @@ export default function IssueDetailDrawer({
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
             rows={3}
-            placeholder="Description (optional)"
+            placeholder={t('fieldIssues.description_optional')}
             className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <div>
           <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
-            Assignee
+            {t('fieldIssues.assignee_label')}
           </label>
           <select
             value={form.assigned_to_user_id}
             onChange={(e) => setForm({ ...form, assigned_to_user_id: e.target.value })}
             className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
-            <option value="">Unassigned</option>
+            <option value="">{t('tasks.unassigned')}</option>
             {assigneeOptions.map((opt) => (
               <option key={opt.userId} value={opt.userId}>
                 {opt.label}
@@ -270,7 +273,7 @@ export default function IssueDetailDrawer({
         {projectTasks?.length > 0 ? (
           <div>
             <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
-              Related tasks
+              {t('fieldIssues.related_tasks')}
             </label>
             <div className="max-h-24 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 space-y-0.5">
               {projectTasks.slice(0, 30).map((t) => (
@@ -293,7 +296,7 @@ export default function IssueDetailDrawer({
 
         <div>
           <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
-            Attachments
+            {t('fieldIssues.attachments')}
           </label>
           {(detail.issue_files || []).length > 0 ? (
             <ul className="mb-2 space-y-1 rounded-lg border border-slate-200 bg-white p-2">
@@ -313,7 +316,7 @@ export default function IssueDetailDrawer({
           ) : null}
           <label className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800">
             <input type="file" className="hidden" onChange={handleFile} disabled={uploading} />
-            {uploading ? 'Uploading…' : '+ Add file'}
+            {uploading ? t('fieldIssues.uploading') : t('fieldIssues.add_file')}
           </label>
         </div>
 
@@ -329,7 +332,7 @@ export default function IssueDetailDrawer({
           disabled={saving}
           className="w-full rounded-lg bg-blue-600 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
         >
-          {saving ? 'Saving…' : 'Save changes'}
+          {saving ? t('fieldIssues.saving') : t('fieldIssues.save_changes')}
         </button>
       </div>
     </div>

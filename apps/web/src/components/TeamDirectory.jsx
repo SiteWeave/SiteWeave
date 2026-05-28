@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { supabaseClient } from '../context/AppContext';
+import { getLocalizedContactStatus } from '@siteweave/i18n';
 import LoadingSpinner from './LoadingSpinner';
 import Avatar from './Avatar';
 
@@ -10,6 +12,7 @@ import Avatar from './Avatar';
  * This is the "magic moment" where new users see their team
  */
 function TeamDirectory() {
+  const { t, i18n } = useTranslation();
   const { state } = useAppContext();
   const currentOrganization = state.currentOrganization;
   const user = state.user;
@@ -63,7 +66,7 @@ function TeamDirectory() {
     <div className="mt-6">
       {teamMembers.length === 0 ? (
         <div className="bg-white shadow rounded-lg p-12 text-center">
-          <p className="text-gray-500">No team members yet. Invite your first team member to get started!</p>
+          <p className="text-gray-500">{t('team.no_members_yet')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -75,7 +78,7 @@ function TeamDirectory() {
               }`}
             >
               <div className="flex items-start space-x-4">
-                <div className="shrink-0">
+                <div className="flex-shrink-0">
                   {member.contacts?.avatar_url ? (
                     <img
                       src={member.contacts.avatar_url}
@@ -83,22 +86,22 @@ function TeamDirectory() {
                       className="w-16 h-16 rounded-full"
                     />
                   ) : (
-                    <Avatar name={member.contacts?.name || 'User'} size="lg" />
+                    <Avatar name={member.contacts?.name || t('common.user')} size="lg" />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="text-lg font-semibold text-gray-900 truncate">
-                      {member.contacts?.name || 'Unnamed User'}
+                      {member.contacts?.name || t('team.unnamed_user')}
                     </h3>
                     {member.id === user.id && (
                       <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 rounded-full">
-                        You
+                        {t('team.you')}
                       </span>
                     )}
                   </div>
                   <p className="text-sm text-gray-600 mt-1">
-                    {member.roles?.name || 'Team Member'}
+                    {member.roles?.name || t('team.team_member')}
                   </p>
                   {member.contacts?.role && (
                     <p className="text-sm text-gray-500">
@@ -136,13 +139,13 @@ function TeamDirectory() {
                       member.contacts.status === 'Busy' ? 'bg-yellow-500' :
                       'bg-gray-400'
                     }`}></span>
-                    <span className="text-gray-600">{member.contacts.status}</span>
+                    <span className="text-gray-600">{getLocalizedContactStatus(member.contacts.status, t)}</span>
                   </div>
                 )}
               </div>
 
               <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
-                Joined {new Date(member.created_at).toLocaleDateString()}
+                {t('team.joined')} {new Date(member.created_at).toLocaleDateString(i18n.language)}
               </div>
             </div>
           ))}

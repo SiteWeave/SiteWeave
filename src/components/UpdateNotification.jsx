@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
 
 function UpdateNotification() {
+  const { t } = useTranslation();
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
   const [isElectron, setIsElectron] = useState(false);
@@ -68,10 +70,10 @@ function UpdateNotification() {
           setUpdateAvailable(true);
           setNewVersion(result.updateInfo.version || '');
         } else {
-          setCheckMessage("You're on the latest version.");
+          setCheckMessage(t('updates.latest_version'));
         }
       } else {
-        const err = result?.error || 'Check failed';
+        const err = result?.error || t('updates.check_failed');
         setCheckMessage(err.length > 80 ? err.slice(0, 77) + '...' : err);
       }
     } finally {
@@ -102,23 +104,23 @@ function UpdateNotification() {
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-green-900 mb-1">
-              Update Ready to Install{newVersion ? ` (v${newVersion})` : ''}
+              {t('updates.update_ready_title')}{newVersion ? ` (v${newVersion})` : ''}
             </h3>
             <p className="text-sm text-green-700 mb-3">
-              A new version has been downloaded. Restart the app to apply the update.
+              {t('updates.update_ready_desc')}
             </p>
             <div className="flex gap-2">
               <button
                 onClick={handleInstallUpdate}
                 className="px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition-colors"
               >
-                Restart &amp; Install
+                {t('updates.restart_install')}
               </button>
               <button
                 onClick={handleDismiss}
                 className="px-3 py-1.5 bg-white text-green-700 text-sm font-medium rounded border border-green-300 hover:bg-green-50 transition-colors"
               >
-                Later
+                {t('updates.later')}
               </button>
             </div>
           </div>
@@ -143,28 +145,28 @@ function UpdateNotification() {
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-blue-900 mb-1">
-              Update Available{newVersion ? ` (v${newVersion})` : ''}
+              {t('updates.update_available_title')}{newVersion ? ` (v${newVersion})` : ''}
             </h3>
             {updateError ? (
               <div>
-                <p className="text-sm text-red-600 mb-2">Download failed: {updateError.length > 60 ? updateError.slice(0, 57) + '...' : updateError}</p>
+                <p className="text-sm text-red-600 mb-2">{t('updates.download_failed', { error: updateError.length > 60 ? updateError.slice(0, 57) + '...' : updateError })}</p>
                 <button
                   onClick={handleCheckForUpdates}
                   disabled={checking}
                   className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition-colors disabled:opacity-60"
                 >
-                  {checking ? 'Retrying...' : 'Try Again'}
+                  {checking ? t('updates.retrying') : t('updates.try_again')}
                 </button>
               </div>
             ) : downloadPercent != null ? (
               <div>
-                <p className="text-sm text-blue-700 mb-1">Downloading... {downloadPercent}%</p>
+                <p className="text-sm text-blue-700 mb-1">{t('updates.downloading', { percent: downloadPercent })}</p>
                 <div className="w-full bg-blue-200 rounded-full h-2">
                   <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${downloadPercent}%` }} />
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-blue-700">Downloading the latest version in the background...</p>
+              <p className="text-sm text-blue-700">{t('updates.downloading_background')}</p>
             )}
           </div>
           <button onClick={handleDismiss} className="flex-shrink-0 text-blue-400 hover:text-blue-600 transition-colors">
@@ -192,12 +194,12 @@ function UpdateNotification() {
         {checking ? (
           <>
             <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
-            Checking...
+            {t('updates.checking')}
           </>
         ) : (
           <>
             <Icon path="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" className="w-4 h-4 text-gray-500" />
-            Check for updates
+            {t('updates.check_for_updates')}
           </>
         )}
       </button>

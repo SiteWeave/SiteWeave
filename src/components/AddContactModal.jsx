@@ -1,12 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import LoadingSpinner from './LoadingSpinner';
-import {
-    TRADE_PARTNER_NOTIFICATION_INFO,
-    LABEL_EMAIL_FOR_REMINDERS,
-    LABEL_PHONE_DIRECTORY,
-} from '../utils/contactNotificationCopy';
 
 function AddContactModal({ onClose, onSave, contact = null, isLoading = false }) {
+    const { t } = useTranslation();
     const isEditMode = !!contact;
     
     const [name, setName] = useState(contact?.name || '');
@@ -54,14 +51,14 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
         <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                 <h2 className="text-2xl font-bold mb-6">
-                    {isEditMode ? 'Edit Contact' : 'Add New Contact'}
+                    {isEditMode ? t('contacts.edit_title') : t('contacts.add_title')}
                 </h2>
                 
                 <form onSubmit={handleSubmit} className="space-y-6">
                     {/* Basic Information */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-semibold mb-1">Name *</label>
+                            <label className="block text-sm font-semibold mb-1">{t('contacts.name_label')}</label>
                             <input 
                                 type="text" 
                                 value={name} 
@@ -72,7 +69,7 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                         </div>
                         
                         <div>
-                            <label className="block text-sm font-semibold mb-1">Role *</label>
+                            <label className="block text-sm font-semibold mb-1">{t('contacts.role_label')}</label>
                             <input 
                                 type="text" 
                                 value={role} 
@@ -85,14 +82,14 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
 
                     {/* Contact Type */}
                     <div>
-                        <label className="block text-sm font-semibold mb-1">Contact Type</label>
+                        <label className="block text-sm font-semibold mb-1">{t('contacts.contact_type')}</label>
                         <select 
                             value={type} 
                             onChange={e => setType(e.target.value)} 
                             className="w-full p-3 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         >
-                            <option value="Team">Team Member</option>
-                            <option value="Subcontractor">Trade Partner</option>
+                            <option value="Team">{t('contacts.type_team')}</option>
+                            <option value="Subcontractor">{t('contacts.type_trade_partner')}</option>
                         </select>
                     </div>
 
@@ -100,7 +97,7 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                     {type === 'Subcontractor' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-sm font-semibold mb-1">Company</label>
+                                <label className="block text-sm font-semibold mb-1">{t('contacts.company')}</label>
                                 <input 
                                     type="text" 
                                     value={company} 
@@ -110,7 +107,7 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                             </div>
                             
                             <div>
-                                <label className="block text-sm font-semibold mb-1">Trade</label>
+                                <label className="block text-sm font-semibold mb-1">{t('contacts.trade')}</label>
                                 <input 
                                     type="text" 
                                     value={trade} 
@@ -126,15 +123,15 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                             className="rounded-lg border border-blue-100 bg-blue-50/80 px-4 py-3 text-sm text-blue-900"
                             role="note"
                         >
-                            <p className="font-semibold text-blue-950">How they get updates</p>
-                            <p className="mt-1 leading-relaxed">{TRADE_PARTNER_NOTIFICATION_INFO}</p>
+                            <p className="font-semibold text-blue-950">{t('contacts.how_they_get_updates')}</p>
+                            <p className="mt-1 leading-relaxed">{t('contacts.trade_partner_notification_info')}</p>
                         </div>
                     )}
 
                     {/* Contact Information */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-semibold mb-1">Email</label>
+                            <label className="block text-sm font-semibold mb-1">{t('contacts.email')}</label>
                             <input 
                                 type="email" 
                                 value={email} 
@@ -142,12 +139,12 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
                             />
                             {type === 'Subcontractor' && (
-                                <p className="mt-1 text-xs text-gray-500">{LABEL_EMAIL_FOR_REMINDERS}</p>
+                                <p className="mt-1 text-xs text-gray-500">{t('contacts.email_for_reminders')}</p>
                             )}
                         </div>
                         
                         <div>
-                            <label className="block text-sm font-semibold mb-1">Phone</label>
+                            <label className="block text-sm font-semibold mb-1">{t('contacts.phone')}</label>
                             <input 
                                 type="tel" 
                                 value={phone} 
@@ -158,12 +155,12 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                                         setPhone(value.length > 6 ? formatted : value.length > 3 ? value.replace(/(\d{3})(\d{0,3})/, '($1) $2') : value);
                                     }
                                 }}
-                                placeholder="(555) 123-4567"
+                                placeholder={t('contacts.phone_placeholder')}
                                 maxLength="14"
                                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
                             />
                             {type === 'Subcontractor' && (
-                                <p className="mt-1 text-xs text-gray-500">{LABEL_PHONE_DIRECTORY}</p>
+                                <p className="mt-1 text-xs text-gray-500">{t('contacts.phone_directory_hint')}</p>
                             )}
                         </div>
                     </div>
@@ -177,7 +174,7 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                             disabled={isLoading} 
                             className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50 transition-colors"
                         >
-                            Cancel
+                            {t('common.cancel')}
                         </button>
                         <button 
                             type="submit" 
@@ -187,10 +184,10 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                             {isLoading ? (
                                 <>
                                     <LoadingSpinner size="sm" text="" />
-                                    {isEditMode ? 'Updating...' : 'Adding...'}
+                                    {isEditMode ? t('contacts.updating') : t('contacts.adding')}
                                 </>
                             ) : (
-                                isEditMode ? 'Update Contact' : 'Add Contact'
+                                isEditMode ? t('contacts.update_contact') : t('contacts.add_contact_btn')
                             )}
                         </button>
                     </div>

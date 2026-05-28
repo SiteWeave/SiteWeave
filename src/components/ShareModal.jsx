@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { supabaseClient, useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { canInviteGuestCollaborator, isGuestCollaboratorLimitError } from '@siteweave/core-logic';
@@ -8,6 +9,7 @@ const DEFAULT_ROLE = 'Team';
 const ROLE_OPTIONS = ['PM', 'Team', 'Subcontractor', 'Client'];
 
 function ShareModal({ projectId, onClose }) {
+  const { t } = useTranslation();
   const { state, dispatch } = useAppContext();
   const { addToast } = useToast();
   const [input, setInput] = useState('');
@@ -281,7 +283,7 @@ function ShareModal({ projectId, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] bg-white/20">
       <div className="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-900">Manage Project Crew</h2>
+          <h2 className="text-xl font-semibold text-gray-900">{t('projectDetail.manage_project_crew')}</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
         </div>
 

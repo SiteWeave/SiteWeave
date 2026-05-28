@@ -1,10 +1,12 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 function ViewSwitcher({ currentView, onViewChange, compact = false }) {
+    const { t } = useTranslation();
     const views = [
-        { id: 'card', label: 'Card', icon: 'grid' },
-        { id: 'list', label: 'List', icon: 'list' },
-        { id: 'board', label: 'Board', icon: 'columns' }
+        { id: 'card', labelKey: 'view_switcher.card', icon: 'grid' },
+        { id: 'list', labelKey: 'view_switcher.list', icon: 'list' },
+        { id: 'board', labelKey: 'view_switcher.board', icon: 'columns' }
     ];
 
     const getIcon = (iconType) => {
@@ -33,25 +35,27 @@ function ViewSwitcher({ currentView, onViewChange, compact = false }) {
     };
 
     return (
-        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-            {views.map((view) => (
+        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            {views.map((view) => {
+                const label = t(view.labelKey);
+                return (
                 <button
                     key={view.id}
                     onClick={() => onViewChange(view.id)}
                     className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                         currentView === view.id
                             ? 'bg-white text-blue-600 shadow-xs'
-                            : 'text-gray-600 hover:text-gray-900'
+                            : 'text-slate-600 hover:text-slate-900'
                     }`}
-                    title={`${view.label} View`}
+                    title={t('view_switcher.view_title', { label })}
                 >
                     {getIcon(view.icon)}
-                    {!compact && <span className="hidden sm:inline">{view.label}</span>}
+                    {!compact && <span className="hidden sm:inline">{label}</span>}
                 </button>
-            ))}
+            );
+            })}
         </div>
     );
 }
 
 export default ViewSwitcher;
-

@@ -26,7 +26,7 @@ const TaskItem = memo(function TaskItem({
     pingingTaskId = null,
     project = null,
 }) {
-    const { i18n } = useTranslation();
+    const { i18n, t } = useTranslation();
     /** @type {[TaskPanel, (p: TaskPanel) => void]} */
     const [panel, setPanel] = useState(null);
     const [draftStart, setDraftStart] = useState(task.start_date || '');
@@ -96,7 +96,7 @@ const TaskItem = memo(function TaskItem({
         }
         if (task.due_date) return formatDateShort(task.due_date);
         if (task.start_date) return formatDateShort(task.start_date);
-        return 'No dates';
+        return t('tasks.no_dates');
     };
     const progressPercent = Math.max(0, Math.min(100, Number(task.percent_complete ?? (task.completed ? 100 : 0)) || 0));
     const isComplete = task.completed || progressPercent >= 100;
@@ -294,7 +294,7 @@ const TaskItem = memo(function TaskItem({
     const assigneeDisplay = (
         assigneeName && !looksLikePlaceholderName ? assigneeName : ''
     ) || assigneeEmail || assigneePhoneDisplay || assigneeName || null;
-    const assigneeLabel = assigneeDisplay || 'Assign';
+    const assigneeLabel = assigneeDisplay || t('tasks.assign');
     const predecessors = dependencyMeta?.predecessors || [];
     const successors = dependencyMeta?.successors || [];
     const depCount = predecessors.length + successors.length;
@@ -371,14 +371,14 @@ const TaskItem = memo(function TaskItem({
                             <PermissionGuard
                                 permission="can_edit_tasks"
                                 fallback={
-                                    <span className="shrink-0 tabular-nums text-xs font-semibold text-gray-600 w-12 text-right" title="Percent complete">
+                                    <span className="shrink-0 tabular-nums text-xs font-semibold text-gray-600 w-12 text-right" title={t('tasks.percent_complete')}>
                                         {progressPercent}%
                                     </span>
                                 }
                             >
                                 <label
                                     className="flex shrink-0 items-center gap-0.5"
-                                    title="Percent complete (100% marks done)"
+                                    title={t('tasks.percent_complete_title')}
                                     onClick={stop}
                                     onMouseDown={suppressRowDrag}
                                     onTouchStart={suppressRowDrag}
@@ -425,7 +425,7 @@ const TaskItem = memo(function TaskItem({
                                 className={`ui-clamp-2 text-left font-semibold text-sm sm:text-base leading-snug hover:text-blue-700 focus:outline-none ${
                                     isComplete ? 'line-through text-gray-400' : 'text-gray-900'
                                 }`}
-                                title="Click to rename"
+                                title={t('tasks.click_to_rename')}
                             >
                                 {task.text}
                             </button>
@@ -462,7 +462,7 @@ const TaskItem = memo(function TaskItem({
                                 className={`tabular-nums rounded px-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
                                     isComplete ? 'text-gray-400' : 'text-gray-500 hover:text-blue-600 hover:underline underline-offset-2'
                                 }`}
-                                title="Set dates"
+                                title={t('tasks.set_dates')}
                             >
                                 {dateLine()}
                             </button>
@@ -470,10 +470,10 @@ const TaskItem = memo(function TaskItem({
                             {predecessors.length > 0 && (
                                 <>
                                     <span className="text-gray-300">|</span>
-                                    <span className={`font-medium ${unmetCount > 0 ? 'text-amber-700' : 'text-gray-600'}`}>Blocked by:</span>
+                                    <span className={`font-medium ${unmetCount > 0 ? 'text-amber-700' : 'text-gray-600'}`}>{t('tasks.blocked_by')}</span>
                                     <div className="flex min-w-0 flex-wrap items-center gap-1">
                                         {visiblePredecessors.map((dep) => dependencyChip(
-                                            dep.predecessorTask || { id: dep.id, text: 'Unknown task', contacts: null, completed: false },
+                                            dep.predecessorTask || { id: dep.id, text: t('tasks.unknown_task'), contacts: null, completed: false },
                                             dep.predecessorTask?.completed ? 'complete' : 'blocked'
                                         ))}
                                         {!showAllPredecessors && predecessors.length > 3 && (
@@ -494,10 +494,10 @@ const TaskItem = memo(function TaskItem({
                             {predecessors.length === 0 && successors.length > 0 && (
                                 <>
                                     <span className="text-gray-300">|</span>
-                                    <span className="font-medium text-gray-600">Unlocks:</span>
+                                    <span className="font-medium text-gray-600">{t('tasks.unlocks')}</span>
                                     <div className="flex min-w-0 flex-wrap items-center gap-1">
                                         {successors.slice(0, 2).map((dep) => dependencyChip(
-                                            dep.successorTask || { id: dep.id, text: 'Unknown task', contacts: null, completed: false },
+                                            dep.successorTask || { id: dep.id, text: t('tasks.unknown_task'), contacts: null, completed: false },
                                             dep.successorTask?.completed ? 'complete' : 'neutral'
                                         ))}
                                         {successors.length > 2 && (
@@ -518,15 +518,17 @@ const TaskItem = memo(function TaskItem({
                             type="button"
                             onClick={(e) => { e.stopPropagation(); onOpenPhotos?.(task.id); }}
                             className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-800"
-                            title="Photos"
-                            aria-label={`Photos for ${task.text}`}
+                            title={t('tasks.photos')}
+                            aria-label={`${t('tasks.photos')} — ${task.text}`}
                         >
                             <Icon
                                 path="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008H12V8.25Z"
                                 className="h-3.5 w-3.5 shrink-0"
                             />
                             <span className="hidden sm:inline">
-                                {photoCount > 0 ? `Photos (${photoCount > 9 ? '9+' : photoCount})` : 'Photos'}
+                                {photoCount > 0
+                                    ? (photoCount > 9 ? t('tasks.photos_count_overflow') : t('tasks.photos_count', { count: photoCount }))
+                                    : t('tasks.photos')}
                             </span>
                             {photoCount > 0 && (
                                 <span className="sm:hidden flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-blue-600 px-0.5 text-[9px] font-bold text-white">
@@ -543,14 +545,14 @@ const TaskItem = memo(function TaskItem({
                                     className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs ${
                                         depWarningCount > 0 ? 'text-amber-600' : 'text-gray-400'
                                     }`}
-                                    title={depTooltip || 'Dependencies'}
+                                    title={depTooltip || t('tasks.dependencies')}
                                 >
                                     <Icon
                                         path="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"
                                         className="h-3.5 w-3.5 shrink-0"
                                     />
                                     <span className="hidden sm:inline">
-                                        {depCount > 0 ? `Deps (${depCount})` : 'Deps'}
+                                        {depCount > 0 ? t('tasks.deps_count', { count: depCount }) : t('tasks.deps')}
                                     </span>
                                 </span>
                             }
@@ -566,15 +568,15 @@ const TaskItem = memo(function TaskItem({
                                         ? 'text-amber-600 hover:text-amber-800'
                                         : 'text-gray-500 hover:text-gray-800'
                                 }`}
-                                title={depTooltip || 'Dependencies'}
-                                aria-label="Task dependencies"
+                                title={depTooltip || t('tasks.dependencies')}
+                                aria-label={t('tasks.task_dependencies_aria')}
                             >
                                 <Icon
                                     path="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"
                                     className="h-3.5 w-3.5 shrink-0"
                                 />
                                 <span className="hidden sm:inline">
-                                    {depCount > 0 ? `Deps (${depCount})` : 'Deps'}
+                                    {depCount > 0 ? t('tasks.deps_count', { count: depCount }) : t('tasks.deps')}
                                 </span>
                                 {depWarningCount > 0 && (
                                     <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
@@ -591,14 +593,14 @@ const TaskItem = memo(function TaskItem({
                                     onOpenDiscussion(task.id);
                                 }}
                                 className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-800"
-                                title="Discussion"
-                                aria-label={`Discussion for ${task.text}`}
+                                title={t('tasks.discussion')}
+                                aria-label={`${t('tasks.discussion')} — ${task.text}`}
                             >
                                 <Icon
                                     path="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
                                     className="h-3.5 w-3.5 shrink-0"
                                 />
-                                <span className="hidden sm:inline">Discussion</span>
+                                <span className="hidden sm:inline">{t('tasks.discussion')}</span>
                             </button>
                         )}
 
@@ -610,13 +612,13 @@ const TaskItem = memo(function TaskItem({
                                     className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs ${
                                         assigneeDisplay ? 'text-gray-600' : 'text-gray-400'
                                     }`}
-                                    title={assigneeDisplay ? `Assigned: ${assigneeDisplay}` : 'Unassigned'}
+                                    title={assigneeDisplay ? t('tasks.assigned_to', { name: assigneeDisplay }) : t('tasks.unassigned')}
                                 >
                                     <Icon
                                         path="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.433-3.059M4.318 18.318a9.38 9.38 0 01-.372-2.625 9.337 9.337 0 01.952-4.121 4.125 4.125 0 017.433 3.059M12 9.75a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z"
                                         className="h-3.5 w-3.5 shrink-0"
                                     />
-                                    <span className="hidden sm:inline max-w-[96px] ui-ellipsis-1">{assigneeDisplay || 'Assign'}</span>
+                                    <span className="hidden sm:inline max-w-[96px] ui-ellipsis-1">{assigneeDisplay || t('tasks.assign')}</span>
                                 </span>
                             }
                         >
@@ -628,8 +630,8 @@ const TaskItem = memo(function TaskItem({
                                         ? 'text-gray-600 hover:text-gray-900'
                                         : 'text-gray-400 hover:text-gray-600'
                                 }`}
-                                title={assigneeDisplay ? `Assigned: ${assigneeDisplay} — click to change` : 'Assign task'}
-                                aria-label="Assignment"
+                                title={assigneeDisplay ? t('tasks.assigned_to_change', { name: assigneeDisplay }) : t('tasks.assign_task')}
+                                aria-label={t('tasks.assignment_aria')}
                             >
                                 <Icon
                                     path="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.433-3.059M4.318 18.318a9.38 9.38 0 01-.372-2.625 9.337 9.337 0 01.952-4.121 4.125 4.125 0 017.433 3.059M12 9.75a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z"
@@ -657,16 +659,16 @@ const TaskItem = memo(function TaskItem({
                                             className="relative flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-500 shadow-xs hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                                             title={
                                                 assigneePhoneOkPing && smsConsent !== 'confirmed' && !smsConsentBlocked
-                                                    ? 'Sends email now; SMS only after assignee replies YES (use consent buttons).'
-                                                    : 'Send a reminder to the assignee now'
+                                                    ? t('tasks.ping_title_sms')
+                                                    : t('tasks.ping_title_email')
                                             }
-                                            aria-label={`Ping assignee for task: ${task.text}`}
+                                            aria-label={t('tasks.ping_assignee_aria', { task: task.text })}
                                         >
                                             <Icon
                                                 path="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405z"
                                                 className="h-3.5 w-3.5 shrink-0"
                                             />
-                                            <span className="hidden sm:inline">Ping</span>
+                                            <span className="hidden sm:inline">{t('tasks.ping')}</span>
                                         </button>
                                         {onRequestAssigneeSmsConsent &&
                                             assigneePhoneOkPing &&
@@ -681,9 +683,9 @@ const TaskItem = memo(function TaskItem({
                                                     }}
                                                     disabled={pingingTaskId === task.id}
                                                     className="flex shrink-0 items-center rounded-md border border-amber-200 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-                                                    title="Send SMS consent"
+                                                    title={t('tasks.send_sms_consent')}
                                                 >
-                                                    SMS OK?
+                                                    {t('tasks.sms_ok')}
                                                 </button>
                                             )}
                                         {onRequestAssigneeSmsConsent &&
@@ -697,9 +699,9 @@ const TaskItem = memo(function TaskItem({
                                                     }}
                                                     disabled={pingingTaskId === task.id}
                                                     className="flex shrink-0 items-center rounded-md border border-gray-200 bg-white px-1 py-0.5 text-[10px] text-gray-600 hover:border-blue-200 disabled:opacity-50"
-                                                    title="Resend consent (24h limit)"
+                                                    title={t('tasks.resend_consent')}
                                                 >
-                                                    Resend
+                                                    {t('tasks.resend_consent')}
                                                 </button>
                                             )}
                                     </div>
@@ -712,8 +714,8 @@ const TaskItem = memo(function TaskItem({
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
                                 className="rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                                title="Delete task"
-                                aria-label={`Delete task: ${task.text}`}
+                                title={t('tasks.delete_task')}
+                                aria-label={`${t('tasks.delete_task')}: ${task.text}`}
                             >
                                 <Icon
                                     path="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
@@ -732,7 +734,7 @@ const TaskItem = memo(function TaskItem({
                             onClick={stop}
                         >
                             <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs font-semibold text-gray-700">Set dates</span>
+                                <span className="text-xs font-semibold text-gray-700">{t('tasks.set_dates')}</span>
                                 {daysSelected() !== null && (
                                     <span className="shrink-0 text-[10px] text-gray-400">
                                         {daysSelected()} day{daysSelected() === 1 ? '' : 's'}
@@ -742,7 +744,7 @@ const TaskItem = memo(function TaskItem({
                             <DateRangePicker
                                 size="sm"
                                 compact
-                                label="Schedule"
+                                label={t('tasks.schedule')}
                                 startValue={draftStart}
                                 endValue={draftDue}
                                 onChange={({ start, end }) => {
@@ -793,7 +795,7 @@ const TaskItem = memo(function TaskItem({
                                 e.stopPropagation();
                             }}
                         >
-                            <p className="text-xs font-semibold text-gray-800">Assignment</p>
+                            <p className="text-xs font-semibold text-gray-800">{t('tasks.assignment')}</p>
                             <div className="grid grid-cols-1 gap-2 lg:grid-cols-[96px_minmax(180px,1fr)_minmax(220px,1.2fr)_minmax(170px,1fr)] lg:items-end">
                                 <label className="block text-xs text-gray-600">
                                     Priority
@@ -802,9 +804,9 @@ const TaskItem = memo(function TaskItem({
                                         onChange={(e) => setEditPriority(e.target.value)}
                                         className="mt-0.5 w-full rounded border border-gray-300 bg-white p-1.5 text-sm"
                                     >
-                                        <option value="Low">Low</option>
-                                        <option value="Medium">Medium</option>
-                                        <option value="High">High</option>
+                                        <option value="Low">{t('tasks.priority_low')}</option>
+                                        <option value="Medium">{t('tasks.priority_medium')}</option>
+                                        <option value="High">{t('tasks.priority_high')}</option>
                                     </select>
                                 </label>
                                 <PermissionGuard permission="can_assign_tasks">
@@ -821,7 +823,7 @@ const TaskItem = memo(function TaskItem({
                                             }}
                                             className="mt-0.5 w-full rounded border border-gray-300 bg-white p-1.5 text-sm"
                                         >
-                                            <option value="">Unassigned</option>
+                                            <option value="">{t('tasks.unassigned')}</option>
                                             {assignableContacts.map((c) => (
                                                 <option key={c.id} value={c.id}>
                                                     {c.name}

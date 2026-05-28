@@ -1,4 +1,5 @@
 import React, { memo, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 
 function formatOverdueDueDate(value) {
@@ -23,7 +24,7 @@ function formatOverdueDueDate(value) {
     });
 }
 
-function getTaskAssigneeLabel(task, contactById) {
+function getTaskAssigneeLabel(task, contactById, t) {
     const rel = task?.contacts;
     if (rel && typeof rel === 'object') {
         const name = Array.isArray(rel) ? rel[0]?.name : rel.name;
@@ -33,10 +34,10 @@ function getTaskAssigneeLabel(task, contactById) {
         const c = contactById.get(String(task.assignee_id));
         if (c?.name) return c.name;
     }
-    return 'Unassigned';
+    return t('common.unassigned');
 }
 
-function groupTasksByProject(tasks, projects) {
+function groupTasksByProject(tasks, projects, t) {
     const projectById = new Map((projects || []).map((project) => [String(project.id), project]));
     const grouped = new Map();
     (tasks || []).forEach((task) => {
@@ -44,7 +45,7 @@ function groupTasksByProject(tasks, projects) {
         const project = projectById.get(key);
         if (!grouped.has(key)) {
             grouped.set(key, {
-                projectName: project?.name || 'No project',
+                projectName: project?.name || t('common.no_project'),
                 items: [],
             });
         }
@@ -54,6 +55,7 @@ function groupTasksByProject(tasks, projects) {
 }
 
 const DashboardStats = memo(function DashboardStats() {
+    const { t } = useTranslation();
     const { state } = useAppContext();
     const [showOverdueModal, setShowOverdueModal] = useState(false);
     const [showCompletedModal, setShowCompletedModal] = useState(false);
@@ -80,31 +82,34 @@ const DashboardStats = memo(function DashboardStats() {
             if (!task.due_date || task.completed) return false;
             return new Date(task.due_date) < new Date();
         });
-        return groupTasksByProject(overdueItems, projects);
-    }, [tasks, projects]);
+        return groupTasksByProject(overdueItems, projects, t);
+    }, [tasks, projects, t]);
 
     const completedGroups = useMemo(() => {
         const completedItems = tasks.filter((task) => task.completed);
-        return groupTasksByProject(completedItems, projects);
-    }, [tasks, projects]);
+        return groupTasksByProject(completedItems, projects, t);
+    }, [tasks, projects, t]);
 
     const stats = [
         {
-            title: 'Active Projects',
+            id: 'active_projects',
+            title: t('dashboard.stats_active_projects'),
             value: activeProjects,
             total: null,
             color: 'blue',
             icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4'
         },
         {
-            title: 'Tasks Completed',
+            id: 'tasks_completed',
+            title: t('dashboard.stats_tasks_completed'),
             value: completedTasks,
             total: null,
             color: 'green',
             icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'
         },
         {
-            title: 'Overdue Tasks',
+            id: 'overdue_tasks',
+            title: t('dashboard.stats_overdue_tasks'),
             value: overdueTasks,
             total: null,
             color: overdueTasks > 0 ? 'red' : 'gray',
@@ -126,24 +131,24 @@ const DashboardStats = memo(function DashboardStats() {
     return (
         <>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            {stats.map((stat, index) => (
+            {stats.map((stat) => (
                 <button
-                    key={index}
+                    key={stat.id}
                     type="button"
                     disabled={
-                        (stat.title === 'Overdue Tasks' && stat.value <= 0)
-                        || (stat.title === 'Tasks Completed' && stat.value <= 0)
+                        (stat.id === 'overdue_tasks' && stat.value <= 0)
+                        || (stat.id === 'tasks_completed' && stat.value <= 0)
                     }
                     onClick={() => {
-                        if (stat.title === 'Overdue Tasks' && stat.value > 0) {
+                        if (stat.id === 'overdue_tasks' && stat.value > 0) {
                             setShowOverdueModal(true);
                         }
-                        if (stat.title === 'Tasks Completed' && stat.value > 0) {
+                        if (stat.id === 'tasks_completed' && stat.value > 0) {
                             setShowCompletedModal(true);
                         }
                     }}
                     className={`app-card-soft p-5 border text-left w-full ${
-                        (stat.title === 'Overdue Tasks' || stat.title === 'Tasks Completed') && stat.value > 0
+                        (stat.id === 'overdue_tasks' || stat.id === 'tasks_completed') && stat.value > 0
                             ? 'cursor-pointer hover:shadow-md transition-shadow'
                             : 'cursor-default'
                     } ${getColorClasses(stat.color)}`}
@@ -169,18 +174,18 @@ const DashboardStats = memo(function DashboardStats() {
             <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
                 <div className="w-full max-w-3xl bg-white rounded-xl shadow-xl border border-gray-200 max-h-[80vh] overflow-hidden">
                     <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                        <h3 className="text-lg font-semibold text-gray-900">Overdue Tasks by Project</h3>
+                        <h3 className="text-lg font-semibold text-gray-900">{t('dashboard.overdue_tasks_by_project')}</h3>
                         <button
                             type="button"
                             onClick={() => setShowOverdueModal(false)}
                             className="text-sm text-gray-600 hover:text-gray-900"
                         >
-                            Close
+                            {t('common.close')}
                         </button>
                     </div>
                     <div className="p-5 overflow-y-auto max-h-[65vh] space-y-4">
                         {overdueGroups.length === 0 ? (
-                            <p className="text-sm text-gray-500">No overdue tasks.</p>
+                            <p className="text-sm text-gray-500">{t('dashboard.no_overdue_tasks')}</p>
                         ) : overdueGroups.map((group) => (
                             <div key={group.projectName} className="border border-gray-100 rounded-lg p-3">
                                 <p className="text-sm font-semibold text-gray-800 mb-2">{group.projectName}</p>
@@ -189,9 +194,9 @@ const DashboardStats = memo(function DashboardStats() {
                                         <li key={task.id} className="text-sm text-gray-700">
                                             <span className="font-medium text-gray-800">{task.text}</span>
                                             <span className="mt-0.5 block text-xs text-gray-500">
-                                                Assigned to {getTaskAssigneeLabel(task, contactById)}
+                                                {t('dashboard.assigned_to', { name: getTaskAssigneeLabel(task, contactById, t) })}
                                                 <span className="text-gray-400"> · </span>
-                                                Due{' '}
+                                                {t('dashboard.due_label')}{' '}
                                                 <time
                                                     dateTime={typeof task.due_date === 'string' ? task.due_date : undefined}
                                                     className="font-medium text-gray-700 tabular-nums"
@@ -212,18 +217,18 @@ const DashboardStats = memo(function DashboardStats() {
             <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
                 <div className="w-full max-w-3xl bg-white rounded-xl shadow-xl border border-gray-200 max-h-[80vh] overflow-hidden">
                     <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                        <h3 className="text-lg font-semibold text-gray-900">Completed Tasks by Project</h3>
+                        <h3 className="text-lg font-semibold text-gray-900">{t('dashboard.completed_tasks_by_project')}</h3>
                         <button
                             type="button"
                             onClick={() => setShowCompletedModal(false)}
                             className="text-sm text-gray-600 hover:text-gray-900"
                         >
-                            Close
+                            {t('common.close')}
                         </button>
                     </div>
                     <div className="p-5 overflow-y-auto max-h-[65vh] space-y-4">
                         {completedGroups.length === 0 ? (
-                            <p className="text-sm text-gray-500">No completed tasks.</p>
+                            <p className="text-sm text-gray-500">{t('dashboard.no_completed_tasks')}</p>
                         ) : completedGroups.map((group) => (
                             <div key={group.projectName} className="border border-gray-100 rounded-lg p-3">
                                 <p className="text-sm font-semibold text-gray-800 mb-2">{group.projectName}</p>
@@ -232,7 +237,7 @@ const DashboardStats = memo(function DashboardStats() {
                                         <li key={task.id} className="text-sm text-gray-700">
                                             <span className="font-medium text-gray-800">{task.text}</span>
                                             <span className="mt-0.5 block text-xs text-gray-500">
-                                                Assigned to {getTaskAssigneeLabel(task, contactById)}
+                                                {t('dashboard.assigned_to', { name: getTaskAssigneeLabel(task, contactById, t) })}
                                             </span>
                                         </li>
                                     ))}

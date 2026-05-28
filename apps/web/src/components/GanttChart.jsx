@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import Gantt from 'frappe-gantt';
 import 'frappe-gantt/dist/frappe-gantt.css';
 import { toFrappeGanttTasks } from '../utils/ganttAdapter';
@@ -14,6 +15,12 @@ const LEFT_PANEL_MAX = 720;
 const UPPER_HEADER_HEIGHT = 22;
 const LOWER_HEADER_HEIGHT = 18;
 const VIEW_MODES = ['Day', 'Week', 'Month', 'Year'];
+const VIEW_MODE_I18N = {
+  Day: 'gantt.view_day',
+  Week: 'gantt.view_week',
+  Month: 'gantt.view_month',
+  Year: 'gantt.view_year',
+};
 
 /** Pick a zoom level so the full schedule is easier to scan at a glance. */
 function pickViewModeForScheduleSpan(tasks) {
@@ -40,13 +47,14 @@ function formatGanttDate(str) {
 }
 
 function StatusBadge({ completed }) {
+  const { t } = useTranslation();
   if (completed) {
     return (
       <span className="inline-flex whitespace-nowrap items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
         </svg>
-        Complete
+        {t('gantt.status_complete')}
       </span>
     );
   }
@@ -55,7 +63,7 @@ function StatusBadge({ completed }) {
       <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="10" />
       </svg>
-      To do
+      {t('gantt.status_todo')}
     </span>
   );
 }
@@ -71,6 +79,7 @@ export default function GanttChart({
   showCriticalPath = true,
   onToggleCriticalPath,
 }) {
+  const { t } = useTranslation();
   const chartContainerRef = useRef(null);
   const ganttInstanceRef = useRef(null);
   const leftScrollRef = useRef(null);
@@ -322,9 +331,9 @@ export default function GanttChart({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         </div>
-        <p className="font-medium text-gray-800">No dated tasks yet</p>
+        <p className="font-medium text-gray-800">{t('gantt.no_dated_tasks')}</p>
         <p className="max-w-sm text-gray-500">
-          Add a start date or due date on at least one task. The chart lines up with your task list on the left.
+          {t('gantt.no_dated_tasks_hint')}
         </p>
       </div>
     );
@@ -335,27 +344,27 @@ export default function GanttChart({
       {/* Toolbar */}
       <div className="flex flex-col gap-2 py-2.5 px-3 bg-slate-50 border-b border-slate-200 flex-shrink-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-bold text-slate-900 pr-2">Gantt</h2>
+          <h2 className="text-lg font-bold text-slate-900 pr-2">{t('gantt.title')}</h2>
           <select
             value={viewMode}
             onChange={(e) => handleChangeViewMode(e.target.value)}
             className="px-3 py-1.5 border border-slate-300 rounded-md text-sm bg-white shadow-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            aria-label="View mode"
+            aria-label={t('gantt.view_mode')}
           >
             {VIEW_MODES.map((m) => (
-              <option key={m} value={m}>{m}</option>
+              <option key={m} value={m}>{t(VIEW_MODE_I18N[m])}</option>
             ))}
           </select>
           <button
             type="button"
             onClick={handleFitTimeline}
             className="px-3 py-1.5 text-sm font-medium text-slate-800 bg-white border border-slate-300 rounded-md hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400"
-            title="Zoom to fit the full date range of scheduled work"
+            title={t('gantt.fit_timeline_title')}
           >
-            Fit timeline
+            {t('gantt.fit_timeline')}
           </button>
-          <span className="text-xs text-slate-500 hidden sm:inline" title="Use the mouse on the chart area">
-            Drag chart to pan
+          <span className="text-xs text-slate-500 hidden sm:inline" title={t('gantt.drag_to_pan_title')}>
+            {t('gantt.drag_to_pan')}
           </span>
           <div className="flex-1 min-w-[8px]" />
           <button
@@ -363,7 +372,7 @@ export default function GanttChart({
             onClick={handleExportCSV}
             className="px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            Export CSV
+            {t('gantt.export_csv')}
           </button>
           <label className="flex items-center gap-2 cursor-pointer px-2 py-1.5 border border-slate-300 rounded-md bg-white">
             <input
@@ -373,48 +382,48 @@ export default function GanttChart({
               className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
             <span className="text-sm text-gray-700">
-              Show critical path
+              {t('gantt.show_critical_path')}
               <span className="ml-1 text-xs text-gray-500">
-                ({criticalCount} task{criticalCount === 1 ? '' : 's'})
+                {t(criticalCount === 1 ? 'gantt.critical_count_one' : 'gantt.critical_count_other', { count: criticalCount })}
               </span>
             </span>
           </label>
         </div>
         {showCriticalPath && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600 pl-0.5">
-            <span className="font-medium text-slate-500 uppercase tracking-wide">Bar colors</span>
+            <span className="font-medium text-slate-500 uppercase tracking-wide">{t('gantt.bar_colors')}</span>
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded-sm bg-red-600 ring-1 ring-red-800/30" aria-hidden />
-              Critical path
+              {t('gantt.critical_path')}
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded-sm bg-slate-400 ring-1 ring-slate-500/30" aria-hidden />
-              Scheduled
+              {t('gantt.scheduled')}
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded-sm bg-emerald-600 ring-1 ring-emerald-800/30" aria-hidden />
-              Complete
+              {t('gantt.complete')}
             </span>
             <span className="flex-1 min-w-3" />
             <span className="text-xs text-slate-600 bg-red-50 border border-red-100 rounded-md px-2 py-1 ml-auto">
-              Critical tasks drive finish date.
+              {t('gantt.critical_drives_finish')}
             </span>
           </div>
         )}
         {!showCriticalPath && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600 pl-0.5">
-            <span className="font-medium text-slate-500 uppercase tracking-wide">Bar colors</span>
+            <span className="font-medium text-slate-500 uppercase tracking-wide">{t('gantt.bar_colors')}</span>
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded-sm bg-slate-400 ring-1 ring-slate-500/30" aria-hidden />
-              Open
+              {t('gantt.open')}
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded-sm bg-emerald-600 ring-1 ring-emerald-800/30" aria-hidden />
-              Complete
+              {t('gantt.complete')}
             </span>
             <span className="flex-1 min-w-3" />
             <span className="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded-md px-2 py-1 ml-auto">
-              Turn on critical path to highlight schedule-driving tasks.
+              {t('gantt.turn_on_critical_path')}
             </span>
           </div>
         )}
@@ -432,11 +441,11 @@ export default function GanttChart({
             <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-3 w-[32%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>Name</th>
-                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[16%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>Start</th>
-                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[14%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>Due</th>
-                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[22%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>Status</th>
-                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[16%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>Assignee</th>
+                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-3 w-[32%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>{t('gantt.col_name')}</th>
+                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[16%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>{t('gantt.col_start')}</th>
+                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[14%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>{t('gantt.col_due')}</th>
+                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[22%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>{t('gantt.col_status')}</th>
+                  <th className={`text-left text-xs font-semibold text-gray-500 uppercase tracking-wider pb-2 px-2 w-[16%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>{t('gantt.col_assignee')}</th>
                 </tr>
               </thead>
             </table>
@@ -461,7 +470,7 @@ export default function GanttChart({
                     >
                       <td className={`py-1 px-3 text-sm text-gray-900 truncate w-[32%] ${isCompactWindow ? 'gantt-compact-label' : ''}`} style={{ paddingLeft: isChild ? 28 : 12 }}>
                         <span className={isChild ? 'text-gray-700' : 'font-semibold'}>
-                          {task.text || 'Task'}
+                          {task.text || t('gantt.default_task_label')}
                         </span>
                       </td>
                       <td className={`py-1 px-2 text-xs text-gray-500 w-[16%] ${isCompactWindow ? 'gantt-compact-label' : ''}`}>{formatGanttDate(task.start_date)}</td>
@@ -476,7 +485,7 @@ export default function GanttChart({
                               <img
                                 src={contact.avatar_url}
                                 alt=""
-                                title={contact.name || 'Assignee'}
+                                title={contact.name || t('gantt.assignee')}
                                 className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-slate-200/80"
                               />
                             ) : (
@@ -485,7 +494,7 @@ export default function GanttChart({
                               </span>
                             )
                           ) : (
-                            <span className="inline-flex w-7 h-7 items-center justify-center text-slate-300 text-xs" title="Unassigned">
+                            <span className="inline-flex w-7 h-7 items-center justify-center text-slate-300 text-xs" title={t('tasks.unassigned')}>
                               —
                             </span>
                           )}
@@ -502,7 +511,7 @@ export default function GanttChart({
         {/* Resize handle — drag to show more task list or more chart */}
         <div
           role="separator"
-          aria-label="Resize task list"
+          aria-label={t('gantt.resize_task_list')}
           tabIndex={0}
           onMouseDown={handleResizeStart}
           onKeyDown={(e) => {

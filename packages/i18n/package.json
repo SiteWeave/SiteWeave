@@ -1,0 +1,8 @@
+{
+  "name": "@siteweave/i18n",
+  "version": "1.0.0",
+  "description": "Shared translations for SiteWeave applications",
+  "main": "index.js",
+  "private": true,
+  "type": "module"
+}

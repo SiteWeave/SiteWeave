@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -16,6 +17,7 @@ import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
 import { isCustomRolesLockedError } from '@siteweave/core-logic';
 
 function TeamView() {
+  const { t } = useTranslation();
   const { state } = useAppContext();
   const { addToast } = useToast();
   const { canCustomRoles } = useWorkspaceTier();
@@ -66,7 +68,7 @@ function TeamView() {
       setRoleMemberCounts(counts);
     } catch (error) {
       console.error('Error loading roles:', error);
-      addToast('Failed to load roles', 'error');
+      addToast(t('team.failed_load_roles'), 'error');
     } finally {
       setLoadingRoles(false);
     }
@@ -113,7 +115,7 @@ function TeamView() {
 
     // Prevent saving changes to Org Admin
     if (editingRole && editingRole.name === 'Org Admin') {
-      addToast('Organization Admin role cannot be modified.', 'error');
+      addToast(t('team.org_admin_cannot_modify'), 'error');
       return;
     }
 
@@ -124,18 +126,18 @@ function TeamView() {
         const { updateRole } = await import('../utils/roleManagementService');
         const result = await updateRole(supabaseClient, editingRole.id, roleData);
         if (result.success) {
-          addToast('Role updated successfully', 'success');
+          addToast(t('team.role_updated'), 'success');
           setShowRoleModal(false);
           setEditingRole(null);
           loadRolesAndCounts();
         } else {
-          addToast(result.error || 'Failed to update role', 'error');
+          addToast(result.error || t('team.failed_update_role'), 'error');
         }
       } else {
         // Create new role
         const { createRole } = await import('../utils/roleManagementService');
         await createRole(supabaseClient, state.currentOrganization.id, roleData.name, roleData.permissions);
-        addToast('Role created successfully', 'success');
+        addToast(t('team.role_created'), 'success');
         setShowRoleModal(false);
         loadRolesAndCounts();
       }
@@ -144,7 +146,7 @@ function TeamView() {
       if (isCustomRolesLockedError(error)) {
         setShowRolesUpgrade(true);
       } else {
-        addToast(error.message || 'Failed to save role', 'error');
+        addToast(error.message || t('team.failed_save_role'), 'error');
       }
     } finally {
       setIsSavingRole(false);
@@ -155,16 +157,16 @@ function TeamView() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-1">Organization Directory</h1>
-          <p className="text-gray-500 text-sm">Manage your organization members</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-1">{t('team.org_directory_title')}</h1>
+          <p className="text-gray-500 text-sm">{t('team.org_directory_subtitle')}</p>
         </div>
         <PermissionGuard permission="can_manage_team">
           <button
             onClick={() => setShowDirectoryModal(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-semibold"
-            title="Add or remove employees from your company account"
+            title={t('team.manage_members_title')}
           >
-            Manage Members
+            {t('team.manage_members')}
           </button>
         </PermissionGuard>
       </div>
@@ -175,11 +177,11 @@ function TeamView() {
       <div className="mt-12 pt-8 border-t border-gray-200">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Roles & Permissions</h2>
+            <h2 className="text-2xl font-bold text-gray-900">{t('team.roles_permissions_title')}</h2>
             <p className="text-gray-500 text-sm mt-1">
               {canManageRoles && canCustomRoles
-                ? 'Manage role permissions and see member assignments'
-                : 'View default roles and permissions. Upgrade or ask an admin to customize roles.'}
+                ? t('team.roles_permissions_desc_manage')
+                : t('team.roles_permissions_desc_view')}
             </p>
           </div>
         </div>

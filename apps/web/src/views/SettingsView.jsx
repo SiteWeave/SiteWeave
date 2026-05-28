@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -11,13 +12,24 @@ import { getStoredCalendarToken } from '../utils/calendarIntegration';
 import { isModerationAdmin } from '@siteweave/core-logic';
 import BlockedUsersPanel from '../components/moderation/BlockedUsersPanel';
 import ContentReportsPanel from '../components/moderation/ContentReportsPanel';
+import FeedbackModal from '../components/FeedbackModal';
+import {
+  SettingsSection,
+  SettingsField,
+  settingsInputClassName,
+  SettingsPrimaryButton,
+  SettingsSecondaryButton,
+  SettingsDangerButton,
+} from '../components/settings/SettingsSection';
 
 function SettingsView() {
+  const { t, i18n } = useTranslation();
   const { state, dispatch } = useAppContext();
   const { addToast } = useToast();
   
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [showRoleManagement, setShowRoleManagement] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [appVersion, setAppVersion] = useState(packageJson.version);
@@ -53,7 +65,6 @@ function SettingsView() {
     fetchVersion();
   }, []);
 
-
   // Check calendar sync status
   useEffect(() => {
     const checkCalendarSync = () => {
@@ -81,9 +92,9 @@ function SettingsView() {
       });
 
       if (error) {
-        addToast('Error updating profile: ' + error.message, 'error');
+        addToast(t('toast.error_updating_profile', { message: error.message }), 'error');
       } else {
-        addToast('Profile updated successfully!', 'success');
+        addToast(t('toast.profile_updated_successfully'), 'success');
         // Update the user in context
         dispatch({ 
           type: 'SET_USER', 
@@ -97,7 +108,7 @@ function SettingsView() {
         });
       }
     } catch (error) {
-      addToast('Error updating profile: ' + error.message, 'error');
+      addToast(t('toast.error_updating_profile', { message: error.message }), 'error');
     } finally {
       setIsUpdating(false);
     }
@@ -107,12 +118,12 @@ function SettingsView() {
     e.preventDefault();
     
     if (newPassword !== confirmPassword) {
-      addToast('New passwords do not match', 'error');
+      addToast(t('toast.new_passwords_do_not_match'), 'error');
       return;
     }
 
     if (newPassword.length < 6) {
-      addToast('Password must be at least 6 characters', 'error');
+      addToast(t('toast.password_min_length'), 'error');
       return;
     }
 
@@ -124,15 +135,15 @@ function SettingsView() {
       });
 
       if (error) {
-        addToast('Error changing password: ' + error.message, 'error');
+        addToast(t('toast.error_changing_password', { message: error.message }), 'error');
       } else {
-        addToast('Password changed successfully!', 'success');
+        addToast(t('toast.password_changed_successfully'), 'success');
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
       }
     } catch (error) {
-      addToast('Error changing password: ' + error.message, 'error');
+      addToast(t('toast.error_changing_password', { message: error.message }), 'error');
     } finally {
       setIsChangingPassword(false);
     }
@@ -141,9 +152,9 @@ function SettingsView() {
   const handleSignOut = async () => {
     const { error } = await supabaseClient.auth.signOut();
     if (error) {
-      addToast('Error signing out: ' + error.message, 'error');
+      addToast(t('toast.error_signing_out', { message: error.message }), 'error');
     } else {
-      addToast('Signed out successfully', 'success');
+      addToast(t('toast.signed_out_successfully'), 'success');
     }
   };
 
@@ -158,335 +169,326 @@ function SettingsView() {
         .update({ default_send_assignment_email: checked })
         .eq('id', orgId);
       if (error) {
-        addToast('Could not update setting: ' + error.message, 'error');
+        addToast(t('toast.error_updating_profile', { message: error.message }) || error.message, 'error');
         return;
       }
       dispatch({
         type: 'SET_ORGANIZATION',
         payload: { ...state.currentOrganization, default_send_assignment_email: checked },
       });
-      addToast('Organization notification default saved.', 'success');
+      addToast(t('settings.org_notification_saved'), 'success');
     } catch (err) {
-      addToast(err?.message || 'Could not update setting', 'error');
+      addToast(err?.message || t('settings.could_not_update_setting'), 'error');
     } finally {
       setIsSavingOrgAssignmentEmail(false);
     }
   };
 
+  const calendarStatusBadge = (synced) =>
+    synced ? (
+      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+        {t('settings.integrations_connected')}
+      </span>
+    ) : (
+      <span className="inline-flex items-center rounded-full bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-500/10">
+        {t('settings.integrations_not_connected')}
+      </span>
+    );
+
   return (
-    <div className="max-w-[95%] mx-auto space-y-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="app-section-title">Settings</h1>
-          <p className="app-section-subtitle">Manage your account and preferences</p>
-        </div>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-32 min-h-min">
+      <header className="pt-6 pb-2">
+        <h1 className="text-2xl font-semibold tracking-tight text-gray-900">{t('settings.title')}</h1>
+        <p className="mt-1 text-sm text-gray-500">{t('settings.subtitle')}</p>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Organization Section */}
-        <div className="app-card p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Organization</h2>
-          <div className="space-y-3">
-            {state.currentOrganization ? (
-              <>
-                <div>
-                  <span className="text-sm text-gray-600">Organization:</span>
-                  <p className="font-medium text-gray-900 mt-1">{state.currentOrganization.name}</p>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-600">Your Role:</span>
-                  <p className="font-medium text-gray-900 mt-1">{state.userRole?.name || 'No role assigned'}</p>
-                </div>
-                <div className="pt-3 border-t border-slate-200 space-y-2">
-                  <PermissionGuard permission="can_manage_users">
-                    <label className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-2 hover:bg-slate-50">
-                      <input
-                        type="checkbox"
-                        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        checked={state.currentOrganization?.default_send_assignment_email === true}
-                        disabled={isSavingOrgAssignmentEmail}
-                        onChange={handleToggleDefaultAssignmentEmail}
-                      />
-                      <span className="min-w-0 text-sm text-gray-700">
-                        <span className="font-medium text-gray-900">Pre-check “Send email notification” on new tasks</span>
-                        <span className="mt-0.5 block text-xs text-gray-500">
-                          When creating a task, turn on the assignment email option by default for assignees who have an email. Assigners can still uncheck it before saving.
-                        </span>
-                      </span>
-                    </label>
-                  </PermissionGuard>
-                  <PermissionGuard permission="can_manage_roles">
-                    <button
-                      onClick={() => setShowRoleManagement(true)}
-                      className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
-                    >
-                      Manage Roles →
-                    </button>
-                  </PermissionGuard>
-                  <PermissionGuard permission="can_manage_users">
-                    <button
-                      onClick={() => setShowTeamModal(true)}
-                      className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
-                    >
-                      Manage Team Members →
-                    </button>
-                  </PermissionGuard>
-                </div>
-              </>
-            ) : state.isProjectCollaborator ? (
-              <>
-                <div>
-                  <span className="text-sm text-gray-600">Access Type:</span>
-                  <p className="font-medium text-gray-900 mt-1">Guest Collaborator</p>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-600">Projects:</span>
-                  <p className="font-medium text-gray-900 mt-1">
-                    {state.collaborationProjects.length} project{state.collaborationProjects.length !== 1 ? 's' : ''} accessible
-                  </p>
-                </div>
-                <p className="text-xs text-gray-500 pt-2">
-                  You have guest access to specific projects. Contact the project owner to request organization membership.
-                </p>
-              </>
-            ) : (
-              <div>
-                <p className="text-sm text-gray-500">No organization assigned</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Profile Settings */}
-        <div 
-          data-onboarding="profile-section"
-          className="app-card p-6"
+      <div className="mt-6 bg-white rounded-lg border border-gray-200 shadow-xs px-6 sm:px-8">
+        <SettingsSection
+          title={t('settings.profile_information')}
+          description={t('settings.profile_section_desc')}
         >
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">Profile Information</h2>
-          
-          <div className="flex items-center gap-4 mb-6">
-            <Avatar 
-              name={state.user?.user_metadata?.full_name || state.user?.email} 
-              size="xl"
-            />
-            <div>
-              <h3 className="font-semibold text-gray-900">
-                {state.user?.user_metadata?.full_name || state.user?.email}
-              </h3>
-              <p className="text-sm text-gray-500">{state.user?.email}</p>
-            </div>
+          <div data-onboarding="profile-section" className="space-y-6 max-w-xl">
+            <SettingsField label="Avatar">
+              <div className="flex items-center gap-4">
+                <Avatar
+                  name={state.user?.user_metadata?.full_name || state.user?.email}
+                  size="xl"
+                />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    {state.user?.user_metadata?.full_name?.trim() || state.user?.email}
+                  </p>
+                  {state.user?.user_metadata?.full_name?.trim() && state.user?.email ? (
+                    <p className="text-sm text-gray-500">{state.user.email}</p>
+                  ) : null}
+                </div>
+              </div>
+            </SettingsField>
+
+            <form onSubmit={handleUpdateProfile} className="space-y-4">
+              <SettingsField label={t('settings.full_name')}>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className={settingsInputClassName()}
+                  placeholder={t('settings.enter_full_name')}
+                />
+              </SettingsField>
+              <div className="pt-1">
+                <SettingsPrimaryButton type="submit" disabled={isUpdating} className="gap-2">
+                  {isUpdating ? (
+                    <>
+                      <LoadingSpinner size="sm" text="" />
+                      {t('settings.updating')}
+                    </>
+                  ) : (
+                    t('settings.update_profile')
+                  )}
+                </SettingsPrimaryButton>
+              </div>
+            </form>
           </div>
+        </SettingsSection>
 
-          <form onSubmit={handleUpdateProfile} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Full Name
-              </label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter your full name"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isUpdating}
-              className="w-full px-4 py-2 app-action-primary font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isUpdating ? (
-                <>
-                  <LoadingSpinner size="sm" text="" />
-                  Updating...
-                </>
-              ) : (
-                'Update Profile'
-              )}
-            </button>
-          </form>
-        </div>
-
-        {/* Security Settings */}
-        <div className="app-card p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">Security</h2>
-          
-          <form onSubmit={handleChangePassword} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                New Password
-              </label>
+        <SettingsSection
+          title={t('settings.security')}
+          description={t('settings.security_section_desc')}
+        >
+          <form onSubmit={handleChangePassword} className="space-y-4 max-w-xl">
+            <SettingsField label={t('settings.new_password')}>
               <input
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter new password"
-                minLength="6"
+                className={settingsInputClassName()}
+                placeholder={t('settings.enter_new_password')}
+                minLength={6}
+                autoComplete="new-password"
               />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Confirm New Password
-              </label>
+            </SettingsField>
+            <SettingsField label={t('settings.confirm_new_password')}>
               <input
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Confirm new password"
-                minLength="6"
+                className={settingsInputClassName()}
+                placeholder={t('settings.confirm_new_password_placeholder')}
+                minLength={6}
+                autoComplete="new-password"
               />
+            </SettingsField>
+            <div className="pt-1">
+              <SettingsPrimaryButton
+                type="submit"
+                disabled={isChangingPassword || !newPassword || !confirmPassword}
+                className="gap-2"
+              >
+                {isChangingPassword ? (
+                  <>
+                    <LoadingSpinner size="sm" text="" />
+                    {t('settings.changing')}
+                  </>
+                ) : (
+                  t('settings.change_password')
+                )}
+              </SettingsPrimaryButton>
             </div>
-
-            <button
-              type="submit"
-              disabled={isChangingPassword || !newPassword || !confirmPassword}
-              className="w-full px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isChangingPassword ? (
-                <>
-                  <LoadingSpinner size="sm" text="" />
-                  Changing...
-                </>
-              ) : (
-                'Change Password'
-              )}
-            </button>
           </form>
+        </SettingsSection>
 
-          <div className="mt-6 pt-6 border-t border-slate-200">
-            <h3 className="text-lg font-medium text-gray-900 mb-3">Account Actions</h3>
-            <button
-              onClick={handleSignOut}
-              className="w-full px-4 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 flex items-center justify-center gap-2"
+        <SettingsSection
+          title={t('settings.language')}
+          description={t('settings.language_section_desc')}
+        >
+          <div className="max-w-sm">
+            <select
+              value={i18n.language}
+              onChange={(e) => i18n.changeLanguage(e.target.value)}
+              aria-label={t('settings.language')}
+              className={settingsInputClassName()}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              Sign Out
-            </button>
+              <option value="en">English</option>
+              <option value="es">Español</option>
+            </select>
           </div>
-        </div>
+        </SettingsSection>
 
-        {/* Integrations */}
-        <div className="app-card p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">Integrations</h2>
-          
-          {/* Calendar Integrations */}
-          <div className="space-y-4 mb-6">
-            {/* Google Calendar */}
-            <div className="flex items-center justify-between p-4 border border-slate-200 rounded-xl app-card-soft">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center border border-slate-200">
-                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <SettingsSection
+          title={t('settings.organization')}
+          description={t('settings.organization_section_desc')}
+        >
+          <div className="space-y-4 max-w-xl">
+            {state.currentOrganization ? (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <SettingsField label={t('settings.organization_label').replace(':', '')}>
+                    <p className="text-sm text-gray-900 py-2.5">{state.currentOrganization.name}</p>
+                  </SettingsField>
+                  <SettingsField label={t('settings.your_role').replace(':', '')}>
+                    <p className="text-sm text-gray-900 py-2.5">{state.userRole?.name || t('settings.no_role_assigned')}</p>
+                  </SettingsField>
+                </div>
+                <PermissionGuard permission="can_manage_users">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 p-4 hover:bg-gray-50/80">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                      checked={state.currentOrganization?.default_send_assignment_email === true}
+                      disabled={isSavingOrgAssignmentEmail}
+                      onChange={handleToggleDefaultAssignmentEmail}
+                    />
+                    <span className="min-w-0 text-sm text-gray-700">
+                      <span className="font-medium text-gray-900">{t('settings.default_assignment_email_label')}</span>
+                      <span className="mt-1 block text-xs text-gray-500">
+                        {t('settings.default_assignment_email_desc')}
+                      </span>
+                    </span>
+                  </label>
+                </PermissionGuard>
+                <div className="flex flex-wrap gap-2">
+                  <PermissionGuard permission="can_manage_roles">
+                    <SettingsSecondaryButton type="button" onClick={() => setShowRoleManagement(true)}>
+                      {t('settings.manage_roles').replace(' →', '')}
+                    </SettingsSecondaryButton>
+                  </PermissionGuard>
+                  <PermissionGuard permission="can_manage_users">
+                    <SettingsSecondaryButton type="button" onClick={() => setShowTeamModal(true)}>
+                      {t('settings.manage_team_members').replace(' →', '')}
+                    </SettingsSecondaryButton>
+                  </PermissionGuard>
+                </div>
+              </>
+            ) : state.isProjectCollaborator ? (
+              <div className="space-y-3 text-sm">
+                <p>
+                  <span className="text-gray-500">{t('settings.access_type')}</span>{' '}
+                  <span className="font-medium text-gray-900">{t('settings.guest_collaborator')}</span>
+                </p>
+                <p>
+                  <span className="text-gray-500">{t('settings.projects_label')}</span>{' '}
+                  <span className="font-medium text-gray-900">
+                    {state.collaborationProjects.length === 1
+                      ? t('sidebar.projects_accessible', { count: 1 })
+                      : t('sidebar.projects_accessible_plural', { count: state.collaborationProjects.length })}
+                  </span>
+                </p>
+                <p className="text-gray-500">{t('settings.guest_access_message')}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">{t('settings.no_organization_assigned')}</p>
+            )}
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          title={t('settings.integrations')}
+          description={t('settings.integrations_section_desc')}
+        >
+          <p className="text-xs text-gray-500 mb-4 max-w-xl">{t('settings.integrations_status_note')}</p>
+          <div className="space-y-3 max-w-xl">
+            <div className="flex items-center justify-between gap-4 py-3 border-b border-gray-100">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 shrink-0 rounded-md border border-gray-200 flex items-center justify-center bg-white">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" aria-hidden>
                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
                     <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
                     <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
                     <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
                   </svg>
                 </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Google Calendar</h3>
-                  <p className="text-xs text-gray-500">Sync your Google Calendar events</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{t('settings.google_calendar')}</p>
+                  <p className="text-xs text-gray-500 truncate">{t('settings.sync_google_calendar')}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {googleCalendarSynced ? (
-                  <>
-                    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded-full">
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                      Synced
-                    </span>
-                  </>
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-full">
-                    Not Connected
-                  </span>
-                )}
-              </div>
+              {calendarStatusBadge(googleCalendarSynced)}
             </div>
-
-            {/* Outlook Calendar */}
-            <div className="flex items-center justify-between p-4 border border-slate-200 rounded-xl app-card-soft">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center border border-slate-200">
-                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <div className="flex items-center justify-between gap-4 py-3 border-b border-gray-100">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 shrink-0 rounded-md border border-gray-200 flex items-center justify-center bg-white">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" aria-hidden>
                     <path d="M19 4H5C3.89 4 3 4.9 3 6V20C3 21.1 3.89 22 5 22H19C20.1 22 21 21.1 21 20V6C21 4.9 20.1 4 19 4ZM19 20H5V9H19V20Z" fill="#0078D4"/>
-                    <path d="M7 11H9V13H7V11ZM11 11H13V13H11V11ZM15 11H17V13H15V11ZM7 15H9V17H7V15ZM11 15H13V17H11V15ZM15 15H17V17H15V15Z" fill="#0078D4"/>
-                    <path d="M7 7H17V9H7V7Z" fill="#0078D4"/>
                   </svg>
                 </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Outlook Calendar</h3>
-                  <p className="text-xs text-gray-500">Sync your Outlook Calendar events</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{t('settings.outlook_calendar')}</p>
+                  <p className="text-xs text-gray-500 truncate">{t('settings.sync_outlook_calendar')}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {outlookCalendarSynced ? (
-                  <>
-                    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded-full">
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                      Synced
-                    </span>
-                  </>
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-full">
-                    Not Connected
-                  </span>
-                )}
-              </div>
+              {calendarStatusBadge(outlookCalendarSynced)}
             </div>
+            <p className="text-xs text-gray-500 pt-1">{t('settings.more_integrations_coming')}</p>
           </div>
+        </SettingsSection>
 
-          {/* More Integrations */}
-          <div className="pt-4 border-t border-slate-200">
-            <p className="text-xs text-gray-500 text-center">More integrations coming soon!</p>
-          </div>
-        </div>
+        <SettingsSection
+          title={t('settings.feedback')}
+          description={t('settings.feedback_description')}
+        >
+          <SettingsSecondaryButton type="button" onClick={() => setShowFeedbackModal(true)}>
+            {t('settings.send_feedback')}
+          </SettingsSecondaryButton>
+        </SettingsSection>
+
+        <SettingsSection
+          title={t('settings.account_actions')}
+          description={t('settings.session_section_desc')}
+          className="last:border-b-0"
+        >
+          <SettingsDangerButton type="button" onClick={handleSignOut} className="gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            {t('settings.sign_out')}
+          </SettingsDangerButton>
+        </SettingsSection>
       </div>
 
-      {/* Privacy & safety */}
-      <div className="app-card p-6 space-y-6">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-1">Privacy &amp; safety</h2>
-          <p className="text-sm text-gray-500 mb-4">
-            Manage blocked users and review reported content.
-          </p>
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Blocked users</h3>
-          <BlockedUsersPanel />
-        </div>
-        {isModerationAdmin(state.userRole?.name) && (
-          <div className="pt-6 border-t border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Content reports</h3>
-            <ContentReportsPanel />
+      <div className="mt-8 mb-8 bg-white rounded-lg border border-gray-200 shadow-xs px-6 sm:px-8">
+        <SettingsSection title={t('settings.privacy_safety')} description={t('settings.privacy_section_desc')}>
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-sm font-medium text-gray-900 mb-3">{t('settings.blocked_users')}</h3>
+              <BlockedUsersPanel />
+            </div>
+            {isModerationAdmin(state.userRole?.name) && (
+              <div className="pt-6 border-t border-gray-200">
+                <h3 className="text-sm font-medium text-gray-900 mb-3">{t('settings.content_reports')}</h3>
+                <ContentReportsPanel />
+              </div>
+            )}
           </div>
-        )}
+        </SettingsSection>
+
+        <SettingsSection
+          title={t('settings.about_siteweave')}
+          description={t('settings.about_section_desc')}
+          className="last:border-b-0"
+        >
+          <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-xl text-sm">
+            <div>
+              <dt className="text-gray-500">{t('common.version')}</dt>
+              <dd className="mt-0.5 font-medium text-gray-900">{appVersion}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">{t('settings.user_id').replace(':', '')}</dt>
+              <dd className="mt-0.5 font-medium text-gray-900 font-mono text-xs">{state.user?.id?.slice(0, 8)}...</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">{t('common.account_created')}</dt>
+              <dd className="mt-0.5 font-medium text-gray-900">
+                {new Date(state.user?.created_at).toLocaleDateString(i18n.language)}
+              </dd>
+            </div>
+          </dl>
+        </SettingsSection>
       </div>
 
-      {/* App Information */}
-      <div className="app-card p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">About SiteWeave</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
-          <div>
-            <span className="font-medium">Version:</span> {appVersion}
-          </div>
-          <div>
-            <span className="font-medium">User ID:</span> {state.user?.id?.slice(0, 8)}...
-          </div>
-          <div>
-            <span className="font-medium">Account Created:</span> {new Date(state.user?.created_at).toLocaleDateString()}
-          </div>
-        </div>
-      </div>
+      <FeedbackModal
+        isOpen={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+      />
 
       {/* Team Management Modal */}
       <DirectoryManagementModal 
@@ -496,15 +498,14 @@ function SettingsView() {
 
       {/* Role Management Modal/View */}
       {showRoleManagement && (
-        <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/30 flex items-center justify-center z-50 p-4">
-          <div className="app-card shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-slate-900">Role Management</h2>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-gray-900">{t('settings.role_management')}</h2>
               <button
-                type="button"
                 onClick={() => setShowRoleManagement(false)}
-                className="text-slate-400 hover:text-slate-600 transition-colors"
-                aria-label="Close"
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+                aria-label={t('common.close')}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

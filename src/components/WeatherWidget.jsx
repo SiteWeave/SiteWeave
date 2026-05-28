@@ -114,7 +114,7 @@ function WeatherWidget({ compact = false }) {
       if (err.code !== 1 && err.code !== 2 && err.code !== 3) {
         console.error('Error loading weather from location:', err);
       }
-      setError('Unable to use device location. Please choose a city instead.');
+      setError(t('weather.location_error'));
       setSource('manualCity');
       setShowSourceSelection(false);
       setShowCityInput(true);
@@ -127,7 +127,7 @@ function WeatherWidget({ compact = false }) {
 
   const loadWeatherByCity = async (cityName, keepInputOpen = false) => {
     if (!cityName || cityName.trim() === '') {
-      setError('Please enter a city name');
+      setError(t('weather.enter_city'));
       return;
     }
 
@@ -151,7 +151,7 @@ function WeatherWidget({ compact = false }) {
       emitPreferenceChange(cityName.trim(), 'manualCity');
     } catch (err) {
       console.error('Error loading weather by city:', err);
-      setError(err.message || 'Unable to load weather for this city');
+      setError(err.message || t('weather.load_error'));
       setShowCityInput(true);
     } finally {
       setLoading(false);
@@ -192,7 +192,7 @@ function WeatherWidget({ compact = false }) {
           onClick={handleImplementWeather}
           className="px-3 py-2 text-xs font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
         >
-          Implement Weather
+          {t('weather.enable_weather')}
         </button>
       );
     }
@@ -200,14 +200,14 @@ function WeatherWidget({ compact = false }) {
     return (
       <div className="bg-white p-4 rounded-lg border border-gray-200">
         <div className="text-sm text-gray-600 mb-3">
-          Weather is off by default for privacy.
+          {t('weather.privacy_off')}
         </div>
         <button
           type="button"
           onClick={handleImplementWeather}
           className="w-full text-sm px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
         >
-          Implement Weather
+          {t('weather.enable_weather')}
         </button>
       </div>
     );
@@ -221,14 +221,14 @@ function WeatherWidget({ compact = false }) {
           onClick={loadWeatherFromLocation}
           className="w-full text-xs px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
         >
-          Use Device Location
+          {t('weather.use_location')}
         </button>
         <button
           type="button"
           onClick={handleChooseManualCity}
           className="w-full text-xs px-3 py-2 bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition-colors"
         >
-          Use City Manually
+          {t('weather.change_location')}
         </button>
       </div>
     );
@@ -236,7 +236,7 @@ function WeatherWidget({ compact = false }) {
     if (compact) {
       return (
         <div ref={widgetRef} className="relative flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200">
-          <span className="text-xs text-gray-600">Choose weather source</span>
+          <span className="text-xs text-gray-600">{t('weather.choose_source')}</span>
           {sourceChooser}
         </div>
       );
@@ -244,7 +244,7 @@ function WeatherWidget({ compact = false }) {
 
     return (
       <div className="bg-white p-4 rounded-lg border border-gray-200">
-        <div className="text-sm text-gray-600 mb-3">Choose where weather data comes from.</div>
+        <div className="text-sm text-gray-600 mb-3">{t('weather.choose_source_desc')}</div>
         {sourceChooser}
       </div>
     );
@@ -255,7 +255,7 @@ function WeatherWidget({ compact = false }) {
       return (
         <div className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-gray-200">
           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-          <span className="text-xs text-gray-500">Loading...</span>
+          <span className="text-xs text-gray-500">{t('common.loading')}</span>
         </div>
       );
     }
@@ -274,7 +274,7 @@ function WeatherWidget({ compact = false }) {
       <div ref={widgetRef} className="bg-white p-4 rounded-lg border border-gray-200">
         {error && !error.includes('API key') && (
           <div className="text-xs text-gray-500 mb-2">
-            {error.includes('location') ? 'Unable to get your location. Please enter a city name.' : error}
+            {error.includes('location') ? t('weather.location_fallback') : error}
           </div>
         )}
         <form onSubmit={handleCitySubmit} className="relative">
@@ -283,7 +283,7 @@ function WeatherWidget({ compact = false }) {
             type="text"
             value={cityInput}
             onChange={(e) => setCityInput(e.target.value)}
-            placeholder="Enter city name (e.g., Austin)"
+            placeholder={t('weather.city_placeholder')}
             className="w-full px-3 pr-10 py-1.5 text-xs border border-gray-300 rounded focus:outline-hidden focus:ring-2 focus:ring-blue-500"
             autoFocus
           />
@@ -292,7 +292,7 @@ function WeatherWidget({ compact = false }) {
             onClick={loadWeatherFromLocation}
             disabled={loading}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 disabled:opacity-50"
-            title="Use Location"
+            title={t('weather.use_location')}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -310,7 +310,7 @@ function WeatherWidget({ compact = false }) {
       <div className="bg-white p-4 rounded-lg border border-gray-200">
         <div className="text-xs text-gray-500 mb-3">
           {error.includes('API key') ? (
-            <span>Weather API key not configured</span>
+            <span>{t('weather.api_key_not_configured')}</span>
           ) : (
             <span>{error}</span>
           )}
@@ -319,7 +319,7 @@ function WeatherWidget({ compact = false }) {
           onClick={() => setShowCityInput(true)}
           className="w-full text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
         >
-          Use City Manually
+          {t('weather.change_location')}
         </button>
       </div>
     );
@@ -357,7 +357,7 @@ function WeatherWidget({ compact = false }) {
               setSource('manualCity');
             }}
             className="text-xs text-gray-400 hover:text-gray-600 p-1"
-            title="Change location"
+            title={t('weather.change_location')}
           >
             ⚙
           </button>
@@ -373,14 +373,14 @@ function WeatherWidget({ compact = false }) {
               }
             }}
             className="text-xs text-gray-400 hover:text-gray-600 p-1"
-            title="Refresh weather"
+            title={t('weather.refresh')}
           >
             ↻
           </button>
           <button
             onClick={handleResetWeather}
             className="text-xs text-gray-400 hover:text-gray-600 p-1"
-            title="Disable weather"
+            title={t('weather.disable')}
           >
             ✕
           </button>
@@ -396,7 +396,7 @@ function WeatherWidget({ compact = false }) {
                 type="text"
                 value={cityInput}
                 onChange={(e) => setCityInput(e.target.value)}
-                placeholder="Enter city name (e.g., Austin)"
+                placeholder={t('weather.city_placeholder')}
                 className="w-full px-2 pr-8 py-1 text-xs border border-gray-300 rounded focus:outline-hidden focus:ring-1 focus:ring-blue-500"
                 autoFocus
               />
@@ -404,7 +404,7 @@ function WeatherWidget({ compact = false }) {
                 type="button"
                 onClick={loadWeatherFromLocation}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
-                title="Use Location"
+                title={t('weather.use_location')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -430,7 +430,7 @@ function WeatherWidget({ compact = false }) {
               setSource('manualCity');
             }}
             className="text-xs text-gray-400 hover:text-gray-600"
-            title="Change location"
+            title={t('weather.change_location')}
           >
             ⚙
           </button>
@@ -446,14 +446,14 @@ function WeatherWidget({ compact = false }) {
               }
             }}
             className="text-xs text-gray-400 hover:text-gray-600"
-            title="Refresh weather"
+            title={t('weather.refresh')}
           >
             ↻
           </button>
           <button
             onClick={handleResetWeather}
             className="text-xs text-gray-400 hover:text-gray-600"
-            title="Disable weather"
+            title={t('weather.disable')}
           >
             ✕
           </button>
@@ -471,14 +471,14 @@ function WeatherWidget({ compact = false }) {
               type="text"
               value={cityInput}
               onChange={(e) => setCityInput(e.target.value)}
-              placeholder="Enter city name (e.g., Austin)"
+              placeholder={t('weather.city_placeholder')}
               className="w-full px-2 pr-8 py-1 text-xs border border-gray-300 rounded focus:outline-hidden focus:ring-1 focus:ring-blue-500"
             />
             <button
               type="button"
               onClick={loadWeatherFromLocation}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
-              title="Use Location"
+              title={t('weather.use_location')}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -512,15 +512,15 @@ function WeatherWidget({ compact = false }) {
           {weather.city}, {weather.country}
         </div>
         <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-          <span>Feels like {weather.feelsLike}°F</span>
-          {weather.humidity && <span>Humidity: {weather.humidity}%</span>}
+          <span>{t('weather.feels_like', { temp: weather.feelsLike })}</span>
+          {weather.humidity && <span>{t('weather.humidity', { percent: weather.humidity })}</span>}
         </div>
       </div>
 
       {/* Forecast */}
       {forecast.length > 0 && (
         <div className="border-t border-gray-200 pt-3">
-          <h4 className="text-xs font-semibold text-gray-500 mb-2">Forecast</h4>
+          <h4 className="text-xs font-semibold text-gray-500 mb-2">{t('weather.forecast')}</h4>
           <div className="space-y-2">
             {forecast.map((day, index) => (
               <div key={index} className="flex items-center justify-between text-xs">

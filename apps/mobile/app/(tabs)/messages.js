@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, FlatList, TextInput, ScrollView, KeyboardAvoidingView, Platform, Pressable, Alert, Image } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import {
   fetchMessageChannels,
@@ -18,6 +19,7 @@ import ReportContentModal from '../../components/ReportContentModal';
 import { enqueueOfflineAction, processOfflineQueue } from '../../utils/offlineQueue';
 
 export default function MessagesScreen() {
+  const { t } = useTranslation();
   const { user, supabase, syncPulse } = useAuth();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
@@ -179,7 +181,7 @@ export default function MessagesScreen() {
           type: 'text',
         },
       });
-      Alert.alert('Offline', 'Message queued and will retry when you reopen Messages.');
+      Alert.alert(t('mobile.offline_queued'), t('mobile.offline_queued_message'));
     }
   };
 
@@ -196,12 +198,12 @@ export default function MessagesScreen() {
   const handleBlockUser = (message) => {
     const name = message.user?.name || 'this user';
     Alert.alert(
-      'Block User',
-      `Block ${name}? Their messages will be hidden from you.`,
+      t('mobile.block_user'),
+      t('mobile.block_user_confirm', { name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Block',
+          text: t('mobile.block_user'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -209,11 +211,11 @@ export default function MessagesScreen() {
               await blockUser(supabase, user.id, message.user_id);
               haptics.success();
               await reloadMessages();
-              Alert.alert('Blocked', `${name} has been blocked.`);
+              Alert.alert(t('common.success'), t('mobile.block_user_success', { name }));
             } catch (error) {
               console.error('Error blocking user:', error);
               haptics.error();
-              Alert.alert('Error', 'Failed to block user. Please try again.');
+              Alert.alert(t('common.error'), t('mobile.block_user_failed'));
             }
           },
         },
@@ -227,20 +229,20 @@ export default function MessagesScreen() {
     }
 
     haptics.medium();
-    Alert.alert('Message options', undefined, [
+    Alert.alert(t('mobile.message_options'), undefined, [
       {
-        text: 'Report',
+        text: t('stream.report'),
         onPress: () => {
           setSelectedMessage(message);
           setShowReportModal(true);
         },
       },
       {
-        text: 'Block user',
+        text: t('mobile.block_user'),
         style: 'destructive',
         onPress: () => handleBlockUser(message),
       },
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
     ]);
   };
 
@@ -249,10 +251,10 @@ export default function MessagesScreen() {
       <View style={[styles.safeArea, { paddingTop: insets.top }]}>
         <View style={styles.container}>
           <View style={styles.header}>
-            <Text style={styles.title}>Messages</Text>
+            <Text style={styles.title}>{t('mobile.messages_title')}</Text>
           </View>
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No channels available</Text>
+            <Text style={styles.emptyText}>{t('mobile.no_channels')}</Text>
           </View>
         </View>
       </View>
@@ -267,7 +269,7 @@ export default function MessagesScreen() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>Messages</Text>
+          <Text style={styles.title}>{t('mobile.messages_title')}</Text>
         </View>
 
         {/* Channel Selector */}
@@ -374,8 +376,8 @@ export default function MessagesScreen() {
               ListEmptyComponent={
                 <View style={styles.emptyMessagesContainer}>
                   <Ionicons name="chatbubbles-outline" size={48} color="#9CA3AF" />
-                  <Text style={styles.emptyMessagesText}>No messages yet</Text>
-                  <Text style={styles.emptyMessagesSubtext}>Start the conversation!</Text>
+                  <Text style={styles.emptyMessagesText}>{t('mobile.no_messages_yet')}</Text>
+                  <Text style={styles.emptyMessagesSubtext}>{t('mobile.start_conversation')}</Text>
                 </View>
               }
             />
@@ -385,7 +387,7 @@ export default function MessagesScreen() {
                 style={styles.input}
                 value={messageText}
                 onChangeText={setMessageText}
-                placeholder="Type a message..."
+                placeholder={t('messages.type_message')}
                 multiline={true}
                 placeholderTextColor="#9CA3AF"
               />

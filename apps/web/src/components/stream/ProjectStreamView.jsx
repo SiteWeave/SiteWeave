@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   fetchStreamPosts,
   createStreamPost,
@@ -14,6 +15,7 @@ import StreamPostCard from './StreamPostCard';
 import ReportContentModal from '../moderation/ReportContentModal';
 
 export default function ProjectStreamView({ project, supabaseClient, currentUserId, embedded = false }) {
+  const { t } = useTranslation();
   const { addToast } = useToast();
   const [posts, setPosts] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
@@ -30,7 +32,7 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
       setPosts(rows);
     } catch (e) {
       console.error(e);
-      addToast('Could not load project stream.', 'error');
+      addToast(t('stream.load_error'), 'error');
     } finally {
       setLoading(false);
       loadingRef.current = false;
@@ -174,22 +176,22 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
       file_name,
     });
     setPosts((prev) => upsertById(prev, newPost, 'prepend'));
-    addToast('Posted to stream.', 'success');
+    addToast(t('stream.posted_success'), 'success');
   };
 
   if (!project) {
-    return <p className="text-sm text-slate-500">Select a project to view the stream.</p>;
+    return <p className="text-sm text-slate-500">{t('stream.select_project')}</p>;
   }
 
   return (
     <div className={embedded ? 'space-y-4 h-full flex flex-col min-h-0' : 'mx-auto max-w-3xl space-y-8'}>
       <header className={embedded ? 'space-y-0.5 shrink-0' : 'space-y-1'}>
         <h2 className={embedded ? 'text-base font-semibold text-slate-900' : 'text-xl font-semibold tracking-tight text-slate-900'}>
-          Project stream
+          {t('stream.title')}
         </h2>
         {!embedded ? (
           <p className="text-sm text-slate-500">
-            Daily logs, announcements, and milestones for everyone on this project.
+            {t('stream.subtitle')}
           </p>
         ) : null}
       </header>
@@ -204,8 +206,8 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
         </div>
       ) : posts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-200 px-6 py-16 text-center">
-          <p className="text-sm font-medium text-slate-500">No posts yet.</p>
-          <p className="mt-1 text-xs text-slate-400">Share the first project update above.</p>
+          <p className="text-sm font-medium text-slate-500">{t('stream.no_posts')}</p>
+          <p className="mt-1 text-xs text-slate-400">{t('stream.first_update')}</p>
         </div>
       ) : (
         <div className={`space-y-5 ${embedded ? 'flex-1 min-h-0 overflow-y-auto pr-1' : ''}`}>

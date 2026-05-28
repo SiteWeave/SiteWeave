@@ -59,44 +59,42 @@ function MyDaySidebar() {
         time: formatTimeAgo(activity.created_at)
     }));
 
-    // Helper function to format time ago
     function formatTimeAgo(dateString) {
         const now = new Date();
         const activityDate = new Date(dateString);
         const diffInMinutes = Math.floor((now - activityDate) / (1000 * 60));
-        
         if (diffInMinutes < 60) {
-            return `${diffInMinutes}m ago`;
-        } else if (diffInMinutes < 1440) {
-            return `${Math.floor(diffInMinutes / 60)}h ago`;
-        } else {
-            return `${Math.floor(diffInMinutes / 1440)}d ago`;
+            return t('activityHistory.time_ago_minutes', { count: diffInMinutes });
         }
+        if (diffInMinutes < 1440) {
+            return t('activityHistory.time_ago_hours', { count: Math.floor(diffInMinutes / 60) });
+        }
+        return t('activityHistory.time_ago_days', { count: Math.floor(diffInMinutes / 1440) });
     }
 
     return (
         <div className="space-y-5">
             <div className="flex items-center justify-between pb-2 border-b border-gray-200">
-                <h2 className="font-bold text-lg text-gray-900">My Day</h2>
+                <h2 className="font-bold text-lg text-gray-900">{t('myDay.title')}</h2>
                 <div className="flex items-center gap-1.5 text-xs text-gray-500">
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                    <span>Live</span>
+                    <span>{t('myDay.live')}</span>
                 </div>
             </div>
             <div className="min-w-0">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">TO-DO ({myTodos.length})</h3>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('myDay.todo_section', { count: myTodos.length })}</h3>
                 <div className="space-y-2.5">
                     {myTodos.length > 0 ? myTodos.map(task => (
                         <div key={task.id} className="flex items-center gap-2.5 text-sm text-gray-700">
                             <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                             <span className="flex-1 ui-clamp-2">{task.text}</span>
                         </div>
-                    )) : <p className="text-sm text-center py-3 text-gray-400">No tasks assigned to you.</p>}
+                    )) : <p className="text-sm text-center py-3 text-gray-400">{t('myDay.no_tasks_assigned')}</p>}
                 </div>
             </div>
             <PermissionGuard permission="can_view_activity_history">
             <div className="min-w-0">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">RECENT ACTIVITY</h3>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('myDay.recent_activity_section')}</h3>
                  <div className="space-y-2.5">
                     {recentActivity.length > 0 ? recentActivity.map(activity => (
                         <div key={activity.id} className="flex items-start gap-2.5 text-sm">
@@ -113,13 +111,13 @@ function MyDaySidebar() {
                             </div>
                         </div>
                     )) : (
-                        <p className="text-sm text-center py-3 text-gray-400">No recent activity.</p>
+                        <p className="text-sm text-center py-3 text-gray-400">{t('myDay.no_recent_activity')}</p>
                     )}
                 </div>
             </div>
             </PermissionGuard>
             <div className="min-w-0">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">TODAY'S CALENDAR ({todayEvents.length})</h3>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('myDay.todays_calendar_section', { count: todayEvents.length })}</h3>
                  <div className="space-y-2.5">
                      {todayEvents.length > 0 ? todayEvents.map(event => {
                         const startTime = new Date(event.start_time);
@@ -129,7 +127,7 @@ function MyDaySidebar() {
                             minute: '2-digit',
                             hour12: true 
                         });
-                        const location = event.location || 'No location specified';
+                        const location = event.location || t('myDay.no_location');
                         
                         // Determine icon based on event category or title
                         const getEventIcon = () => {
@@ -169,17 +167,17 @@ function MyDaySidebar() {
                                     <div className="flex-1 min-w-0">
                                         <h4 className="font-semibold text-gray-900 text-sm leading-tight ui-clamp-2">{event.title}</h4>
                                         <p className="mt-1 text-xs text-gray-500 ui-clamp-2">
-                                            {event.is_all_day ? 'All day' : timeString} • {location}
+                                            {event.is_all_day ? t('myDay.all_day') : timeString} • {location}
                                         </p>
                                     </div>
                                 </div>
                             </div>
                         );
-                     }) : <p className="text-sm text-center py-3 text-gray-400">No events scheduled today.</p>}
+                     }) : <p className="text-sm text-center py-3 text-gray-400">{t('myDay.no_events_today')}</p>}
                 </div>
             </div>
             <div className="text-xs text-gray-400 pt-3 border-t border-gray-200">
-                Last updated: {lastUpdate.toLocaleTimeString()}
+                {t('myDay.last_updated', { time: lastUpdate.toLocaleTimeString(i18n.language) })}
             </div>
         </div>
     );

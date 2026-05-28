@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../../context/AuthContext';
 import { fetchUserProjectsWithProgress } from '@siteweave/core-logic';
@@ -9,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function ProjectsScreen() {
+  const { t } = useTranslation();
   const { user, supabase, activeOrganization, isProjectCollaborator } = useAuth();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -119,14 +121,14 @@ export default function ProjectsScreen() {
           {activeOrganization?.name ? (
             <Text style={styles.organizationName}>{activeOrganization.name}</Text>
           ) : isProjectCollaborator ? (
-            <Text style={styles.organizationName}>Shared with you</Text>
+            <Text style={styles.organizationName}>{t('mobile.shared_with_you')}</Text>
           ) : null}
-          <Text style={styles.title}>Projects</Text>
+          <Text style={styles.title}>{t('navigation.projects')}</Text>
         </View>
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <Text>Loading...</Text>
+            <Text>{t('mobile.loading')}</Text>
           </View>
         ) : projects.length > 0 ? (
           <FlatList
@@ -142,8 +144,8 @@ export default function ProjectsScreen() {
             <Ionicons name="folder-outline" size={48} color="#9CA3AF" />
             <Text style={styles.emptyText}>
               {isProjectCollaborator
-                ? 'No projects yet. Open your invite link from your contractor.'
-                : 'No projects assigned to you.'}
+                ? t('mobile.no_projects_guest')
+                : t('mobile.no_projects_assigned')}
             </Text>
           </View>
         )}

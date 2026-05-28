@@ -1,11 +1,13 @@
 import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { fetchUserIncompleteTasks, completeTask } from '@siteweave/core-logic';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useHaptics } from '../../hooks/useHaptics';
 
 export default function IssuesScreen() {
+  const { t } = useTranslation();
   const { user, supabase } = useAuth();
   const haptics = useHaptics();
   const [issues, setIssues] = useState([]);
@@ -44,7 +46,7 @@ export default function IssuesScreen() {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.container}>
-          <Text>Loading...</Text>
+          <Text>{t('mobile.loading')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -54,7 +56,7 @@ export default function IssuesScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Issues</Text>
+          <Text style={styles.title}>{t('mobile.issues_title')}</Text>
         </View>
       
       <FlatList
@@ -69,21 +71,21 @@ export default function IssuesScreen() {
             <View style={styles.issueFooter}>
               {item.due_date && (
                 <Text style={styles.issueDate}>
-                  Due: {new Date(item.due_date).toLocaleDateString()}
+                  {t('mobile.due_label', { date: new Date(item.due_date).toLocaleDateString() })}
                 </Text>
               )}
               <TouchableOpacity
                 style={styles.completeButton}
                 onPress={() => handleCompleteTask(item.id)}
               >
-                <Text style={styles.completeButtonText}>Complete</Text>
+                <Text style={styles.completeButtonText}>{t('mobile.complete')}</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No issues assigned to you.</Text>
+            <Text style={styles.emptyText}>{t('myDay.no_tasks_assigned')}</Text>
           </View>
         }
       />

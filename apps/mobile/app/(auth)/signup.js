@@ -1,11 +1,13 @@
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHaptics } from '../../hooks/useHaptics';
 
 export default function SignupScreen() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -18,19 +20,19 @@ export default function SignupScreen() {
   const handleSignup = async () => {
     if (!email || !password || !confirmPassword) {
       haptics.error();
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert(t('common.error'), t('auth.enter_email_first'));
       return;
     }
 
     if (password !== confirmPassword) {
       haptics.error();
-      Alert.alert('Error', 'Passwords do not match');
+      Alert.alert(t('common.error'), t('toast.new_passwords_do_not_match'));
       return;
     }
 
     if (password.length < 6) {
       haptics.error();
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      Alert.alert(t('common.error'), t('toast.password_min_length'));
       return;
     }
 
@@ -43,11 +45,11 @@ export default function SignupScreen() {
       });
       if (error) throw error;
       haptics.success();
-      Alert.alert('Success', 'Please check your email to verify your account');
+      Alert.alert(t('common.success'), t('auth.account_created'));
       router.replace('/(auth)/login');
     } catch (error) {
       haptics.error();
-      Alert.alert('Signup Failed', error.message);
+      Alert.alert(t('common.error'), t('auth.signup_failed', { message: error.message }));
     } finally {
       setLoading(false);
     }
@@ -56,7 +58,7 @@ export default function SignupScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <View style={styles.content}>
-        <Text style={styles.title}>Sign up for SiteWeave</Text>
+        <Text style={styles.title}>{t('mobile.sign_up_title')}</Text>
       
       <TouchableOpacity 
         onPress={() => {
@@ -66,13 +68,14 @@ export default function SignupScreen() {
         style={styles.loginLink}
       >
         <Text style={styles.loginText}>
-          Already have an account? <Text style={styles.loginLinkText}>Sign in</Text>
+          {t('auth.already_have_account')}{' '}
+          <Text style={styles.loginLinkText}>{t('auth.sign_in_link')}</Text>
         </Text>
       </TouchableOpacity>
 
       <TextInput
         style={styles.input}
-        placeholder="Email address"
+        placeholder={t('auth.email_address')}
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
@@ -82,7 +85,7 @@ export default function SignupScreen() {
 
       <TextInput
         style={styles.input}
-        placeholder="Password"
+        placeholder={t('auth.password')}
         value={password}
         onChangeText={setPassword}
         secureTextEntry={true}
@@ -91,7 +94,7 @@ export default function SignupScreen() {
 
       <TextInput
         style={styles.input}
-        placeholder="Confirm Password"
+        placeholder={t('mobile.confirm_password')}
         value={confirmPassword}
         onChangeText={setConfirmPassword}
         secureTextEntry={true}
@@ -104,7 +107,7 @@ export default function SignupScreen() {
         disabled={!!loading}
       >
         <Text style={styles.buttonText}>
-          {loading ? 'Signing up...' : 'Sign Up'}
+          {loading ? `${t('auth.sign_up_link')}...` : t('auth.sign_up_link')}
         </Text>
       </TouchableOpacity>
       </View>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import ProjectStreamView from '../stream/ProjectStreamView';
 import FieldIssuesPanel from '../fieldIssues/FieldIssuesPanel';
 import { markStreamRead } from '../../utils/streamReadState';
@@ -11,6 +12,7 @@ export default function ProjectCollaborationView({
   projectTasks = [],
   initialPanel = 'stream',
 }) {
+  const { t } = useTranslation();
   const [mobilePanel, setMobilePanel] = React.useState(initialPanel);
 
   React.useEffect(() => {
@@ -24,7 +26,7 @@ export default function ProjectCollaborationView({
   }, [project?.id]);
 
   if (!project) {
-    return <p className="text-sm text-slate-500 p-6">Select a project to view updates and field issues.</p>;
+    return <p className="text-sm text-slate-500 p-6">{t('collaboration.select_project')}</p>;
   }
 
   return (
@@ -39,7 +41,7 @@ export default function ProjectCollaborationView({
               : 'border-transparent text-slate-500'
           }`}
         >
-          Stream
+          {t('collaboration.stream')}
         </button>
         <button
           type="button"
@@ -50,7 +52,7 @@ export default function ProjectCollaborationView({
               : 'border-transparent text-slate-500'
           }`}
         >
-          Field issues
+          {t('collaboration.field_issues')}
         </button>
       </div>
 

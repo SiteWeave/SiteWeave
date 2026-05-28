@@ -160,7 +160,7 @@ export async function importMsProjectXmlSchedule(supabase, params) {
                     return { success: false, error: fallbackErr.message };
                 }
                 phaseColumnFallbackWarning =
-                    'Phase start/end date columns are missing in this database. Imported phases were saved without phase dates. Run latest migrations to enable phase dates.';
+                    'ms_import.warn_phase_dates_missing';
                 phaseRows.forEach((p, i) => {
                     if (fallbackInserted?.[i]?.id) {
                         phaseSourceUidToId[p.sourceUid] = fallbackInserted[i].id;
@@ -193,7 +193,7 @@ export async function importMsProjectXmlSchedule(supabase, params) {
             return {
                 success: true,
                 projectId,
-                warnings: [...(built.warnings || []), 'No tasks were imported. Check mapping and row rules.'],
+                warnings: [...(built.warnings || []), 'ms_import.warn_no_tasks_imported'],
                 metrics: {
                     importedTaskCount: 0,
                     importedDependencyCount: 0,
@@ -240,7 +240,7 @@ export async function importMsProjectXmlSchedule(supabase, params) {
             warnings: [
                 ...(built.warnings || []),
                 ...(routedUnmappedTasksToFallbackPhase
-                    ? [`Tasks without a detected phase were placed in "${UNMAPPED_IMPORT_PHASE_NAME}".`]
+                    ? [{ key: 'ms_import.warn_unmapped_phase', params: { phaseName: UNMAPPED_IMPORT_PHASE_NAME } }]
                     : []),
                 ...(phaseColumnFallbackWarning ? [phaseColumnFallbackWarning] : []),
             ],

@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import { useAppContext, supabaseClient } from '../context/AppContext';
+import { useAppContext, useLazyDataLoader, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { 
     parseOAuthCallback, 
@@ -33,6 +34,30 @@ import { getExtendedWeatherForecast, getWeatherIconUrl } from '../utils/weatherS
 const WEATHER_CITY_STORAGE_KEY = 'weather_location_preference';
 const WEATHER_PREF_EVENT = 'weather-preference-changed';
 
+const DEFAULT_CATEGORY_SPECS = [
+    { id: 'meeting', color: '#3B82F6' },
+    { id: 'work', color: '#F59E0B' },
+    { id: 'personal', color: '#10B981' },
+    { id: 'deadline', color: '#EF4444' },
+    { id: 'other', color: '#8B5CF6' }
+];
+
+const CATEGORY_LABEL_KEYS = {
+    meeting: 'calendar.category_meeting',
+    work: 'calendar.category_work',
+    personal: 'calendar.category_personal',
+    deadline: 'calendar.category_deadline',
+    other: 'calendar.category_other'
+};
+
+function localizeCategory(category, t) {
+    const labelKey = CATEGORY_LABEL_KEYS[category?.id];
+    return {
+        ...category,
+        name: labelKey ? t(labelKey) : category.name
+    };
+}
+
 /** Recurring instances use composite FullCalendar ids; DB + clicks need the parent `calendar_events` id. */
 function resolveCalendarDbEventId(fcEvent) {
     const ext = fcEvent.extendedProps || {};
@@ -53,6 +78,7 @@ function formatLocalDateForCalendar(date) {
 
 // --- Mini Calendar Component (Sidebar) ---
 function MiniCalendar({ currentDate, setCurrentDate }) {
+    const { i18n } = useTranslation();
     // Normalize today to midnight local time to avoid timezone issues
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -94,11 +120,11 @@ function MiniCalendar({ currentDate, setCurrentDate }) {
     const handleNextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
 
     return (
-        <div className="app-card p-4 rounded-xl">
+        <div className="bg-white p-4 rounded-lg border border-gray-200">
             <div className="flex justify-between items-center mb-4">
-                <button type="button" onClick={handlePrevMonth} className="p-1 rounded-full hover:bg-slate-100">&lt;</button>
-                <span className="font-semibold text-sm">{currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</span>
-                <button type="button" onClick={handleNextMonth} className="p-1 rounded-full hover:bg-slate-100">&gt;</button>
+                <button onClick={handlePrevMonth} className="p-1 rounded-full hover:bg-gray-100">&lt;</button>
+                <span className="font-semibold text-sm">{currentDate.toLocaleString(i18n.language, { month: 'long', year: 'numeric' })}</span>
+                <button onClick={handleNextMonth} className="p-1 rounded-full hover:bg-gray-100">&gt;</button>
             </div>
             <div className="grid grid-cols-7 text-center text-xs text-gray-500 mb-2">
                 {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <div key={`day-${index}`}>{day}</div>)}
@@ -138,8 +164,15 @@ function MiniCalendar({ currentDate, setCurrentDate }) {
 
 // --- Main Calendar View Component ---
 function CalendarView() {
+    const { t, i18n } = useTranslation();
     const { state, dispatch } = useAppContext();
+    const { loadCalendarEventsIfNeeded } = useLazyDataLoader();
     const { addToast } = useToast();
+
+    const calendarEvents = state.calendarEvents || [];
+    const contacts = state.contacts || [];
+    const projects = state.projects || [];
+
     const [showModal, setShowModal] = useState(false);
     const [modalDate, setModalDate] = useState(null);
     const [editingEvent, setEditingEvent] = useState(null);
@@ -160,8 +193,15 @@ function CalendarView() {
     const [weatherForecast, setWeatherForecast] = useState({});
     const [weatherCity, setWeatherCity] = useState(null);
 
+    const displayCategories = useMemo(
+        () => categories.map((category) => localizeCategory(category, t)),
+        [categories, t]
+    );
+
     useEffect(() => {
         loadCategories();
+        // Lazy load calendar events when calendar view opens
+        loadCalendarEventsIfNeeded();
     }, []);
 
     // Sync visible categories when categories list changes (e.g., after adding new categories)
@@ -264,40 +304,20 @@ function CalendarView() {
             if (error) {
                 console.error('Error loading categories:', error);
                 // Use default categories if table doesn't exist
-                const defaultCategories = [
-                    { id: 'meeting', name: 'Meeting', color: '#3B82F6' },
-                    { id: 'work', name: 'Work', color: '#F59E0B' },
-                    { id: 'personal', name: 'Personal', color: '#10B981' },
-                    { id: 'deadline', name: 'Deadline', color: '#EF4444' },
-                    { id: 'other', name: 'Other', color: '#8B5CF6' }
-                ];
-                setCategories(defaultCategories);
+                setCategories(DEFAULT_CATEGORY_SPECS);
                 // Initialize all categories as visible
-                setVisibleCategories(new Set(defaultCategories.map(c => c.id)));
+                setVisibleCategories(new Set(DEFAULT_CATEGORY_SPECS.map(c => c.id)));
             } else {
-                const loadedCategories = data.length > 0 ? data : [
-                    { id: 'meeting', name: 'Meeting', color: '#3B82F6' },
-                    { id: 'work', name: 'Work', color: '#F59E0B' },
-                    { id: 'personal', name: 'Personal', color: '#10B981' },
-                    { id: 'deadline', name: 'Deadline', color: '#EF4444' },
-                    { id: 'other', name: 'Other', color: '#8B5CF6' }
-                ];
+                const loadedCategories = data.length > 0 ? data : DEFAULT_CATEGORY_SPECS;
                 setCategories(loadedCategories);
                 // Initialize all categories as visible
                 setVisibleCategories(new Set(loadedCategories.map(c => c.id)));
             }
         } catch (error) {
             console.error('Error loading categories:', error);
-            const defaultCategories = [
-                { id: 'meeting', name: 'Meeting', color: '#3B82F6' },
-                { id: 'work', name: 'Work', color: '#F59E0B' },
-                { id: 'personal', name: 'Personal', color: '#10B981' },
-                { id: 'deadline', name: 'Deadline', color: '#EF4444' },
-                { id: 'other', name: 'Other', color: '#8B5CF6' }
-            ];
-            setCategories(defaultCategories);
+            setCategories(DEFAULT_CATEGORY_SPECS);
             // Initialize all categories as visible
-            setVisibleCategories(new Set(defaultCategories.map(c => c.id)));
+            setVisibleCategories(new Set(DEFAULT_CATEGORY_SPECS.map(c => c.id)));
         }
     };
 
@@ -313,7 +333,7 @@ function CalendarView() {
         const { code, error } = parseOAuthCallback();
         
         if (error) {
-            addToast(`OAuth error: ${error}`, 'error');
+            addToast(t('calendar.oauth_error', { error }), 'error');
             clearOAuthParams();
             return;
         }
@@ -355,9 +375,12 @@ function CalendarView() {
                     dispatch({ type: 'ADD_EVENT', payload: event });
                 });
 
-                addToast(`Successfully imported ${data.length} events from ${oauthState === 'google' ? 'Google' : 'Outlook'} Calendar!`, 'success');
+                addToast(t('calendar.imported_events', {
+                    count: data.length,
+                    provider: t(oauthState === 'google' ? 'calendar.provider_google' : 'calendar.provider_outlook')
+                }), 'success');
             } else {
-                addToast('No events found to import.', 'info');
+                addToast(t('calendar.no_events_to_import'), 'info');
             }
 
             // Clean up
@@ -366,7 +389,7 @@ function CalendarView() {
             
         } catch (error) {
             console.error('OAuth callback error:', error);
-            addToast('Error importing calendar events: ' + error.message, 'error');
+            addToast(t('calendar.import_error', { message: error.message }), 'error');
         } finally {
             setIsImporting(false);
         }
@@ -379,13 +402,14 @@ function CalendarView() {
             return acc;
         }, {});
 
+        // Recurring expansion window follows the calendar's focused month (sidebar / navigation), not only "today"
         const anchor = new Date(currentDate);
         const viewStart = new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1);
         const viewEnd = new Date(anchor.getFullYear(), anchor.getMonth() + 3, 0);
 
         const allEvents = [];
 
-        state.calendarEvents.forEach(event => {
+        calendarEvents.forEach(event => {
             // Determine event category (use existing or detect from title)
             let eventCategory = event.category || 'other';
             
@@ -469,7 +493,7 @@ function CalendarView() {
         });
 
         return allEvents;
-    }, [state.calendarEvents, categories, visibleCategories, currentDate]);
+    }, [calendarEvents, categories, visibleCategories, currentDate]);
 
     const handleDateClick = (arg) => {
         setModalDate(arg.date);
@@ -479,7 +503,7 @@ function CalendarView() {
 
     const handleEventClick = (arg) => {
         const dbId = resolveCalendarDbEventId(arg.event);
-        const event = state.calendarEvents.find(e => String(e.id) === String(dbId));
+        const event = calendarEvents.find(e => String(e.id) === String(dbId));
         if (event) {
             setEditingEvent(event);
             setShowModal(true);
@@ -507,7 +531,7 @@ function CalendarView() {
             }
 
             // Update local state
-            const updatedEvent = state.calendarEvents.find(e => String(e.id) === String(eventId));
+            const updatedEvent = calendarEvents.find(e => String(e.id) === String(eventId));
             if (updatedEvent) {
                 const finalEvent = {
                     ...updatedEvent, 
@@ -540,9 +564,9 @@ function CalendarView() {
                 }
             }
 
-            addToast('Event moved successfully!', 'success');
+            addToast(t('calendar.event_moved'), 'success');
         } catch (error) {
-            addToast('Error moving event: ' + error.message, 'error');
+            addToast(t('calendar.event_move_error', { message: error.message }), 'error');
             // Revert the change
             info.revert();
         }
@@ -567,7 +591,7 @@ function CalendarView() {
             }
 
             // Update local state
-            const updatedEvent = state.calendarEvents.find(e => String(e.id) === String(eventId));
+            const updatedEvent = calendarEvents.find(e => String(e.id) === String(eventId));
             if (updatedEvent) {
                 const finalEvent = {
                     ...updatedEvent, 
@@ -599,9 +623,9 @@ function CalendarView() {
                 }
             }
 
-            addToast('Event resized successfully!', 'success');
+            addToast(t('calendar.event_resized'), 'success');
         } catch (error) {
-            addToast('Error resizing event: ' + error.message, 'error');
+            addToast(t('calendar.event_resize_error', { message: error.message }), 'error');
             // Revert the change
             info.revert();
         }
@@ -613,18 +637,18 @@ function CalendarView() {
         
         // Get organizer name from user's contact
         const getUserName = async () => {
-            if (!state.user) return 'A team member';
+            if (!state.user) return t('calendar.team_member_fallback');
             
             // Try to find user's contact via profile
             try {
                 const { data: profile } = await supabaseClient
                     .from('profiles')
                     .select('contact_id')
-                    .eq('id', state.user.id)
+                    .eq('id', state.user?.id)
                     .maybeSingle();
                 
                 if (profile?.contact_id) {
-                    const userContact = state.contacts.find(c => c.id === profile.contact_id);
+                    const userContact = contacts.find(c => c.id === profile.contact_id);
                     if (userContact?.name) return userContact.name;
                 }
             } catch (error) {
@@ -632,7 +656,7 @@ function CalendarView() {
             }
             
             // Fallback to email or default
-            return state.user.email?.split('@')[0] || 'A team member';
+            return state.user.email?.split('@')[0] || t('calendar.team_member_fallback');
         };
         const organizerName = await getUserName();
         
@@ -651,7 +675,7 @@ function CalendarView() {
                 .single();
             
             if (error) {
-                addToast("Error updating event: " + error.message, 'error');
+                addToast(t('calendar.event_update_error', { message: error.message }), 'error');
                 setIsUpdatingEvent(false);
                 return;
             }
@@ -771,7 +795,7 @@ function CalendarView() {
                 }
             } catch (syncError) {
                 console.error('Error syncing to external calendar:', syncError);
-                addToast('Event updated, but sync to external calendar failed: ' + syncError.message, 'warning');
+                addToast(t('calendar.event_saved_sync_failed', { message: syncError.message }), 'warning');
             }
             
             // Send invitation emails to attendees (only newly added ones for updates)
@@ -801,7 +825,7 @@ function CalendarView() {
                 }
             }
             
-            addToast('Event updated successfully!', 'success');
+            addToast(t('calendar.event_saved_synced'), 'success');
             dispatch({ type: 'UPDATE_EVENT', payload: updatedEvent });
             setShowModal(false);
             setEditingEvent(null);
@@ -820,7 +844,7 @@ function CalendarView() {
                 .single();
             
             if (error) {
-                addToast("Error saving event: " + error.message, 'error');
+                addToast(t('calendar.event_update_error', { message: error.message }), 'error');
                 setIsCreatingEvent(false);
                 return;
             }
@@ -886,11 +910,11 @@ function CalendarView() {
                 }
                 
                 dispatch({ type: 'ADD_EVENT', payload: finalEvent });
-                addToast('Event saved and synced successfully!', 'success');
+                addToast(t('calendar.event_saved_synced'), 'success');
             } catch (syncError) {
                 console.error('Error syncing to external calendar:', syncError);
                 dispatch({ type: 'ADD_EVENT', payload: newEvent });
-                addToast('Event saved, but sync to external calendar failed: ' + syncError.message, 'warning');
+                addToast(t('calendar.event_saved_sync_failed', { message: syncError.message }), 'warning');
             }
             
             // Send invitation emails to all attendees for new events
@@ -920,7 +944,7 @@ function CalendarView() {
     };
 
     const handleDeleteEvent = (eventId) => {
-        const event = state.calendarEvents.find(e => e.id === eventId);
+        const event = calendarEvents.find(e => e.id === eventId);
         if (event) {
             setEventToDelete(event);
             setShowDeleteConfirm(true);
@@ -959,9 +983,9 @@ function CalendarView() {
             .eq('id', eventToDelete.id);
         
         if (error) {
-            addToast("Error deleting event: " + error.message, 'error');
+            addToast(t('calendar.event_delete_error', { message: error.message }), 'error');
         } else {
-            addToast('Event deleted successfully!', 'success');
+            addToast(t('calendar.event_deleted'), 'success');
             dispatch({ type: 'DELETE_EVENT', payload: eventToDelete.id });
             setShowDeleteConfirm(false);
             setEventToDelete(null);
@@ -998,7 +1022,7 @@ function CalendarView() {
         <>
             <div className="flex h-full gap-8">
                 {/* Left Sidebar */}
-                <aside className="w-64 shrink-0">
+                <aside className="w-64 flex-shrink-0">
                     <MiniCalendar currentDate={currentDate} setCurrentDate={setCurrentDate} />
                     
                     {/* Calendar Actions */}
@@ -1007,29 +1031,29 @@ function CalendarView() {
                             onClick={() => setShowGoogleImportModal(true)}
                             className="w-full px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                         >
-                            Import from Google Calendar
+                            {t('calendar.import_google')}
                         </button>
                         <button
                             onClick={() => setShowOutlookImportModal(true)}
                             className="w-full px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                         >
-                            Import from Outlook Calendar
+                            {t('calendar.import_outlook')}
                         </button>
                     </div>
 
                     <div className="mt-6" data-onboarding="calendar-events">
-                        <h3 className="text-sm font-semibold text-gray-500 mb-2">My Calendars</h3>
+                        <h3 className="text-sm font-semibold text-gray-500 mb-2">{t('calendar.my_calendars')}</h3>
                         <label className="flex items-center gap-2 text-sm">
                             <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-gray-300 text-blue-600"/>
-                            Calendar
+                            {t('calendar.calendar_label')}
                         </label>
                     </div>
 
                     {/* Color Legend */}
                     <div className="mt-6" data-onboarding="calendar-legend">
-                        <h3 className="text-sm font-semibold text-gray-500 mb-3">Event Categories</h3>
+                        <h3 className="text-sm font-semibold text-gray-500 mb-3">{t('calendar.event_categories')}</h3>
                         <div className="space-y-2">
-                            {categories.map(category => {
+                            {displayCategories.map(category => {
                                 const isVisible = visibleCategories.has(category.id);
                                 return (
                                     <label 
@@ -1043,7 +1067,7 @@ function CalendarView() {
                                             className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                         />
                                         <div 
-                                            className="w-3 h-3 rounded shrink-0" 
+                                            className="w-3 h-3 rounded flex-shrink-0" 
                                             style={{backgroundColor: category.color}}
                                         ></div>
                                         <span className={`text-gray-600 flex-1 ${!isVisible ? 'opacity-50 line-through' : ''}`}>
@@ -1059,33 +1083,31 @@ function CalendarView() {
                 {/* Main Calendar */}
                 <main 
                     data-onboarding="calendar-container"
-                    className="flex-1 app-card overflow-hidden"
+                    className="flex-1 bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden"
                 >
                     {/* Outlook-style Header */}
-                    <div className="bg-white/90 border-b border-slate-200 px-6 py-4">
+                    <div className="bg-white border-b border-gray-200 px-6 py-4">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-4">
-                                <h1 className="text-2xl font-semibold text-slate-900">Calendar</h1>
+                                <h1 className="text-2xl font-semibold text-gray-900">{t('calendar.title')}</h1>
                                 <div className="flex items-center space-x-2">
                                     <button
-                                        type="button"
                                         onClick={() => setShowModal(true)}
-                                        className="px-4 py-2 app-action-primary rounded-lg transition-colors text-sm font-medium"
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                                     >
-                                        + New Event
+                                        {t('calendar.new_event')}
                                     </button>
                                     <button
-                                        type="button"
                                         onClick={() => setShowCategoryManager(true)}
-                                        className="px-4 py-2 app-action-secondary rounded-lg transition-colors text-sm font-medium"
+                                        className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm font-medium"
                                     >
-                                        Manage Categories
+                                        {t('calendar.manage_categories')}
                                     </button>
                                 </div>
                             </div>
                             <div className="flex items-center space-x-4">
                                 {/* Weather Widget */}
-                                <div className="shrink-0 relative">
+                                <div className="flex-shrink-0 relative">
                                     <WeatherWidget compact={true} />
                                 </div>
                                 <div className="flex items-center bg-gray-100 rounded-lg p-1">
@@ -1097,7 +1119,7 @@ function CalendarView() {
                                                 : 'text-gray-700 hover:bg-white hover:text-gray-900'
                                         }`}
                                     >
-                                        Day
+                                        {t('calendar.view_day')}
                                     </button>
                                     <button 
                                         onClick={() => handleViewChange('timeGridWeek')}
@@ -1107,7 +1129,7 @@ function CalendarView() {
                                                 : 'text-gray-700 hover:bg-white hover:text-gray-900'
                                         }`}
                                     >
-                                        Week
+                                        {t('calendar.view_week')}
                                     </button>
                                     <button 
                                         onClick={() => handleViewChange('dayGridMonth')}
@@ -1117,7 +1139,7 @@ function CalendarView() {
                                                 : 'text-gray-700 hover:bg-white hover:text-gray-900'
                                         }`}
                                     >
-                                        Month
+                                        {t('calendar.view_month')}
                                     </button>
                                 </div>
                             </div>
@@ -1167,10 +1189,18 @@ function CalendarView() {
                                                         src={getWeatherIconUrl(weather.icon)}
                                                         alt={weather.description}
                                                         className="w-4 h-4"
-                                                        title={`${weather.description}, High: ${weather.high}°F, Low: ${weather.low}°F`}
+                                                        title={t('calendar.weather_tooltip', {
+                                                            description: weather.description,
+                                                            high: weather.high,
+                                                            low: weather.low
+                                                        })}
                                                     />
                                                 )}
-                                                <span className="text-gray-600 font-medium" title={`${weather.description}, High: ${weather.high}°F, Low: ${weather.low}°F`}>
+                                                <span className="text-gray-600 font-medium" title={t('calendar.weather_tooltip', {
+                                                    description: weather.description,
+                                                    high: weather.high,
+                                                    low: weather.low
+                                                })}>
                                                     {weather.temperature}°
                                                 </span>
                                             </div>
@@ -1210,7 +1240,12 @@ function CalendarView() {
                                                         src={getWeatherIconUrl(weather.icon)}
                                                         alt={weather.description}
                                                         className="w-8 h-8"
-                                                        title={`${weather.description}, ${weather.temperature}°F (High: ${weather.high}°F, Low: ${weather.low}°F)`}
+                                                        title={t('calendar.weather_tooltip_full', {
+                                                            description: weather.description,
+                                                            temp: weather.temperature,
+                                                            high: weather.high,
+                                                            low: weather.low
+                                                        })}
                                                         style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }}
                                                     />
                                                 </div>
@@ -1260,9 +1295,9 @@ function CalendarView() {
                         setEventToDelete(null);
                     }}
                     onConfirm={confirmDeleteEvent}
-                    title="Delete Event"
-                    message={`Are you sure you want to delete "${eventToDelete?.title}"? This action cannot be undone.`}
-                    confirmText="Delete"
+                    title={t('calendar.delete_event_title')}
+                    message={t('calendar.delete_event_message', { title: eventToDelete?.title })}
+                    confirmText={t('common.delete')}
                     confirmClass="bg-red-600 hover:bg-red-700"
                     isLoading={isDeletingEvent}
                 />

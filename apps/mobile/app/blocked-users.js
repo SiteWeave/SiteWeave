@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, Alert } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import PressableWithFade from '../components/PressableWithFade';
@@ -9,6 +10,7 @@ import { useHaptics } from '../hooks/useHaptics';
 import { useRouter } from 'expo-router';
 
 export default function BlockedUsersScreen() {
+  const { t } = useTranslation();
   const { user, supabase } = useAuth();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
@@ -30,8 +32,7 @@ export default function BlockedUsersScreen() {
     try {
       setLoading(true);
       const blockedUserIds = await getBlockedUsers(supabase, user.id);
-      
-      // Fetch user details for blocked users
+
       if (blockedUserIds.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
@@ -39,18 +40,17 @@ export default function BlockedUsersScreen() {
           .in('id', blockedUserIds);
 
         if (profiles) {
-          const contactIds = profiles.map(p => p.contact_id).filter(Boolean);
+          const contactIds = profiles.map((p) => p.contact_id).filter(Boolean);
           if (contactIds.length > 0) {
             const { data: contacts } = await supabase
               .from('contacts')
               .select('id, name, email')
               .in('id', contactIds);
 
-            // Map blocked user IDs to user info
             const userMap = {};
-            profiles.forEach(profile => {
+            profiles.forEach((profile) => {
               if (profile.contact_id) {
-                const contact = contacts?.find(c => c.id === profile.contact_id);
+                const contact = contacts?.find((c) => c.id === profile.contact_id);
                 if (contact) {
                   userMap[profile.id] = {
                     id: profile.id,
@@ -61,7 +61,7 @@ export default function BlockedUsersScreen() {
               }
             });
 
-            setBlockedUsers(blockedUserIds.map(id => userMap[id]).filter(Boolean));
+            setBlockedUsers(blockedUserIds.map((id) => userMap[id]).filter(Boolean));
           } else {
             setBlockedUsers([]);
           }
@@ -73,7 +73,7 @@ export default function BlockedUsersScreen() {
       }
     } catch (error) {
       console.error('Error loading blocked users:', error);
-      Alert.alert('Error', 'Failed to load blocked users.');
+      Alert.alert(t('common.error'), t('moderation.failed_load_blocked'));
     } finally {
       setLoading(false);
     }
@@ -81,17 +81,18 @@ export default function BlockedUsersScreen() {
 
   const handleUnblock = (blockedUser) => {
     haptics.medium();
+    const displayName = blockedUser.name || blockedUser.email;
     Alert.alert(
-      'Unblock User',
-      `Are you sure you want to unblock ${blockedUser.name || blockedUser.email}?`,
+      t('mobile.unblock_user_title'),
+      t('moderation.unblock_confirm', { name: displayName }),
       [
         {
-          text: 'Cancel',
+          text: t('common.cancel'),
           style: 'cancel',
           onPress: () => haptics.light(),
         },
         {
-          text: 'Unblock',
+          text: t('moderation.unblock'),
           style: 'default',
           onPress: () => confirmUnblock(blockedUser),
         },
@@ -104,20 +105,20 @@ export default function BlockedUsersScreen() {
 
     try {
       haptics.medium();
-      setUnblocking(prev => ({ ...prev, [blockedUser.id]: true }));
-      
+      setUnblocking((prev) => ({ ...prev, [blockedUser.id]: true }));
+
       await unblockUser(supabase, user.id, blockedUser.id);
-      
+
       haptics.success();
-      // Remove from list
-      setBlockedUsers(prev => prev.filter(u => u.id !== blockedUser.id));
-      Alert.alert('Unblocked', `${blockedUser.name || blockedUser.email} has been unblocked.`);
+      setBlockedUsers((prev) => prev.filter((u) => u.id !== blockedUser.id));
+      const displayName = blockedUser.name || blockedUser.email;
+      Alert.alert(t('moderation.unblock'), t('moderation.unblocked_toast', { name: displayName }));
     } catch (error) {
       console.error('Error unblocking user:', error);
       haptics.error();
-      Alert.alert('Error', 'Failed to unblock user. Please try again.');
+      Alert.alert(t('common.error'), t('moderation.failed_unblock'));
     } finally {
-      setUnblocking(prev => ({ ...prev, [blockedUser.id]: false }));
+      setUnblocking((prev) => ({ ...prev, [blockedUser.id]: false }));
     }
   };
 
@@ -135,21 +136,19 @@ export default function BlockedUsersScreen() {
         >
           <Ionicons name="arrow-back" size={24} color="#111827" />
         </PressableWithFade>
-        <Text style={styles.title}>Blocked Users</Text>
+        <Text style={styles.title}>{t('moderation.screen_title')}</Text>
         <View style={styles.placeholder} />
       </View>
 
       {loading ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>Loading...</Text>
+          <Text style={styles.emptyText}>{t('common.loading')}</Text>
         </View>
       ) : blockedUsers.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="ban-outline" size={64} color="#9CA3AF" />
-          <Text style={styles.emptyText}>No blocked users</Text>
-          <Text style={styles.emptySubtext}>
-            Users you block will not be able to send you messages or see your content.
-          </Text>
+          <Text style={styles.emptyText}>{t('moderation.blocked_empty_title')}</Text>
+          <Text style={styles.emptySubtext}>{t('moderation.blocked_empty_hint_mobile')}</Text>
         </View>
       ) : (
         <FlatList
@@ -165,22 +164,17 @@ export default function BlockedUsersScreen() {
                   </Text>
                 </View>
                 <View style={styles.userDetails}>
-                  <Text style={styles.userName}>{item.name || 'Unknown User'}</Text>
-                  {item.email && (
-                    <Text style={styles.userEmail}>{item.email}</Text>
-                  )}
+                  <Text style={styles.userName}>{item.name || t('moderation.unknown_user')}</Text>
+                  {item.email && <Text style={styles.userEmail}>{item.email}</Text>}
                 </View>
               </View>
               <PressableWithFade
-                style={[
-                  styles.unblockButton,
-                  unblocking[item.id] && styles.unblockButtonDisabled,
-                ]}
+                style={[styles.unblockButton, unblocking[item.id] && styles.unblockButtonDisabled]}
                 onPress={() => handleUnblock(item)}
                 disabled={unblocking[item.id]}
               >
                 <Text style={styles.unblockButtonText}>
-                  {unblocking[item.id] ? 'Unblocking...' : 'Unblock'}
+                  {unblocking[item.id] ? t('moderation.unblocking') : t('moderation.unblock')}
                 </Text>
               </PressableWithFade>
             </View>
@@ -301,4 +295,3 @@ const styles = StyleSheet.create({
     maxWidth: 300,
   },
 });
-

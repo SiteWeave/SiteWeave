@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, FlatList } from 'react-native';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import PressableWithFade from '../../components/PressableWithFade';
@@ -14,6 +15,7 @@ import {
 } from '../../utils/notifications';
 
 export default function NotificationsScreen() {
+  const { t } = useTranslation();
   const { user, supabase } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -123,7 +125,7 @@ export default function NotificationsScreen() {
             disabled={Boolean(item.read_at)}
             activeOpacity={0.7}
           >
-            <Text style={styles.actionButtonText}>{item.read_at ? 'Read' : 'Mark read'}</Text>
+            <Text style={styles.actionButtonText}>{item.read_at ? t('mobile.read') : t('mobile.mark_read')}</Text>
           </PressableWithFade>
           <PressableWithFade
             style={styles.actionButton}
@@ -150,7 +152,7 @@ export default function NotificationsScreen() {
         <PressableWithFade style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={24} color="#111827" />
         </PressableWithFade>
-        <Text style={styles.headerTitle}>Notifications</Text>
+        <Text style={styles.headerTitle}>{t('mobile.notifications_title')}</Text>
         <View style={styles.backButton} />
       </View>
       <View style={styles.filterRow}>
@@ -160,13 +162,13 @@ export default function NotificationsScreen() {
           activeOpacity={0.7}
         >
           <Text style={[styles.filterChipText, showUnreadOnly && styles.filterChipTextActive]}>
-            {showUnreadOnly ? 'Showing unread only' : 'Show unread only'}
+            {showUnreadOnly ? t('mobile.showing_unread_only') : t('mobile.show_unread_only')}
           </Text>
         </PressableWithFade>
       </View>
       {loading ? (
         <View style={styles.centerState}>
-          <Text style={styles.stateText}>Loading notifications...</Text>
+          <Text style={styles.stateText}>{t('mobile.loading_notifications')}</Text>
         </View>
       ) : (
         <FlatList
@@ -177,7 +179,7 @@ export default function NotificationsScreen() {
           ListEmptyComponent={
             <View style={styles.centerState}>
               <Ionicons name="notifications-outline" size={44} color="#9CA3AF" />
-              <Text style={styles.stateText}>No notifications yet.</Text>
+              <Text style={styles.stateText}>{t('mobile.no_notifications')}</Text>
             </View>
           }
         />

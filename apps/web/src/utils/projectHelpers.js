@@ -68,17 +68,7 @@ export const formatDateShort = (dateString) => {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-// Normalize status to canonical format
-export const normalizeStatusDisplay = (status) => {
-    if (!status) return null;
-    const lower = status.trim().toLowerCase();
-    if (lower === 'planning') return 'Planning';
-    if (lower === 'in progress' || lower === 'in-progress') return 'In Progress';
-    if (lower === 'on hold' || lower === 'on-hold') return 'On Hold';
-    if (lower === 'completed') return 'Completed';
-    if (lower === 'cancelled' || lower === 'canceled') return 'Cancelled';
-    return status.trim(); // Return trimmed original if not recognized
-};
+export { normalizeStatusDisplay, getLocalizedProjectStatus } from '@siteweave/i18n';
 
 export const getStatusColor = (status) => {
     if (!status) return 'bg-gray-100 text-gray-800';

@@ -1,4 +1,6 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatRelativeTime } from '@siteweave/i18n';
 import {
   fetchIssueComments,
   createIssueComment,
@@ -8,24 +10,13 @@ import { useAppContext, supabaseClient } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import ReportContentModal from '../moderation/ReportContentModal';
 
-function formatWhen(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMins = Math.floor((now - d) / 60000);
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHrs = Math.floor(diffMins / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric' });
-}
-
 function initials(name) {
   if (!name) return '?';
   return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 }
 
 export default function IssueCommentsPanel({ issue, organizationId }) {
+  const { t } = useTranslation();
   const { state } = useAppContext();
   const { addToast } = useToast();
   const [comments, setComments] = React.useState([]);
@@ -35,7 +26,7 @@ export default function IssueCommentsPanel({ issue, organizationId }) {
   const [reportTarget, setReportTarget] = React.useState(null);
 
   const userName =
-    state.user?.user_metadata?.full_name || state.user?.email || 'User';
+    state.user?.user_metadata?.full_name || state.user?.email || t('common.user');
 
   const load = React.useCallback(async () => {
     if (!issue?.id) return;
@@ -45,11 +36,11 @@ export default function IssueCommentsPanel({ issue, organizationId }) {
       setComments(rows);
     } catch (e) {
       console.error(e);
-      addToast('Could not load comments.', 'error');
+      addToast(t('fieldIssues.comments_load_error'), 'error');
     } finally {
       setLoading(false);
     }
-  }, [issue?.id, addToast]);
+  }, [issue?.id, addToast, t]);
 
   React.useEffect(() => {
     load();
@@ -89,7 +80,7 @@ export default function IssueCommentsPanel({ issue, organizationId }) {
       setComments((prev) => [...prev, row]);
       setBody('');
     } catch (err) {
-      addToast(err.message || 'Could not post comment.', 'error');
+      addToast(err.message || t('fieldIssues.comment_post_error'), 'error');
     } finally {
       setSending(false);
     }
@@ -100,21 +91,21 @@ export default function IssueCommentsPanel({ issue, organizationId }) {
       await deleteIssueComment(supabaseClient, commentId);
       setComments((prev) => prev.filter((c) => c.id !== commentId));
     } catch (err) {
-      addToast(err.message || 'Could not delete comment.', 'error');
+      addToast(err.message || t('fieldIssues.comment_delete_error'), 'error');
     }
   };
 
   return (
     <div className="space-y-3">
-      <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Discussion</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t('fieldIssues.discussion')}</h4>
       {loading ? (
-        <p className="text-xs text-slate-500">Loading comments…</p>
+        <p className="text-xs text-slate-500">{t('fieldIssues.loading_comments')}</p>
       ) : comments.length === 0 ? (
-        <p className="text-xs text-slate-500">No comments yet.</p>
+        <p className="text-xs text-slate-500">{t('fieldIssues.no_comments')}</p>
       ) : (
         <ul className="space-y-2 max-h-48 overflow-y-auto">
           {comments.map((c) => {
-            const authorName = c.author?.name || c.user_name || 'User';
+            const authorName = c.author?.name || c.user_name || t('common.user');
             const isOwn = c.user_id === state.user?.id;
             return (
               <li key={c.id} className="flex gap-2 text-sm">
@@ -124,14 +115,14 @@ export default function IssueCommentsPanel({ issue, organizationId }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-slate-800 text-xs">{authorName}</span>
-                    <span className="text-[10px] text-slate-400">{formatWhen(c.created_at)}</span>
+                    <span className="text-[10px] text-slate-400">{formatRelativeTime(c.created_at, t)}</span>
                     {isOwn ? (
                       <button
                         type="button"
                         onClick={() => handleDelete(c.id)}
                         className="text-[10px] text-red-600 hover:underline"
                       >
-                        Delete
+                        {t('common.delete')}
                       </button>
                     ) : (
                       <button
@@ -145,7 +136,7 @@ export default function IssueCommentsPanel({ issue, organizationId }) {
                         }
                         className="text-[10px] text-slate-500 hover:underline"
                       >
-                        Report
+                        {t('stream.report')}
                       </button>
                     )}
                   </div>
@@ -162,7 +153,7 @@ export default function IssueCommentsPanel({ issue, organizationId }) {
           type="text"
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Add a comment…"
+          placeholder={t('fieldIssues.add_comment_placeholder')}
           className="flex-1 text-sm px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
         />
         <button
@@ -170,7 +161,7 @@ export default function IssueCommentsPanel({ issue, organizationId }) {
           disabled={!body.trim() || sending}
           className="px-3 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg disabled:opacity-50"
         >
-          {sending ? '…' : 'Post'}
+          {sending ? '…' : t('fieldIssues.post')}
         </button>
       </form>
 

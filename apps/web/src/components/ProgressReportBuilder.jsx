@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import ContactSelector from './ContactSelector';
@@ -11,51 +12,53 @@ import {
   updateRecipients,
 } from '@siteweave/core-logic';
 
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const FREQUENCY_OPTIONS = [
-  { value: 'manual', label: 'Manual only' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'bi-weekly', label: 'Bi-weekly' },
-  { value: 'monthly', label: 'Monthly' },
-];
-const MONTHLY_OPTIONS = [
-  { value: 1, label: '1st' },
-  { value: 15, label: '15th' },
-  { value: -1, label: 'Last day of month' },
+const DAY_I18N_KEYS = [
+  'day_sunday',
+  'day_monday',
+  'day_tuesday',
+  'day_wednesday',
+  'day_thursday',
+  'day_friday',
+  'day_saturday',
 ];
 
-const REPORT_TYPES = [
-  {
-    value: 'standard',
-    label: 'Standard',
-    description: 'Task lists, status updates, and phase progress. Customise which details are shown.',
-  },
-  {
-    value: 'executive',
-    label: 'Brief',
-    description: 'Health metrics and headlines only. No task-level detail.',
-  },
+const FREQUENCY_DEFS = [
+  { value: 'manual', labelKey: 'frequency_manual' },
+  { value: 'weekly', labelKey: 'frequency_weekly' },
+  { value: 'bi-weekly', labelKey: 'frequency_biweekly' },
+  { value: 'monthly', labelKey: 'frequency_monthly' },
 ];
 
-const SECTION_OPTIONS = [
-  { key: 'status_changes',  label: 'Status updates' },
-  { key: 'task_completion', label: 'Completed tasks' },
-  { key: 'phase_changes',   label: 'Phase progress' },
-  { key: 'vitals',          label: 'Summary numbers (total completed, open tasks)' },
-  { key: 'weekly_plan',     label: 'Last week / This week / Next week' },
+const MONTHLY_DEFS = [
+  { value: 1, labelKey: 'monthly_1st' },
+  { value: 15, labelKey: 'monthly_15th' },
+  { value: -1, labelKey: 'monthly_last' },
 ];
 
-const DETAIL_TOGGLES = [
-  { key: 'show_siteweave_logo',    label: 'Show SiteWeave logo in report footer',                  default: true },
-  { key: 'show_assignees',         label: 'Show who is assigned to each task',                   default: false },
-  { key: 'show_dates',             label: 'Show task completion dates',                           default: false },
-  { key: 'show_who_changed',       label: 'Show who changed a status and when',                   default: false },
-  { key: 'show_phase_delta',       label: 'Show previous progress on phases (e.g. 41% → 51%)',   default: false },
-  { key: 'show_task_phase',        label: 'Show a small phase tag on each task (helps tell same-named tasks apart)', default: false },
-  { key: 'show_blockers',          label: 'Include blockers & issues section',                    default: false },
-  { key: 'show_weather_impacts',   label: 'Include weather / schedule impacts (logged this period)', default: true },
-  { key: 'include_task_photos',    label: 'Include task photos on completed work (uses signed image links)', default: false },
-  { key: 'client_friendly_labels', label: 'Use friendly status labels (e.g. "Active" not "In Progress")', default: true },
+const REPORT_TYPE_DEFS = [
+  { value: 'standard', labelKey: 'type_standard', descKey: 'type_standard_desc' },
+  { value: 'executive', labelKey: 'type_executive', descKey: 'type_executive_desc' },
+];
+
+const SECTION_DEFS = [
+  { key: 'status_changes', labelKey: 'section_status_changes' },
+  { key: 'task_completion', labelKey: 'section_task_completion' },
+  { key: 'phase_changes', labelKey: 'section_phase_changes' },
+  { key: 'vitals', labelKey: 'section_vitals' },
+  { key: 'weekly_plan', labelKey: 'section_weekly_plan' },
+];
+
+const DETAIL_TOGGLE_DEFS = [
+  { key: 'show_siteweave_logo', labelKey: 'toggle_logo', default: true },
+  { key: 'show_assignees', labelKey: 'toggle_assignees', default: false },
+  { key: 'show_dates', labelKey: 'toggle_dates', default: false },
+  { key: 'show_who_changed', labelKey: 'toggle_who_changed', default: false },
+  { key: 'show_phase_delta', labelKey: 'toggle_phase_delta', default: false },
+  { key: 'show_task_phase', labelKey: 'toggle_task_phase', default: false },
+  { key: 'show_blockers', labelKey: 'toggle_blockers', default: false },
+  { key: 'show_weather_impacts', labelKey: 'toggle_weather', default: true },
+  { key: 'include_task_photos', labelKey: 'toggle_photos', default: false },
+  { key: 'client_friendly_labels', labelKey: 'toggle_friendly_labels', default: true },
 ];
 
 const DEFAULT_SECTIONS = {
@@ -75,6 +78,8 @@ const DEFAULT_SECTIONS = {
   include_task_photos: false,
   client_friendly_labels: true,
 };
+
+const builderKey = (suffix) => `progressReports.builder.${suffix}`;
 
 // Parse comma/newline separated emails and return array of { email, recipient_type: 'to' }
 function parseEmailsText(text) {
@@ -102,6 +107,7 @@ function ProgressReportBuilder({
   onSave,
   onCancel,
 }) {
+  const { t } = useTranslation();
   const { state } = useAppContext();
   const projects = state.projects || [];
   const { addToast } = useToast();
@@ -112,6 +118,58 @@ function ProgressReportBuilder({
   const [showAddFromContacts, setShowAddFromContacts] = useState(false);
   const [orgReportHour, setOrgReportHour] = useState(null);
 
+  const dayNames = useMemo(
+    () => DAY_I18N_KEYS.map((key) => t(builderKey(key))),
+    [t]
+  );
+
+  const frequencyOptions = useMemo(
+    () =>
+      FREQUENCY_DEFS.map(({ value, labelKey }) => ({
+        value,
+        label: t(builderKey(labelKey)),
+      })),
+    [t]
+  );
+
+  const monthlyOptions = useMemo(
+    () =>
+      MONTHLY_DEFS.map(({ value, labelKey }) => ({
+        value,
+        label: t(builderKey(labelKey)),
+      })),
+    [t]
+  );
+
+  const reportTypes = useMemo(
+    () =>
+      REPORT_TYPE_DEFS.map(({ value, labelKey, descKey }) => ({
+        value,
+        label: t(builderKey(labelKey)),
+        description: t(builderKey(descKey)),
+      })),
+    [t]
+  );
+
+  const sectionOptions = useMemo(
+    () =>
+      SECTION_DEFS.map(({ key, labelKey }) => ({
+        key,
+        label: t(builderKey(labelKey)),
+      })),
+    [t]
+  );
+
+  const detailToggles = useMemo(
+    () =>
+      DETAIL_TOGGLE_DEFS.map(({ key, labelKey, default: defaultOn }) => ({
+        key,
+        label: t(builderKey(labelKey)),
+        default: defaultOn,
+      })),
+    [t]
+  );
+
   const [formData, setFormData] = useState({
     name: '',
     report_audience_type: 'standard',
@@ -120,9 +178,7 @@ function ProgressReportBuilder({
     frequency_value: null,
     custom_subject: '',
     custom_message: '',
-    /** Needed so the live preview can load phases and show phase tags on tasks */
     project_id: projectId || null,
-    /** Organization report: which projects to include (stored; null on server = all projects) */
     included_project_ids: [],
     report_sections: { ...DEFAULT_SECTIONS },
     requires_approval: false,
@@ -169,12 +225,11 @@ function ProgressReportBuilder({
     if (projectId && defaultReportNameSuffix) {
       setFormData((prev) => ({
         ...prev,
-        name: `Progress Report - ${defaultReportNameSuffix}`,
+        name: t(builderKey('default_report_name'), { project: defaultReportNameSuffix }),
       }));
     }
-  }, [scheduleId, projectId, defaultReportNameSuffix]);
+  }, [scheduleId, projectId, defaultReportNameSuffix, t]);
 
-  /** Keep preview in sync with the project context when creating/editing without a loaded row */
   useEffect(() => {
     if (scheduleId) return;
     setFormData((prev) => ({ ...prev, project_id: projectId || null }));
@@ -263,7 +318,7 @@ function ProgressReportBuilder({
       setRecipientsText(recs.map((r) => r.email).filter(Boolean).join(', '));
       setContactSelectedRecipients([]);
     } catch (error) {
-      addToast('Error loading schedule: ' + error.message, 'error');
+      addToast(t(builderKey('load_schedule_error'), { message: error.message }), 'error');
     } finally {
       setIsLoading(false);
     }
@@ -271,19 +326,19 @@ function ProgressReportBuilder({
 
   const handleSave = async (activate = false) => {
     if (!formData.name) {
-      addToast('Please enter a report name', 'error');
+      addToast(t(builderKey('enter_report_name')), 'error');
       return;
     }
     if (allRecipients.length === 0) {
-      addToast('Please add at least one recipient email', 'error');
+      addToast(t(builderKey('add_recipient')), 'error');
       return;
     }
     if (formData.frequency !== 'manual' && !Number.isFinite(Number(orgReportHour))) {
-      addToast('Set your organization report hour in Organization Settings before activating automated reports.', 'warning');
+      addToast(t(builderKey('set_org_hour')), 'warning');
       return;
     }
     if (!projectId && (!formData.included_project_ids || formData.included_project_ids.length === 0)) {
-      addToast('Select at least one project to include in this report', 'error');
+      addToast(t(builderKey('select_project')), 'error');
       return;
     }
 
@@ -325,10 +380,13 @@ function ProgressReportBuilder({
 
       await updateRecipients(supabaseClient, savedSchedule.id, allRecipients);
 
-      addToast(activate ? 'Report schedule activated!' : 'Report saved', 'success');
+      addToast(
+        activate ? t(builderKey('schedule_activated')) : t(builderKey('schedule_saved')),
+        'success'
+      );
       if (onSave) onSave(savedSchedule);
     } catch (error) {
-      addToast('Error saving schedule: ' + error.message, 'error');
+      addToast(t(builderKey('save_schedule_error'), { message: error.message }), 'error');
     } finally {
       setIsSaving(false);
     }
@@ -349,7 +407,7 @@ function ProgressReportBuilder({
   const monthlyValue = frequency === 'monthly' ? (frequencyValue === 15 ? 15 : frequencyValue === -1 || frequencyValue === 31 ? -1 : 1) : 1;
 
   if (isLoading) {
-    return <LoadingSpinner text="Loading schedule..." />;
+    return <LoadingSpinner text={t(builderKey('loading_schedule'))} />;
   }
 
   return (
@@ -359,25 +417,25 @@ function ProgressReportBuilder({
 
         {/* Card 1: Report setup */}
         <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-5">
-          <h2 className="text-base font-semibold text-gray-900">Report setup</h2>
+          <h2 className="text-base font-semibold text-gray-900">{t(builderKey('report_setup'))}</h2>
 
           {/* Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Report name *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t(builderKey('report_name'))}</label>
             <input
               type="text"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-              placeholder="e.g., Weekly Client Update"
+              placeholder={t(builderKey('report_name_placeholder'))}
             />
           </div>
 
           {/* Report type */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Report type</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t(builderKey('report_type'))}</label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {REPORT_TYPES.map((opt) => {
+              {reportTypes.map((opt) => {
                 const selected = formData.report_audience_type === opt.value;
                 return (
                   <button
@@ -406,14 +464,17 @@ function ProgressReportBuilder({
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium text-gray-900">Projects in this report</p>
+                  <p className="text-sm font-medium text-gray-900">{t(builderKey('projects_in_report'))}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Only selected projects are included. Weekly sections show tasks scheduled in each window, not all open work.
+                    {t(builderKey('projects_in_report_hint'))}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs text-gray-600">
-                    {(formData.included_project_ids || []).length} of {projects.length} selected
+                    {t(builderKey('selected_count'), {
+                      selected: (formData.included_project_ids || []).length,
+                      total: projects.length,
+                    })}
                   </span>
                   <button
                     type="button"
@@ -425,7 +486,7 @@ function ProgressReportBuilder({
                     }
                     className="text-xs px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-100"
                   >
-                    Select all
+                    {t(builderKey('select_all'))}
                   </button>
                 </div>
               </div>
@@ -454,7 +515,7 @@ function ProgressReportBuilder({
                         }}
                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
-                      <span className="truncate">{p.name || 'Untitled project'}</span>
+                      <span className="truncate">{p.name || t(builderKey('untitled_project'))}</span>
                     </label>
                   );
                 })}
@@ -464,23 +525,23 @@ function ProgressReportBuilder({
 
           {/* Recipients */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Recipients (emails)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t(builderKey('recipients'))}</label>
             <textarea
               value={recipientsText}
               onChange={(e) => setRecipientsText(e.target.value)}
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-              placeholder="owner@example.com, investor@example.com"
+              placeholder={t(builderKey('recipients_placeholder'))}
             />
             <p className="mt-1 text-xs text-gray-500">
-              Separate multiple addresses with commas or new lines.
+              {t(builderKey('recipients_hint'))}
             </p>
             <button
               type="button"
               onClick={() => setShowAddFromContacts((v) => !v)}
               className="mt-2 text-sm text-blue-600 hover:text-blue-700"
             >
-              {showAddFromContacts ? 'Hide contacts' : 'Add from contacts'}
+              {showAddFromContacts ? t(builderKey('hide_contacts')) : t(builderKey('add_from_contacts'))}
             </button>
             {showAddFromContacts && (
               <div className="mt-2 border border-gray-200 rounded-lg p-3 bg-gray-50">
@@ -496,10 +557,12 @@ function ProgressReportBuilder({
 
           {/* Schedule */}
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">Schedule</label>
+            <label className="block text-sm font-medium text-gray-700">{t(builderKey('schedule'))}</label>
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
-              Automated report send hour is managed in Organization Settings.
-              {Number.isFinite(Number(orgReportHour)) ? ` Current org hour: ${orgReportHour}:00 ET.` : ' Set it there to activate automated sends.'}
+              {t(builderKey('schedule_hour_hint'))}
+              {Number.isFinite(Number(orgReportHour))
+                ? t(builderKey('schedule_hour_set'), { hour: orgReportHour })
+                : t(builderKey('schedule_hour_missing'))}
             </p>
             <div className="flex flex-wrap gap-3 items-end">
               <div className="min-w-[140px]">
@@ -520,7 +583,7 @@ function ProgressReportBuilder({
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                 >
-                  {FREQUENCY_OPTIONS.map((opt) => (
+                  {frequencyOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
@@ -532,7 +595,7 @@ function ProgressReportBuilder({
                     onChange={(e) => setFormData({ ...formData, frequency_value: parseInt(e.target.value, 10) })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                   >
-                    {DAY_NAMES.map((day, i) => (
+                    {dayNames.map((day, i) => (
                       <option key={i} value={i}>{day}</option>
                     ))}
                   </select>
@@ -540,13 +603,13 @@ function ProgressReportBuilder({
               )}
               {needsMonthlyDay && (
                 <div className="min-w-[160px]">
-                  <label className="block text-xs text-gray-500 mb-1">Date each month</label>
+                  <label className="block text-xs text-gray-500 mb-1">{t(builderKey('date_each_month'))}</label>
                   <select
                     value={monthlyValue}
                     onChange={(e) => setFormData({ ...formData, frequency_value: parseInt(e.target.value, 10) })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                   >
-                    {MONTHLY_OPTIONS.map((opt) => (
+                    {monthlyOptions.map((opt) => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
@@ -557,36 +620,36 @@ function ProgressReportBuilder({
 
           {projectId && (
             <div className="p-3 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-800">This report is scoped to the current project.</p>
+              <p className="text-sm text-blue-800">{t(builderKey('scoped_to_project'))}</p>
             </div>
           )}
         </div>
 
         {/* Card 2: Email content */}
         <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-5">
-          <h2 className="text-base font-semibold text-gray-900">Email content</h2>
+          <h2 className="text-base font-semibold text-gray-900">{t(builderKey('email_content'))}</h2>
 
           {/* Subject */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Subject line</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t(builderKey('subject_line'))}</label>
             <input
               type="text"
               value={formData.custom_subject}
               onChange={(e) => setFormData({ ...formData, custom_subject: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-              placeholder="Leave empty for default"
+              placeholder={t(builderKey('subject_placeholder'))}
             />
           </div>
 
           {/* Personal message */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Personal message</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t(builderKey('personal_message'))}</label>
             <textarea
               value={formData.custom_message}
               onChange={(e) => setFormData({ ...formData, custom_message: e.target.value })}
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-              placeholder="Optional note shown at the top of the email…"
+              placeholder={t(builderKey('message_placeholder'))}
             />
           </div>
 
@@ -594,9 +657,9 @@ function ProgressReportBuilder({
           {isStandard && (
             <>
               <div className="border-t border-gray-100 pt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Sections to include</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t(builderKey('sections_to_include'))}</label>
                 <div className="space-y-2">
-                  {SECTION_OPTIONS.map(({ key, label }) => (
+                  {sectionOptions.map(({ key, label }) => (
                     <label key={key} className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -611,12 +674,12 @@ function ProgressReportBuilder({
               </div>
 
               <div className="border-t border-gray-100 pt-4">
-                <p className="text-sm font-medium text-gray-700 mb-1">Detail level</p>
+                <p className="text-sm font-medium text-gray-700 mb-1">{t(builderKey('detail_level'))}</p>
                 <p className="text-xs text-gray-400 mb-3">
-                  Turn these on for internal team reports; leave them off for clean client-facing emails.
+                  {t(builderKey('detail_level_hint'))}
                 </p>
                 <div className="space-y-2">
-                  {DETAIL_TOGGLES.map(({ key, label }) => (
+                  {detailToggles.map(({ key, label }) => (
                     <label key={key} className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -640,7 +703,7 @@ function ProgressReportBuilder({
             onClick={() => setShowBranding((v) => !v)}
             className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
           >
-            <span>Email appearance</span>
+            <span>{t(builderKey('email_appearance'))}</span>
             <svg
               className={`w-4 h-4 text-gray-400 transition-transform ${showBranding ? 'rotate-180' : ''}`}
               fill="none" stroke="currentColor" viewBox="0 0 24 24"
@@ -651,7 +714,7 @@ function ProgressReportBuilder({
           {showBranding && (
             <div className="border-t border-gray-200 bg-white px-4 py-4">
               <p className="text-xs text-gray-500 mb-4">
-                Logo, colors, footer, and signature apply to <strong>all</strong> reports for this organization.
+                {t(builderKey('branding_hint_strong'))}
               </p>
               <BrandingSettings compact />
             </div>
@@ -667,7 +730,7 @@ function ProgressReportBuilder({
                 onClick={onCancel}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             )}
           </div>
@@ -678,7 +741,7 @@ function ProgressReportBuilder({
               disabled={isSaving}
               className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
             >
-              {isSaving ? 'Saving…' : 'Save'}
+              {isSaving ? t('common.saving_ellipsis') : t('common.save')}
             </button>
             <button
               type="button"
@@ -686,7 +749,7 @@ function ProgressReportBuilder({
               disabled={isSaving}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
             >
-              {isSaving ? 'Saving…' : 'Save & Activate'}
+              {isSaving ? t('common.saving_ellipsis') : t(builderKey('save_and_activate'))}
             </button>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { getBlockedUsers, unblockUser } from '@siteweave/core-logic';
@@ -40,6 +41,7 @@ async function loadBlockedUserDetails(supabase, blockedUserIds) {
 }
 
 export default function BlockedUsersPanel() {
+  const { t } = useTranslation();
   const { state } = useAppContext();
   const { addToast } = useToast();
   const [blockedUsers, setBlockedUsers] = useState([]);
@@ -60,11 +62,11 @@ export default function BlockedUsersPanel() {
       setBlockedUsers(users);
     } catch (error) {
       console.error('Error loading blocked users:', error);
-      addToast('Failed to load blocked users.', 'error');
+      addToast(t('moderation.failed_load_blocked'), 'error');
     } finally {
       setLoading(false);
     }
-  }, [state.user?.id, addToast]);
+  }, [state.user?.id, addToast, t]);
 
   useEffect(() => {
     loadBlockedUsers();
@@ -72,16 +74,17 @@ export default function BlockedUsersPanel() {
 
   const handleUnblock = async (blockedUser) => {
     if (!state.user?.id) return;
-    if (!window.confirm(`Unblock ${blockedUser.name || blockedUser.email}?`)) return;
+    const displayName = blockedUser.name || blockedUser.email;
+    if (!window.confirm(t('moderation.unblock_confirm', { name: displayName }))) return;
 
     try {
       setUnblockingId(blockedUser.id);
       await unblockUser(supabaseClient, state.user.id, blockedUser.id);
       setBlockedUsers((prev) => prev.filter((u) => u.id !== blockedUser.id));
-      addToast(`${blockedUser.name || blockedUser.email} has been unblocked.`, 'success');
+      addToast(t('moderation.unblocked_toast', { name: displayName }), 'success');
     } catch (error) {
       console.error('Error unblocking user:', error);
-      addToast('Failed to unblock user. Please try again.', 'error');
+      addToast(t('moderation.failed_unblock'), 'error');
     } finally {
       setUnblockingId(null);
     }
@@ -97,22 +100,20 @@ export default function BlockedUsersPanel() {
 
   if (blockedUsers.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500">
-        <p className="font-medium text-gray-700">No blocked users</p>
-        <p className="text-sm mt-2">
-          Users you block will not appear in your messages.
-        </p>
+      <div className="text-center py-8 text-slate-500">
+        <p className="font-medium text-slate-700">{t('moderation.blocked_empty_title')}</p>
+        <p className="text-sm mt-2">{t('moderation.blocked_empty_hint')}</p>
       </div>
     );
   }
 
   return (
-    <ul className="divide-y divide-gray-200 border border-gray-200 rounded-lg overflow-hidden">
+    <ul className="divide-y divide-slate-200 border border-slate-200 rounded-lg overflow-hidden">
       {blockedUsers.map((user) => (
         <li key={user.id} className="flex items-center justify-between gap-4 p-4 bg-white">
           <div>
-            <p className="font-medium text-gray-900">{user.name || 'Unknown User'}</p>
-            {user.email && <p className="text-sm text-gray-500">{user.email}</p>}
+            <p className="font-medium text-slate-900">{user.name || t('moderation.unknown_user')}</p>
+            {user.email && <p className="text-sm text-slate-500">{user.email}</p>}
           </div>
           <button
             type="button"
@@ -120,7 +121,7 @@ export default function BlockedUsersPanel() {
             disabled={unblockingId === user.id}
             className="px-3 py-1.5 text-sm font-medium text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 disabled:opacity-50"
           >
-            {unblockingId === user.id ? 'Unblocking...' : 'Unblock'}
+            {unblockingId === user.id ? t('moderation.unblocking') : t('moderation.unblock')}
           </button>
         </li>
       ))}

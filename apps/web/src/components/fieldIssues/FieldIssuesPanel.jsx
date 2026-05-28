@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   fetchProjectIssues,
   createProjectIssue,
@@ -15,12 +16,13 @@ import FieldIssueCard from './FieldIssueCard';
 import IssueDetailDrawer from './IssueDetailDrawer';
 
 const STATUS_FILTERS = [
-  { key: 'open', label: 'Open' },
-  { key: 'closed', label: 'Closed' },
-  { key: 'all', label: 'All' },
+  { key: 'open', labelKey: 'fieldIssues.filter_open' },
+  { key: 'closed', labelKey: 'fieldIssues.filter_closed' },
+  { key: 'all', labelKey: 'fieldIssues.filter_all' },
 ];
 
 export default function FieldIssuesPanel({ projectId, project, projectTasks = [], embedded = false }) {
+  const { t } = useTranslation();
   const { state } = useAppContext();
   const { addToast } = useToast();
   const [issues, setIssues] = useState([]);
@@ -65,7 +67,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
         .in('contact_id', contactIds);
       const opts = (profiles || []).map((p) => ({
         userId: p.id,
-        label: p.contacts?.name || 'Team member',
+        label: p.contacts?.name || t('fieldIssues.team_member'),
       }));
       setAssigneeOptions(opts);
     })();
@@ -83,7 +85,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
       });
     } catch (e) {
       console.error(e);
-      addToast('Error loading field issues', 'error');
+      addToast(t('fieldIssues.load_error'), 'error');
     } finally {
       setIsLoading(false);
     }
@@ -101,11 +103,11 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
 
   const handleCreate = async () => {
     if (!newIssue.title.trim()) {
-      addToast('Please enter an issue title', 'error');
+      addToast(t('fieldIssues.title_required'), 'error');
       return;
     }
     if (!project?.organization_id) {
-      addToast('Project organization missing', 'error');
+      addToast(t('fieldIssues.org_missing'), 'error');
       return;
     }
 
@@ -132,9 +134,9 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
       });
       setSelectedIssue(created);
       await load();
-      addToast('Issue created.', 'success');
+      addToast(t('fieldIssues.created'), 'success');
     } catch (e) {
-      addToast(e.message || 'Error creating issue', 'error');
+      addToast(e.message || t('fieldIssues.create_error'), 'error');
     } finally {
       setIsCreating(false);
     }
@@ -156,7 +158,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <div>
             <h2 className={embedded ? 'text-base font-semibold text-slate-900' : 'text-xl font-bold text-slate-900'}>
-              Field issues
+              {t('collaboration.field_issues')}
             </h2>
           </div>
           <div className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 p-1">
@@ -175,7 +177,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
                 }`}
                 aria-pressed={statusFilter === option.key}
               >
-                {option.label}
+                {t(option.labelKey)}
               </button>
             ))}
           </div>
@@ -185,7 +187,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
           onClick={() => setShowCreate(true)}
           className="app-action-primary px-3 py-1.5 text-xs font-semibold rounded-lg shrink-0"
         >
-          + New issue
+          {t('fieldIssues.new_issue_button')}
         </button>
       </div>
 
@@ -197,14 +199,14 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
             </div>
           ) : issues.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center py-8 px-2">
-              <p className="text-sm font-medium text-slate-700">No issues</p>
-              <p className="text-xs text-slate-500 mt-1">Log site problems for triage and follow-up.</p>
+              <p className="text-sm font-medium text-slate-700">{t('fieldIssues.no_issues')}</p>
+              <p className="text-xs text-slate-500 mt-1">{t('fieldIssues.no_issues_hint')}</p>
               <button
                 type="button"
                 onClick={() => setShowCreate(true)}
                 className="mt-3 text-xs font-medium text-blue-600 hover:underline"
               >
-                Create first issue
+                {t('fieldIssues.create_first')}
               </button>
             </div>
           ) : (
@@ -241,7 +243,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
         <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/20 flex items-center justify-center z-50 p-4">
           <div className="app-card max-w-md w-full shadow-2xl">
             <div className="p-4 border-b border-slate-200 flex justify-between items-center">
-              <h3 className="font-bold text-slate-900">New field issue</h3>
+              <h3 className="font-bold text-slate-900">{t('fieldIssues.new_issue')}</h3>
               <button type="button" onClick={() => setShowCreate(false)} className="text-slate-400">
                 <Icon path="M6 18L18 6M6 6l12 12" className="w-5 h-5" />
               </button>
@@ -249,13 +251,13 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
             <div className="p-4 space-y-3">
               <input
                 type="text"
-                placeholder="Title *"
+                placeholder={t('fieldIssues.title_placeholder')}
                 value={newIssue.title}
                 onChange={(e) => setNewIssue({ ...newIssue, title: e.target.value })}
                 className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg"
               />
               <textarea
-                placeholder="What happened on site?"
+                placeholder={t('fieldIssues.description_placeholder')}
                 value={newIssue.description}
                 onChange={(e) => setNewIssue({ ...newIssue, description: e.target.value })}
                 rows={3}
@@ -266,22 +268,22 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
                 onChange={(e) => setNewIssue({ ...newIssue, priority: e.target.value })}
                 className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg"
               >
-                <option value="Low">Low</option>
-                <option value="Medium">Medium</option>
-                <option value="High">High</option>
-                <option value="Critical">Critical</option>
+                <option value="Low">{t('fieldIssues.priority_low')}</option>
+                <option value="Medium">{t('fieldIssues.priority_medium')}</option>
+                <option value="High">{t('fieldIssues.priority_high')}</option>
+                <option value="Critical">{t('fieldIssues.priority_critical')}</option>
               </select>
               <DateDropdown
                 value={newIssue.dueDate}
                 onChange={(v) => setNewIssue({ ...newIssue, dueDate: v })}
-                label="Due date"
+                label={t('fieldIssues.due_date')}
               />
               <select
                 value={newIssue.assigned_to_user_id}
                 onChange={(e) => setNewIssue({ ...newIssue, assigned_to_user_id: e.target.value })}
                 className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg"
               >
-                <option value="">Assign to…</option>
+                <option value="">{t('fieldIssues.assign_to')}</option>
                 {assigneeOptions.map((opt) => (
                   <option key={opt.userId} value={opt.userId}>
                     {opt.label}
@@ -295,7 +297,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
                 onClick={() => setShowCreate(false)}
                 className="px-3 py-2 text-sm text-slate-600 bg-slate-100 rounded-lg"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
@@ -303,7 +305,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
                 disabled={isCreating}
                 className="px-3 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg disabled:opacity-50"
               >
-                {isCreating ? 'Creating…' : 'Create'}
+                {isCreating ? t('fieldIssues.creating') : t('fieldIssues.create')}
               </button>
             </div>
           </div>

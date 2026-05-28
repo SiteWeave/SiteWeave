@@ -125,8 +125,8 @@ export default function AppShell({ session }) {
           </div>
         </aside>
 
-        <div className="flex flex-col min-h-screen">
-          <header className="lg:hidden bg-white/95 border-b border-slate-200 backdrop-blur-xs px-4 py-2 space-y-2">
+        <div className="flex flex-col min-h-0 h-screen max-h-screen overflow-hidden">
+          <header className="lg:hidden shrink-0 bg-white/95 border-b border-slate-200 backdrop-blur-xs px-4 py-2 space-y-2">
             <nav className="flex items-center gap-1 flex-wrap">
               {PRIMARY_NAV_ITEMS.map((item) => (
                 <NavLink
@@ -158,8 +158,8 @@ export default function AppShell({ session }) {
             </div>
           </header>
 
-          <main className="flex-1 p-4 sm:p-6">
-            <div className="mx-auto max-w-[1600px]">
+          <main className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-4 sm:p-6 pb-24">
+            <div className="mx-auto max-w-[1600px] min-h-min">
               <Outlet />
             </div>
           </main>

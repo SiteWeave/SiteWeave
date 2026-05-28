@@ -202,20 +202,20 @@ export function formatRecurrencePattern(recurrence) {
  */
 export function validateRecurrence(recurrence) {
     if (!recurrence || !recurrence.pattern) {
-        return { valid: false, error: 'Recurrence pattern is required' };
+        return { valid: false, errorKey: 'calendar.recurrence_pattern_required' };
     }
 
     const validPatterns = ['daily', 'weekly', 'monthly', 'yearly', 'weekdays'];
     if (!validPatterns.includes(recurrence.pattern)) {
-        return { valid: false, error: 'Invalid recurrence pattern' };
+        return { valid: false, errorKey: 'calendar.recurrence_invalid_pattern' };
     }
 
     if (recurrence.endType === 'until' && !recurrence.endDate) {
-        return { valid: false, error: 'End date is required when ending on a date' };
+        return { valid: false, errorKey: 'calendar.recurrence_end_date_required' };
     }
 
     if (recurrence.endType === 'after' && (!recurrence.occurrences || recurrence.occurrences < 1)) {
-        return { valid: false, error: 'Valid occurrence count is required' };
+        return { valid: false, errorKey: 'calendar.recurrence_occurrences_required' };
     }
 
     return { valid: true };

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -23,6 +24,7 @@ import {
 } from '@siteweave/core-logic';
 
 function DashboardView() {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
@@ -420,10 +422,10 @@ function DashboardView() {
                         <div className="flex min-w-0 items-center gap-4">
                             <div className="min-w-0 shrink">
                                 <h1 className="app-section-title mb-0.5 text-2xl sm:text-[1.75rem]">
-                                    {isGuestOnly ? 'Your projects' : 'Project Dashboard'}
+                                    {isGuestOnly ? t('dashboard.guest_title') : t('dashboard.title')}
                                 </h1>
                                 <p className="app-section-subtitle truncate">
-                                    {isGuestOnly ? 'Projects shared with you' : 'Manage your construction projects'}
+                                    {isGuestOnly ? t('dashboard.guest_subtitle') : t('dashboard.subtitle')}
                                 </p>
                             </div>
                             <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -434,32 +436,32 @@ function DashboardView() {
                                         data-onboarding="new-project-btn"
                                         className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-primary"
                                     >
-                                        + New Project
+                                        + {t('dashboard.new_project')}
                                     </button>
                                     <button
                                         onClick={() => tryOpenTemplateModal()}
-                                        title="Create from template"
+                                        title={t('dashboard.create_from_template_title')}
                                         className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-secondary"
                                     >
-                                        Template
+                                        {t('dashboard.template')}
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => tryOpenMsImportModal()}
-                                        title="Import MS Project XML"
+                                        title={t('dashboard.import_ms_project_title')}
                                         className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-slate-700 text-white hover:bg-slate-800"
                                     >
-                                        Import XML
+                                        {t('dashboard.import_xml')}
                                     </button>
                                 </PermissionGuard>
                                 <PermissionGuard permission="can_manage_org_progress_reports">
                                     <button
                                         type="button"
                                         onClick={() => setShowProgressReportModal(true)}
-                                        title="Organization progress reports"
+                                        title={t('dashboard.org_reports_title')}
                                         className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-emerald-600 text-white hover:bg-emerald-700"
                                     >
-                                        Org reports
+                                        {t('dashboard.org_reports')}
                                     </button>
                                 </PermissionGuard>
                             </div>

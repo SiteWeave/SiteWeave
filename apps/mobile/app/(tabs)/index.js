@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, ScrollView, RefreshControl, FlatList } from 'react-native';
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { filterByOrganizationId } from '../../utils/orgScope';
@@ -24,6 +25,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useHaptics } from '../../hooks/useHaptics';
 
 export default function HomeScreen() {
+  const { t } = useTranslation();
   const { user, supabase, activeOrganization, isProjectCollaborator } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -262,9 +264,9 @@ export default function HomeScreen() {
               {activeOrganization?.name ? (
                 <Text style={styles.organizationName}>{activeOrganization.name}</Text>
               ) : isProjectCollaborator ? (
-                <Text style={styles.organizationName}>Projects shared with you</Text>
+                <Text style={styles.organizationName}>{t('mobile.guest_projects_shared')}</Text>
               ) : null}
-              <Text style={styles.greeting}>Hello, {getUserName()}</Text>
+              <Text style={styles.greeting}>{t('mobile.hello', { name: getUserName() })}</Text>
             </View>
             <View style={styles.headerButtons}>
               <PressableWithFade 
@@ -318,7 +320,7 @@ export default function HomeScreen() {
 
         {/* Section B: My Day */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>MY DAY</Text>
+          <Text style={styles.sectionTitle}>{t('mobile.my_day_section')}</Text>
           {myDayItems.length > 0 ? (
             <View>
               {myDayItems.map((item, index) => (
@@ -328,13 +330,13 @@ export default function HomeScreen() {
               ))}
             </View>
           ) : (
-            <Text style={styles.emptyText}>No items for today.</Text>
+            <Text style={styles.emptyText}>{t('mobile.no_items_today')}</Text>
           )}
         </View>
 
         {/* Section C: Projects List */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>PROJECTS ({projects.length})</Text>
+          <Text style={styles.sectionTitle}>{t('mobile.projects_count', { count: projects.length })}</Text>
           {projects.length > 0 ? (
             <FlatList
               data={projects}

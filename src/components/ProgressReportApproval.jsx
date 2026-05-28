@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import ProgressReportPreview from './ProgressReportPreview';
@@ -14,6 +15,7 @@ import {
  * Review and approve client-facing reports
  */
 function ProgressReportApproval({ onBack, onApprove }) {
+  const { t } = useTranslation();
   const { state } = useAppContext();
   const { addToast } = useToast();
   const [pendingReports, setPendingReports] = useState([]);
@@ -21,6 +23,15 @@ function ProgressReportApproval({ onBack, onApprove }) {
   const [isLoading, setIsLoading] = useState(true);
   const [rejectionReason, setRejectionReason] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const audienceLabels = useMemo(
+    () => ({
+      client: t('progressReports.audience_client'),
+      internal: t('progressReports.audience_internal'),
+      executive: t('progressReports.audience_executive'),
+    }),
+    [t]
+  );
 
   useEffect(() => {
     if (state.currentOrganization?.id) {
@@ -45,23 +56,23 @@ function ProgressReportApproval({ onBack, onApprove }) {
         setSelectedReport(pending[0]);
       }
     } catch (error) {
-      addToast('Error loading pending reports: ' + error.message, 'error');
+      addToast(t('progressReports.approval.load_error', { message: error.message }), 'error');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleApprove = async (scheduleId) => {
-    if (!confirm('Approve this report for sending?')) return;
+    if (!confirm(t('progressReports.approval.approve_confirm'))) return;
 
     setIsProcessing(true);
     try {
       await approveReport(supabaseClient, scheduleId, state.user.id);
-      addToast('Report approved', 'success');
+      addToast(t('progressReports.approval.approved'), 'success');
       loadPendingReports();
       if (onApprove) onApprove();
     } catch (error) {
-      addToast('Error approving report: ' + error.message, 'error');
+      addToast(t('progressReports.approval.approve_error', { message: error.message }), 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -69,39 +80,42 @@ function ProgressReportApproval({ onBack, onApprove }) {
 
   const handleReject = async (scheduleId) => {
     if (!rejectionReason.trim()) {
-      addToast('Please provide a rejection reason', 'error');
+      addToast(t('progressReports.approval.rejection_reason_required'), 'error');
       return;
     }
 
-    if (!confirm('Reject this report? It will need to be edited and resubmitted.')) return;
+    if (!confirm(t('progressReports.approval.reject_confirm'))) return;
 
     setIsProcessing(true);
     try {
       await rejectReport(supabaseClient, scheduleId, rejectionReason);
-      addToast('Report rejected', 'success');
+      addToast(t('progressReports.approval.rejected'), 'success');
       setRejectionReason('');
       loadPendingReports();
     } catch (error) {
-      addToast('Error rejecting report: ' + error.message, 'error');
+      addToast(t('progressReports.approval.reject_error', { message: error.message }), 'error');
     } finally {
       setIsProcessing(false);
     }
   };
 
+  const formatAudience = (audienceType) =>
+    audienceLabels[audienceType] || audienceType;
+
   if (isLoading) {
-    return <LoadingSpinner text="Loading pending reports..." />;
+    return <LoadingSpinner text={`${t('common.loading')}...`} />;
   }
 
   if (pendingReports.length === 0) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500 mb-4">No reports pending approval</p>
+        <p className="text-gray-500 mb-4">{t('progressReports.approval.no_pending')}</p>
         {onBack && (
           <button
             onClick={onBack}
             className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
           >
-            Back
+            {t('progressReports.approval.back')}
           </button>
         )}
       </div>
@@ -109,14 +123,16 @@ function ProgressReportApproval({ onBack, onApprove }) {
   }
 
   const currentReport = selectedReport || pendingReports[0];
+  const recipientEmails =
+    currentReport.progress_report_recipients?.map((r) => r.email).join(', ') || '—';
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Approve Reports</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{t('progressReports.approval.title')}</h2>
           <p className="text-gray-600 mt-1">
-            {pendingReports.length} report(s) pending approval
+            {pendingReports.length} {t('progressReports.status_pending')}
           </p>
         </div>
         {onBack && (
@@ -124,7 +140,7 @@ function ProgressReportApproval({ onBack, onApprove }) {
             onClick={onBack}
             className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
           >
-            ← Back
+            ← {t('common.back')}
           </button>
         )}
       </div>
@@ -133,7 +149,7 @@ function ProgressReportApproval({ onBack, onApprove }) {
         {/* Report List */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Pending Reports</h3>
+            <h3 className="font-semibold text-gray-900 mb-3">{t('progressReports.approval.title')}</h3>
             <div className="space-y-2">
               {pendingReports.map((report) => (
                 <button
@@ -147,7 +163,10 @@ function ProgressReportApproval({ onBack, onApprove }) {
                 >
                   <p className="font-medium text-sm text-gray-900">{report.name}</p>
                   <p className="text-xs text-gray-500 mt-1">
-                    {report.report_audience_type} • {report.progress_report_recipients?.length || 0} recipients
+                    {formatAudience(report.report_audience_type)} •{' '}
+                    {t('progressReports.recipients_count', {
+                      count: report.progress_report_recipients?.length || 0,
+                    })}
                   </p>
                 </button>
               ))}
@@ -162,10 +181,13 @@ function ProgressReportApproval({ onBack, onApprove }) {
             
             <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
               <p className="text-sm text-yellow-800">
-                <strong>Recipients:</strong> {currentReport.progress_report_recipients?.map(r => r.email).join(', ') || 'None'}
+                <strong>{t('progressReports.builder.recipients')}:</strong> {recipientEmails}
               </p>
               <p className="text-sm text-yellow-800 mt-1">
-                <strong>Audience:</strong> {currentReport.report_audience_type}
+                {formatAudience(currentReport.report_audience_type)} •{' '}
+                {t('progressReports.recipients_count', {
+                  count: currentReport.progress_report_recipients?.length || 0,
+                })}
               </p>
             </div>
 
@@ -179,14 +201,14 @@ function ProgressReportApproval({ onBack, onApprove }) {
             <div className="mt-6 pt-6 border-t border-gray-200 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Rejection Reason (if rejecting)
+                  {t('progressReports.approval.rejection_reason')}
                 </label>
                 <textarea
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                  placeholder="Provide feedback for the report creator..."
+                  placeholder={t('progressReports.builder.message_placeholder')}
                 />
               </div>
 
@@ -196,14 +218,18 @@ function ProgressReportApproval({ onBack, onApprove }) {
                   disabled={isProcessing}
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
                 >
-                  {isProcessing ? 'Processing...' : '✓ Approve'}
+                  {isProcessing
+                    ? `${t('common.loading')}...`
+                    : `✓ ${t('progressReports.approval.approve')}`}
                 </button>
                 <button
                   onClick={() => handleReject(currentReport.id)}
                   disabled={isProcessing || !rejectionReason.trim()}
                   className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                 >
-                  {isProcessing ? 'Processing...' : '✗ Reject'}
+                  {isProcessing
+                    ? `${t('common.loading')}...`
+                    : `✗ ${t('progressReports.approval.reject')}`}
                 </button>
               </div>
             </div>

@@ -1,5 +1,6 @@
 import { View, Text, StyleSheet, ScrollView, SectionList, FlatList } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../../context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
@@ -22,6 +23,7 @@ import TaskDetailModal from '../../../components/TaskDetailModal';
 import ProjectCollaborationPanel from '../../../components/ProjectCollaborationPanel';
 
 export default function ProjectDetailScreen() {
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { supabase, activeOrganization, syncPulse } = useAuth();
@@ -291,7 +293,7 @@ export default function ProjectDetailScreen() {
       sections.push({ title: 'Late', data: late });
     }
     if (todayTasks.length > 0) {
-      sections.push({ title: 'Today', data: todayTasks });
+      sections.push({ title: t('common.today'), data: todayTasks });
     }
     if (upcoming.length > 0) {
       sections.push({ title: 'Upcoming', data: upcoming });
@@ -500,7 +502,7 @@ export default function ProjectDetailScreen() {
     return (
       <View style={[styles.safeArea, { paddingTop: insets.top }]}>
         <View style={styles.loadingContainer}>
-          <Text>Loading...</Text>
+          <Text>{t('mobile.loading_project')}</Text>
         </View>
       </View>
     );
@@ -554,6 +556,7 @@ export default function ProjectDetailScreen() {
         <View style={styles.projectHeader}>
           <Text style={styles.projectTitle}>{project.name}</Text>
           <View style={styles.progressContainer}>
+            <Text style={styles.progressLabel}>{t('mobile.progress_label')}</Text>
             <View style={styles.progressBar}>
               <View style={[styles.progressFill, { width: `${progress}%` }]} />
             </View>
@@ -569,7 +572,7 @@ export default function ProjectDetailScreen() {
             activeOpacity={0.7}
           >
             <Text style={[styles.tabText, activeTab === 'tasks' && styles.tabTextActive]}>
-              Tasks
+              {t('mobile.project_tasks_tab')}
             </Text>
           </PressableWithFade>
           <PressableWithFade
@@ -578,7 +581,7 @@ export default function ProjectDetailScreen() {
             activeOpacity={0.7}
           >
             <Text style={[styles.tabText, activeTab === 'updates' && styles.tabTextActive]}>
-              Updates
+              {t('mobile.project_updates_tab')}
             </Text>
           </PressableWithFade>
           <PressableWithFade
@@ -587,7 +590,7 @@ export default function ProjectDetailScreen() {
             activeOpacity={0.7}
           >
             <Text style={[styles.tabText, activeTab === 'details' && styles.tabTextActive]}>
-              Details
+              {t('mobile.project_details_tab')}
             </Text>
           </PressableWithFade>
         </View>
@@ -610,7 +613,7 @@ export default function ProjectDetailScreen() {
                 />
               ) : (
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No tasks for this project.</Text>
+                  <Text style={styles.emptyText}>{t('mobile.no_tasks')}</Text>
                 </View>
               )}
             </View>
@@ -726,6 +729,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  progressLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
   },
   progressBar: {
     flex: 1,

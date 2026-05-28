@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import {
@@ -40,6 +41,7 @@ function WeatherImpactModal({
     onClose,
     onApplied,
 }) {
+    const { t } = useTranslation();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const user = state.user;
@@ -65,7 +67,7 @@ function WeatherImpactModal({
             setImpacts(rows);
         } catch (e) {
             console.error(e);
-            addToast(e.message || 'Failed to load impacts', 'error');
+            addToast(e.message || t('weather.load_failed'), 'error');
         } finally {
             setLoading(false);
         }
@@ -126,13 +128,13 @@ function WeatherImpactModal({
         const previewRows = [
             ...directTaskUpdates.slice(0, 3).map((row) => ({
                 id: row.taskId,
-                label: taskById.get(row.taskId)?.text || 'Task',
+                label: taskById.get(row.taskId)?.text || t('weather.task_label'),
                 before: `${taskById.get(row.taskId)?.start_date || '—'} to ${taskById.get(row.taskId)?.due_date || '—'}`,
                 after: `${row.start_date || taskById.get(row.taskId)?.start_date || '—'} to ${row.due_date || taskById.get(row.taskId)?.due_date || '—'}`,
             })),
             ...directPhaseUpdates.slice(0, 2).map((row) => ({
                 id: row.phaseId,
-                label: `Phase: ${phaseById.get(row.phaseId)?.name || 'Phase'}`,
+                label: t('weather.phase_label', { name: phaseById.get(row.phaseId)?.name || t('weather.phase_fallback') }),
                 before: `${phaseById.get(row.phaseId)?.start_date || '—'} to ${phaseById.get(row.phaseId)?.end_date || '—'}`,
                 after: `${row.start_date || phaseById.get(row.phaseId)?.start_date || '—'} to ${row.end_date || phaseById.get(row.phaseId)?.end_date || '—'}`,
             })),
@@ -157,24 +159,24 @@ function WeatherImpactModal({
             <button
                 type="button"
                 onClick={() => {
-                    const t = localDateIso();
-                    setStartDate(t);
-                    setEndDate(t);
+                    const todayIso = localDateIso();
+                    setStartDate(todayIso);
+                    setEndDate(todayIso);
                 }}
                 className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
-                Today
+                {t('common.today')}
             </button>
             <button
                 type="button"
                 onClick={() => {
-                    const t = localDateIso();
-                    setStartDate((s) => s || t);
-                    setEndDate(addDaysIso(t, 7) || t);
+                    const todayIso = localDateIso();
+                    setStartDate((s) => s || todayIso);
+                    setEndDate(addDaysIso(todayIso, 7) || todayIso);
                 }}
                 className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
-                +1 week
+                {t('common.plus_one_week')}
             </button>
             <button
                 type="button"
@@ -185,7 +187,7 @@ function WeatherImpactModal({
                 }}
                 className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
             >
-                +2 weeks
+                {t('common.plus_two_weeks')}
             </button>
         </>
     );
@@ -275,11 +277,11 @@ function WeatherImpactModal({
         e.preventDefault();
         const dl = startDate && endDate ? computedDaysLost : 1;
         if (!title.trim()) {
-            addToast('Please enter a title.', 'warning');
+            addToast(t('weather.title_required'), 'warning');
             return;
         }
         if (applyScheduleShift && (!startDate || !endDate)) {
-            addToast('Provide both start and end dates to apply a schedule shift.', 'warning');
+            addToast(t('weather.dates_required'), 'warning');
             return;
         }
         if (
@@ -287,10 +289,7 @@ function WeatherImpactModal({
             suggestedSelection.selectedTaskIds.length === 0 &&
             suggestedSelection.selectedPhaseIds.length === 0
         ) {
-            addToast(
-                'No tasks or phases are scheduled on or after the impact start date. Adjust dates or log without schedule shift.',
-                'warning'
-            );
+            addToast(t('weather.no_scheduled_items'), 'warning');
             return;
         }
 
@@ -346,8 +345,8 @@ function WeatherImpactModal({
 
                 addToast(
                     shiftCounts.taskCount > 0 || shiftCounts.phaseCount > 0
-                        ? `Impact updated. Schedule adjusted: ${shiftCounts.taskCount} task(s), ${shiftCounts.phaseCount} phase(s).`
-                        : 'Impact updated.',
+                        ? t('weather.schedule_applied', { count: shiftCounts.taskCount + shiftCounts.phaseCount })
+                        : t('weather.impact_updated'),
                     'success'
                 );
             } else {
@@ -391,11 +390,11 @@ function WeatherImpactModal({
                     );
 
                     addToast(
-                        `Schedule updated: ${shiftCounts.taskCount} task(s), ${shiftCounts.phaseCount} phase(s).`,
+                        t('weather.schedule_applied', { count: shiftCounts.taskCount + shiftCounts.phaseCount }),
                         'success'
                     );
                 } else {
-                    addToast('Weather impact logged.', 'success');
+                    addToast(t('weather.impact_logged'), 'success');
                 }
             }
 
@@ -410,7 +409,7 @@ function WeatherImpactModal({
             onClose?.();
         } catch (err) {
             console.error(err);
-            addToast(err.message || 'Failed to save impact', 'error');
+            addToast(err.message || t('weather.save_failed'), 'error');
             onApplied?.();
         } finally {
             setSaving(false);
@@ -419,7 +418,7 @@ function WeatherImpactModal({
 
     const handleDeleteImpact = async () => {
         if (!editingImpact) return;
-        if (!window.confirm('Delete this weather delay? This may shift schedule dates back.')) return;
+        if (!window.confirm(t('weather.delete_confirm'))) return;
         setSaving(true);
         try {
             const oldDaysLost = Number(editingImpact.days_lost || 0);
@@ -434,15 +433,15 @@ function WeatherImpactModal({
             await deleteWeatherImpact(supabaseClient, editingImpact.id);
             addToast(
                 shiftCounts.taskCount > 0 || shiftCounts.phaseCount > 0
-                    ? `Impact deleted. Schedule adjusted: ${shiftCounts.taskCount} task(s), ${shiftCounts.phaseCount} phase(s).`
-                    : 'Impact deleted.',
+                    ? t('weather.schedule_applied', { count: shiftCounts.taskCount + shiftCounts.phaseCount })
+                    : t('weather.impact_deleted'),
                 'success'
             );
             onApplied?.();
             onClose?.();
         } catch (err) {
             console.error(err);
-            addToast(err.message || 'Failed to delete impact', 'error');
+            addToast(err.message || t('weather.delete_failed'), 'error');
             onApplied?.();
         } finally {
             setSaving(false);
@@ -454,13 +453,13 @@ function WeatherImpactModal({
             <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-xl">
                 <div className="border-b border-gray-200 px-5 py-4 flex items-center justify-between">
                     <h2 className="text-lg font-semibold text-gray-900">
-                        {editingImpact ? 'Edit weather / schedule impact' : 'Weather / schedule impact'}
+                        {editingImpact ? t('weather.impact_edit_title') : t('weather.impact_title')}
                     </h2>
                     <button
                         type="button"
                         onClick={onClose}
                         className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"
-                        aria-label="Close"
+                        aria-label={t('common.close')}
                     >
                         ✕
                     </button>
@@ -476,33 +475,32 @@ function WeatherImpactModal({
                             <form onSubmit={handleSubmit} className="space-y-4">
                                 {editingImpact && (
                                     <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                                        Editing this delay will adjust the schedule by the day-difference. Deleting will
-                                        reverse its applied shift.
+                                        {t('weather.editing_warning')}
                                     </p>
                                 )}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Title</label>
+                                    <label className="block text-sm font-medium text-gray-700">{t('weather.impact_title_label')}</label>
                                     <input
                                         type="text"
                                         value={title}
                                         onChange={(ev) => setTitle(ev.target.value)}
                                         className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                                        placeholder="e.g. Heavy rain — site closed"
+                                        placeholder={t('weather.impact_title_placeholder')}
                                         required
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Details (optional)</label>
+                                    <label className="block text-sm font-medium text-gray-700">{t('weather.details_optional')}</label>
                                     <textarea
                                         value={description}
                                         onChange={(ev) => setDescription(ev.target.value)}
                                         rows={3}
                                         className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                                        placeholder="What was affected and how…"
+                                        placeholder={t('weather.impact_description_placeholder')}
                                     />
                                 </div>
                                 <DateRangePicker
-                                    label="Impact dates"
+                                    label={t('weather.impact_dates')}
                                     startValue={startDate}
                                     endValue={endDate}
                                     onChange={({ start, end }) => {
@@ -515,16 +513,15 @@ function WeatherImpactModal({
                                 {startDate && endDate ? (
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700">
-                                            Business days lost (from date range)
+                                            {t('weather.business_days_lost')}
                                         </label>
                                         <p className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-900">
-                                            {computedDaysLost} day{computedDaysLost !== 1 ? 's' : ''}
+                                            {t(computedDaysLost === 1 ? 'weather.days_lost_one' : 'weather.days_lost_other', { count: computedDaysLost })}
                                         </p>
                                     </div>
                                 ) : (
                                     <p className="text-xs text-gray-500">
-                                        Set start and end dates to record business days lost (Mon–Fri, US federal
-                                        holidays excluded; inclusive).
+                                        {t('weather.business_days_hint')}
                                     </p>
                                 )}
 
@@ -535,12 +532,11 @@ function WeatherImpactModal({
                                             checked={applyScheduleShift}
                                             onChange={(ev) => setApplyScheduleShift(ev.target.checked)}
                                         />
-                                        Apply schedule shift now (shift incomplete tasks from impact start forward)
+                                        {t('weather.apply_schedule_shift')}
                                     </label>
                                     {applyScheduleShift && (
                                         <p className="mt-2 text-xs text-gray-600">
-                                            Tasks and phases scheduled on or after the impact start date move by the
-                                            business days lost above. Dependency cascade is not used (uniform shift).
+                                            {t('weather.schedule_shift_hint')}
                                         </p>
                                     )}
                                 </div>
@@ -548,23 +544,20 @@ function WeatherImpactModal({
                                 {applyScheduleShift && (
                                     <>
                                         <p className="rounded border border-blue-100 bg-blue-50 p-2 text-xs text-blue-800">
-                                            Will shift dates for:
-                                            {' '}
-                                            {suggestedSelection.selectedTaskIds.length}
-                                            {' '}
-                                            task(s),
-                                            {' '}
-                                            {suggestedSelection.selectedPhaseIds.length}
-                                            {' '}
-                                            phase(s) (downstream from impact start).
+                                            {t('weather.will_shift_dates', {
+                                                tasks: suggestedSelection.selectedTaskIds.length,
+                                                phases: suggestedSelection.selectedPhaseIds.length,
+                                            })}
                                         </p>
                                         <p className="text-xs text-gray-600">
-                                            Preview: {preview.directTasks} task date row(s), {preview.directPhases} phase
-                                            row(s).
+                                            {t('weather.preview_summary', {
+                                                tasks: preview.directTasks,
+                                                phases: preview.directPhases,
+                                            })}
                                         </p>
                                         {preview.previewRows.length > 0 && (
                                             <div className="rounded border border-gray-200 bg-white p-2">
-                                                <p className="mb-1 text-xs font-medium text-gray-700">Date preview</p>
+                                                <p className="mb-1 text-xs font-medium text-gray-700">{t('weather.date_preview')}</p>
                                                 <ul className="space-y-1 text-xs text-gray-600">
                                                     {preview.previewRows.map((row) => (
                                                         <li key={row.id}>
@@ -589,7 +582,7 @@ function WeatherImpactModal({
                                             disabled={saving}
                                             className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
                                         >
-                                            Delete impact
+                                            {t('weather.delete_impact')}
                                         </button>
                                     )}
                                     <button
@@ -597,22 +590,22 @@ function WeatherImpactModal({
                                         onClick={onClose}
                                         className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                                     >
-                                        Cancel
+                                        {t('common.cancel')}
                                     </button>
                                     <button
                                         type="submit"
                                         disabled={saving}
                                         className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
                                     >
-                                        {saving ? 'Saving…' : editingImpact ? 'Update impact' : 'Save impact'}
+                                        {saving ? t('weather.saving') : editingImpact ? t('weather.update_impact') : t('weather.save_impact')}
                                     </button>
                                 </div>
                             </form>
 
                             <div className="border-t border-gray-200 pt-4">
-                                <h3 className="text-sm font-semibold text-gray-800 mb-2">Recent impacts</h3>
+                                <h3 className="text-sm font-semibold text-gray-800 mb-2">{t('weather.previous_impacts')}</h3>
                                 {impacts.length === 0 ? (
-                                    <p className="text-xs text-gray-500">None yet.</p>
+                                    <p className="text-xs text-gray-500">{t('weather.no_impacts')}</p>
                                 ) : (
                                     <ul className="space-y-2 max-h-40 overflow-y-auto text-sm">
                                         {impacts.map((im) => (
@@ -631,8 +624,8 @@ function WeatherImpactModal({
                                             >
                                                 <div className="font-medium text-gray-900">{im.title}</div>
                                                 <div className="text-xs text-gray-600">
-                                                    {im.days_lost} day(s) lost
-                                                    {im.schedule_shift_applied ? ' · Schedule updated' : ' · Logged only'}
+                                                    {t('weather.impact_days_lost', { count: im.days_lost })}
+                                                    {im.schedule_shift_applied ? ` · ${t('weather.schedule_updated')}` : ` · ${t('weather.logged_only')}`}
                                                 </div>
                                             </li>
                                         ))}

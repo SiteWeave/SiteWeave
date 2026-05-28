@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -17,6 +18,7 @@ import Avatar from './Avatar';
  * Requires can_manage_team permission
  */
 function DirectoryManagementModal({ show, onClose }) {
+  const { t } = useTranslation();
   const { state } = useAppContext();
   const currentOrganization = state.currentOrganization;
   const user = state.user;
@@ -83,7 +85,7 @@ function DirectoryManagementModal({ show, onClose }) {
       setRoles(rolesData);
     } catch (error) {
       console.error('Error loading directory data:', error);
-      addToast('Failed to load organization members', 'error');
+      addToast(t('team.failed_load_members'), 'error');
     } finally {
       setLoading(false);
     }
@@ -155,15 +157,15 @@ function DirectoryManagementModal({ show, onClose }) {
   const handleInvite = async (e) => {
     e.preventDefault();
     if (!inviteData.email || !currentOrganization?.id) {
-      addToast('Email is required', 'error');
+      addToast(t('team.email_required'), 'error');
       return;
     }
     if (!inviteData.firstName) {
-      addToast('First name is required', 'error');
+      addToast(t('team.first_name_required'), 'error');
       return;
     }
     if (!inviteData.roleId) {
-      addToast('Role is required', 'error');
+      addToast(t('team.role_required'), 'error');
       return;
     }
 
@@ -171,7 +173,7 @@ function DirectoryManagementModal({ show, onClose }) {
     try {
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (!session) {
-        addToast('Not authenticated', 'error');
+        addToast(t('team.not_authenticated'), 'error');
         return;
       }
 
@@ -202,7 +204,7 @@ function DirectoryManagementModal({ show, onClose }) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        let errorMessage = 'Failed to send invitation';
+        let errorMessage = t('team.failed_send_invite');
         try {
           const errorJson = JSON.parse(errorText);
           errorMessage = errorJson.error || errorMessage;
@@ -218,11 +220,11 @@ function DirectoryManagementModal({ show, onClose }) {
 
       if (result.success) {
         if (result.emailSent) {
-          addToast('Personalized invitation sent successfully!', 'success');
+          addToast(t('team.invite_sent'), 'success');
         } else if (result.emailError) {
-          addToast(`Invitation created but email failed: ${result.emailError}. Share this link: ${result.setupUrl}`, 'warning');
+          addToast(t('team.failed_send_invite_detail', { message: `${result.emailError}. ${result.setupUrl}` }), 'warning');
         } else {
-          addToast('Invitation created successfully. Email service not configured.', 'warning');
+          addToast(t('team.invite_created_no_email'), 'warning');
         }
         // Reset form but keep default role (Member) if available
         const memberRole = roles.find(r => r.name === 'Member' || r.name === 'member');
@@ -235,11 +237,11 @@ function DirectoryManagementModal({ show, onClose }) {
         });
         loadData();
       } else {
-        addToast(result.error || 'Failed to send invitation', 'error');
+        addToast(result.error || t('team.failed_send_invite'), 'error');
       }
     } catch (error) {
       console.error('Error inviting user:', error);
-      addToast(`Failed to send invitation: ${error.message || 'Network error'}`, 'error');
+      addToast(t('team.failed_send_invite_detail', { message: error.message || 'Network error' }), 'error');
     } finally {
       setIsInviting(false);
     }
@@ -248,17 +250,17 @@ function DirectoryManagementModal({ show, onClose }) {
   const handleCreateUser = async (e) => {
     e.preventDefault();
     if (!createUserData.fullName || !createUserData.username || !createUserData.password || !currentOrganization?.id) {
-      addToast('Please fill in all required fields', 'error');
+      addToast(t('team.fill_required'), 'error');
       return;
     }
     if (!createUserData.roleId) {
-      addToast('Role is required', 'error');
+      addToast(t('team.role_required'), 'error');
       return;
     }
 
     // Validate PIN is 6 digits
     if (!/^\d{6}$/.test(createUserData.password)) {
-      addToast('PIN must be exactly 6 digits', 'error');
+      addToast(t('team.pin_must_6_digits'), 'error');
       return;
     }
 
@@ -266,7 +268,7 @@ function DirectoryManagementModal({ show, onClose }) {
     try {
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (!session) {
-        addToast('Not authenticated', 'error');
+        addToast(t('team.not_authenticated'), 'error');
         return;
       }
 
@@ -299,7 +301,7 @@ function DirectoryManagementModal({ show, onClose }) {
           username: createUserData.username,
           password: createUserData.password,
           email: result.email || null,
-          roleName: selectedRole?.name || 'No role assigned'
+          roleName: selectedRole?.name || t('team.no_role_assigned')
         });
         
         // Reset form but keep default role (Member) if available, and generate new PIN
@@ -312,11 +314,11 @@ function DirectoryManagementModal({ show, onClose }) {
         });
         loadData();
       } else {
-        addToast(result.error || 'Failed to create user', 'error');
+        addToast(result.error || t('team.failed_create_user'), 'error');
       }
     } catch (error) {
       console.error('Error creating user:', error);
-      addToast('Failed to create user', 'error');
+      addToast(t('team.failed_create_user'), 'error');
     } finally {
       setIsCreating(false);
     }
@@ -324,14 +326,14 @@ function DirectoryManagementModal({ show, onClose }) {
 
   const handleUpdateRole = async (userId) => {
     if (!newRoleId || !currentOrganization?.id) {
-      addToast('Please select a role', 'error');
+      addToast(t('team.select_role_error'), 'error');
       return;
     }
 
     try {
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (!session) {
-        addToast('Not authenticated', 'error');
+        addToast(t('team.not_authenticated'), 'error');
         return;
       }
 
@@ -354,28 +356,28 @@ function DirectoryManagementModal({ show, onClose }) {
       const result = await response.json();
 
       if (result.success) {
-        addToast('Role updated successfully', 'success');
+        addToast(t('team.role_updated_member'), 'success');
         setEditingUser(null);
         setNewRoleId('');
         loadData();
       } else {
-        addToast(result.error || 'Failed to update role', 'error');
+        addToast(result.error || t('team.failed_update_role'), 'error');
       }
     } catch (error) {
       console.error('Error updating role:', error);
-      addToast('Failed to update role', 'error');
+      addToast(t('team.failed_update_role'), 'error');
     }
   };
 
   const handleRemoveUser = async (userId) => {
-    if (!confirm('Are you sure you want to remove this user from the organization?')) {
+    if (!confirm(t('team.remove_confirm'))) {
       return;
     }
 
     try {
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (!session) {
-        addToast('Not authenticated', 'error');
+        addToast(t('team.not_authenticated'), 'error');
         return;
       }
 
@@ -397,14 +399,14 @@ function DirectoryManagementModal({ show, onClose }) {
       const result = await response.json();
 
       if (result.success) {
-        addToast('User removed successfully', 'success');
+        addToast(t('team.user_removed'), 'success');
         loadData();
       } else {
-        addToast(result.error || 'Failed to remove user', 'error');
+        addToast(result.error || t('team.failed_remove_user'), 'error');
       }
     } catch (error) {
       console.error('Error removing user:', error);
-      addToast('Failed to remove user', 'error');
+      addToast(t('team.failed_remove_user'), 'error');
     }
   };
 
@@ -412,10 +414,10 @@ function DirectoryManagementModal({ show, onClose }) {
 
   return (
     <PermissionGuard permission="can_manage_team">
-      <Modal show={show} onClose={onClose} title="Manage Organization Directory" size="large">
+      <Modal show={show} onClose={onClose} title={t('team.directory_title')} size="large">
         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-sm text-blue-800">
-            <strong>Organization Directory:</strong> Add or remove employees from your company account.
+            <strong>{t('team.directory_intro')}</strong> {t('team.directory_intro_desc')}
           </p>
         </div>
         {loading ? (
@@ -442,7 +444,7 @@ function DirectoryManagementModal({ show, onClose }) {
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
-                  Invite via Email
+                  {t('team.tab_invite_email')}
                 </button>
                 <button
                   onClick={() => setActiveTab('create')}
@@ -452,7 +454,7 @@ function DirectoryManagementModal({ show, onClose }) {
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
-                  Create Managed Account (no email)
+                  {t('team.tab_create_managed')}
                 </button>
               </nav>
             </div>
@@ -460,16 +462,16 @@ function DirectoryManagementModal({ show, onClose }) {
             {/* Invite via Email Tab */}
             {activeTab === 'invite' && (
               <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h3 className="font-semibold mb-4 text-gray-900">Invite via Email</h3>
+                <h3 className="font-semibold mb-4 text-gray-900">{t('team.invite_heading')}</h3>
                 <form onSubmit={handleInvite} className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        First Name <span className="text-red-500">*</span>
+                        {t('team.first_name')} <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
-                        placeholder="John"
+                        placeholder={t('team.placeholder_first')}
                         value={inviteData.firstName}
                         onChange={(e) => setInviteData({ ...inviteData, firstName: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
@@ -478,11 +480,11 @@ function DirectoryManagementModal({ show, onClose }) {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Last Name
+                        {t('team.last_name')}
                       </label>
                       <input
                         type="text"
-                        placeholder="Doe"
+                        placeholder={t('team.placeholder_last')}
                         value={inviteData.lastName}
                         onChange={(e) => setInviteData({ ...inviteData, lastName: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
@@ -491,11 +493,11 @@ function DirectoryManagementModal({ show, onClose }) {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email Address <span className="text-red-500">*</span>
+                      {t('team.email_address')} <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="email"
-                      placeholder="john.doe@example.com"
+                      placeholder={t('team.placeholder_email')}
                       value={inviteData.email}
                       onChange={(e) => setInviteData({ ...inviteData, email: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
@@ -504,11 +506,11 @@ function DirectoryManagementModal({ show, onClose }) {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone Number <span className="text-gray-400 text-xs">(Optional)</span>
+                      {t('team.phone_number')} <span className="text-gray-400 text-xs">{t('team.optional')}</span>
                     </label>
                     <input
                       type="tel"
-                      placeholder="(555) 123-4567"
+                      placeholder={t('team.placeholder_phone')}
                       value={inviteData.phone}
                       onChange={handlePhoneChange}
                       maxLength={14}
@@ -517,7 +519,7 @@ function DirectoryManagementModal({ show, onClose }) {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Select Role
+                      {t('team.select_role')}
                     </label>
                     <select
                       value={inviteData.roleId}
@@ -535,7 +537,7 @@ function DirectoryManagementModal({ show, onClose }) {
                     disabled={isInviting}
                     className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 font-medium"
                   >
-                    {isInviting ? 'Sending...' : 'Send Personalized Invite'}
+                    {isInviting ? t('team.sending') : t('team.send_invite')}
                   </button>
                 </form>
               </div>
@@ -544,15 +546,15 @@ function DirectoryManagementModal({ show, onClose }) {
             {/* Create Managed Account Tab */}
             {activeTab === 'create' && (
               <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h3 className="font-semibold mb-4 text-gray-900">Create Managed Account (no email)</h3>
+                <h3 className="font-semibold mb-4 text-gray-900">{t('team.create_heading')}</h3>
                 <form onSubmit={handleCreateUser} className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Full Name <span className="text-red-500">*</span>
+                      {t('team.full_name')} <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
-                      placeholder="John Doe"
+                      placeholder={t('team.placeholder_full_name')}
                       value={createUserData.fullName}
                       onChange={(e) => setCreateUserData({ ...createUserData, fullName: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
@@ -561,21 +563,21 @@ function DirectoryManagementModal({ show, onClose }) {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Username <span className="text-red-500">*</span>
+                      {t('team.username')} <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
-                      placeholder="john.doe"
+                      placeholder={t('team.placeholder_username')}
                       value={createUserData.username}
                       onChange={(e) => setCreateUserData({ ...createUserData, username: e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, '') })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 font-mono"
                       required
                     />
-                    <p className="text-xs text-gray-500 mt-1">Auto-suggested from name. Only letters, numbers, dots, and underscores.</p>
+                    <p className="text-xs text-gray-500 mt-1">{t('team.username_hint')}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Temporary PIN <span className="text-red-500">*</span>
+                      {t('team.temp_pin')} <span className="text-red-500">*</span>
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -588,16 +590,16 @@ function DirectoryManagementModal({ show, onClose }) {
                         type="button"
                         onClick={() => setCreateUserData(prev => ({ ...prev, password: generatePIN() }))}
                         className="px-3 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-sm"
-                        title="Generate new PIN"
+                        title={t('team.generate_pin')}
                       >
                         <Icon path="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" className="w-4 h-4" />
                       </button>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">Auto-generated 6-digit PIN. User will be required to change this on first login.</p>
+                    <p className="text-xs text-gray-500 mt-1">{t('team.pin_hint')}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Select Role
+                      {t('team.select_role')}
                     </label>
                     <select
                       value={createUserData.roleId}
@@ -615,7 +617,7 @@ function DirectoryManagementModal({ show, onClose }) {
                     disabled={isCreating}
                     className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 font-medium"
                   >
-                    {isCreating ? 'Creating...' : 'Create Account'}
+                    {isCreating ? t('team.creating') : t('team.create_account')}
                   </button>
                 </form>
               </div>
@@ -624,40 +626,40 @@ function DirectoryManagementModal({ show, onClose }) {
             {/* Organization Members List */}
             <div className="bg-white border border-gray-200 rounded-lg">
               <div className="p-4 border-b border-gray-200">
-                <h3 className="font-semibold">Organization Members ({users.length})</h3>
+                <h3 className="font-semibold">{t('team.members_heading', { count: users.length })}</h3>
               </div>
               <div className="divide-y divide-gray-200">
                 {users.length === 0 ? (
-                  <div className="p-6 text-center text-gray-500">No organization members yet</div>
+                  <div className="p-6 text-center text-gray-500">{t('team.no_org_members')}</div>
                 ) : (
                   users.map(member => (
                     <div key={member.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
                       <div className="flex items-center space-x-4 flex-1">
-                        <div className="shrink-0">
+                        <div className="flex-shrink-0">
                           {member.contacts?.avatar_url && !failedImages.has(member.id) ? (
                             <img
                               src={member.contacts.avatar_url}
-                              alt={member.contacts?.name || 'User'}
+                              alt={member.contacts?.name || t('common.user')}
                               className="w-10 h-10 rounded-full object-cover"
                               onError={() => handleImageError(member.id)}
                             />
                           ) : (
                             <Avatar 
-                              name={member.contacts?.name || 'User'} 
+                              name={member.contacts?.name || t('common.user')} 
                               size="md"
                             />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-gray-900">
-                            {member.contacts?.name || 'Unknown User'}
+                            {member.contacts?.name || t('team.unknown_user')}
                             {member.id === user.id && (
-                              <span className="ml-2 text-xs text-gray-500">(You)</span>
+                              <span className="ml-2 text-xs text-gray-500">({t('team.you')})</span>
                             )}
                           </div>
-                          <div className="text-sm text-gray-500">{member.contacts?.email || 'No email'}</div>
+                          <div className="text-sm text-gray-500">{member.contacts?.email || t('team.no_email')}</div>
                           <div className="text-xs text-gray-400">
-                            Role: {member.roles?.name || 'No role assigned'}
+                            {t('team.role_label')} {member.roles?.name || t('team.no_role_assigned')}
                           </div>
                         </div>
                       </div>
@@ -670,7 +672,7 @@ function DirectoryManagementModal({ show, onClose }) {
                               onChange={(e) => setNewRoleId(e.target.value)}
                               className="px-2 py-1 text-sm border border-gray-300 rounded-md"
                             >
-                              <option value="">Select Role</option>
+                              <option value="">{t('team.select_role')}</option>
                               {roles.map(role => (
                                 <option key={role.id} value={role.id}>{role.name}</option>
                               ))}
@@ -679,7 +681,7 @@ function DirectoryManagementModal({ show, onClose }) {
                               onClick={() => handleUpdateRole(member.id)}
                               className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
                             >
-                              Save
+                              {t('common.save')}
                             </button>
                             <button
                               onClick={() => {
@@ -688,7 +690,7 @@ function DirectoryManagementModal({ show, onClose }) {
                               }}
                               className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
                             >
-                              Cancel
+                              {t('common.cancel')}
                             </button>
                           </div>
                         ) : (
@@ -703,7 +705,7 @@ function DirectoryManagementModal({ show, onClose }) {
                                 className="px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded-md"
                                 disabled={member.id === user.id}
                               >
-                                Edit Role
+                                {t('team.edit_role_btn')}
                               </button>
                             )}
                             {member.id !== user.id && (
@@ -711,7 +713,7 @@ function DirectoryManagementModal({ show, onClose }) {
                                 onClick={() => handleRemoveUser(member.id)}
                                 className="px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-md"
                               >
-                                Remove
+                                {t('team.remove')}
                               </button>
                             )}
                           </>

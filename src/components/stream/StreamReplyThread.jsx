@@ -1,19 +1,9 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { formatRelativeTime } from '@siteweave/i18n';
 import { fetchStreamReplies, createStreamReply } from '@siteweave/core-logic';
 import { upsertById, removeById } from '@siteweave/core-logic';
 import { useToast } from '../../context/ToastContext';
-
-function formatWhen(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMins = Math.floor((now - d) / 60000);
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHrs = Math.floor(diffMins / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric' });
-}
 
 function initials(name) {
   if (!name) return '?';
@@ -27,6 +17,7 @@ export default function StreamReplyThread({
   supabaseClient,
   onReplyPosted,
 }) {
+  const { t } = useTranslation();
   const { addToast } = useToast();
   const [replies, setReplies] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
@@ -40,17 +31,17 @@ export default function StreamReplyThread({
       setReplies(rows);
     } catch (e) {
       console.error(e);
-      addToast('Could not load replies.', 'error');
+      addToast(t('stream.replies_load_error'), 'error');
     } finally {
       setLoading(false);
     }
-  }, [postId, supabaseClient, addToast]);
+  }, [postId, supabaseClient, addToast, t]);
 
   React.useEffect(() => {
     setLoading(true);
     load();
-    const t = setTimeout(() => inputRef.current?.focus(), 50);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(timer);
   }, [load]);
 
   React.useEffect(() => {
@@ -112,7 +103,7 @@ export default function StreamReplyThread({
       onReplyPosted?.();
     } catch (err) {
       console.error(err);
-      addToast(err.message || 'Failed to post reply.', 'error');
+      addToast(err.message || t('fieldIssues.comment_post_error'), 'error');
     } finally {
       setSending(false);
     }
@@ -134,7 +125,7 @@ export default function StreamReplyThread({
           ))}
         </div>
       ) : replies.length === 0 ? (
-        <p className="text-xs italic text-slate-400">Be the first to reply.</p>
+        <p className="text-xs italic text-slate-400">{t('stream.be_first_reply')}</p>
       ) : (
         replies.map((reply) => (
           <div key={reply.id} className="flex gap-2.5">
@@ -147,9 +138,9 @@ export default function StreamReplyThread({
             </span>
             <div className="min-w-0 flex-1 rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2">
               <p className="mb-0.5 text-[11px] text-slate-500">
-                <span className="font-medium text-slate-700">{reply.author?.name || 'Team member'}</span>
+                <span className="font-medium text-slate-700">{reply.author?.name || t('stream.team_member')}</span>
                 <span className="mx-1 text-slate-300">·</span>
-                {formatWhen(reply.created_at)}
+                {formatRelativeTime(reply.created_at, t)}
               </p>
               <p className="whitespace-pre-wrap text-sm text-slate-800">{reply.body}</p>
             </div>
@@ -164,7 +155,7 @@ export default function StreamReplyThread({
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Reply… (Enter to send)"
+          placeholder={t('stream.reply_placeholder')}
           className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         />
         <button
@@ -172,7 +163,7 @@ export default function StreamReplyThread({
           disabled={sending || !body.trim()}
           className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-40"
         >
-          {sending ? '…' : 'Reply'}
+          {sending ? '…' : t('stream.reply')}
         </button>
       </form>
     </div>

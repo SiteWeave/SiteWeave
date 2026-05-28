@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { getLocalizedProjectStatus } from '@siteweave/i18n';
 import { computeWeightedProjectProgressPercent } from '../utils/projectProgressRollup.js';
-import { getStatusColor, normalizeStatusDisplay } from '../utils/projectHelpers';
+import { getStatusColor } from '../utils/projectHelpers';
 import { supabaseClient } from '../context/AppContext';
 
 function ProjectProgressCard({ project }) {
+    const { t } = useTranslation();
     const [phases, setPhases] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -70,7 +73,7 @@ function ProjectProgressCard({ project }) {
     return (
         <div className="p-4 bg-white rounded-xl" style={{ boxShadow: '0px 4px 12px rgba(0,0,0,0.05)' }}>
             <div className="flex min-w-0 justify-between items-center mb-3 gap-2">
-                <h3 className="font-semibold text-sm text-gray-700 ui-ellipsis-1">Progress Status</h3>
+                <h3 className="font-semibold text-sm text-gray-700 ui-ellipsis-1">{t('build_path.progress_status')}</h3>
                 <span className="text-sm font-bold text-gray-900">{overallProgress}%</span>
             </div>
             {/* Progress Bar */}
@@ -87,11 +90,14 @@ function ProjectProgressCard({ project }) {
             <div className="flex min-w-0 items-center justify-between gap-2">
                 <span className="min-w-0 text-xs text-gray-500">
                     {phases.length > 0
-                        ? `${phases.length} phases • ${phases.filter((p) => p.progress === 100).length} complete`
+                        ? t('projectProgress.phases_complete_summary', {
+                            phaseCount: phases.length,
+                            completeCount: phases.filter((p) => p.progress === 100).length,
+                        })
                         : null}
                 </span>
                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${getStatusColor(project.status)}`}>
-                    {normalizeStatusDisplay(project.status) || 'No Status'}
+                    {getLocalizedProjectStatus(project.status, t) || t('projectProgress.no_status')}
                 </span>
             </div>
         </div>

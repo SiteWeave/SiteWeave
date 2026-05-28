@@ -70,14 +70,14 @@ function ProjectDetailsView() {
     const project = projects.find(p => p.id === state.selectedProjectId);
 
     const organizationDisplayName = useMemo(() => {
-        if (!project?.organization_id) return 'Your team';
+        if (!project?.organization_id) return t('projectDetail.your_team');
         if (
             state.currentOrganization?.id === project.organization_id &&
             state.currentOrganization?.name
         ) {
             return state.currentOrganization.name;
         }
-        return project.name || 'Your team';
+        return project.name || t('projectDetail.your_team');
     }, [
         project?.organization_id,
         project?.name,
@@ -565,7 +565,7 @@ function ProjectDetailsView() {
             .eq('id', project.id);
 
         if (error) {
-            addToast(`Could not update dependency mode: ${error.message}`, 'error');
+            addToast(t('projectDetail.dependency_mode_error', { message: error.message }), 'error');
             return;
         }
 
@@ -731,15 +731,15 @@ function ProjectDetailsView() {
         const rawPhone = String(task.contacts?.phone || fallbackContact?.phone || '').trim();
         const normalizedPhone = normalizeAssigneePhone(rawPhone, { defaultRegion: 'US' });
         if (!normalizedPhone.isValid) {
-            addToast('No valid phone on file.', 'warning');
+            addToast(t('sms.no_valid_phone'), 'warning');
             return;
         }
         if (task.assignee_sms_consent === 'confirmed') {
-            addToast('This number is already confirmed for SMS.', 'info');
+            addToast(t('sms.already_confirmed'), 'info');
             return;
         }
         if (task.assignee_sms_consent === 'opted_out') {
-            addToast('This number opted out of SMS.', 'warning');
+            addToast(t('sms.opted_out'), 'warning');
             return;
         }
         setPingingTaskId(task.id);
@@ -755,22 +755,22 @@ function ProjectDetailsView() {
             });
             const sent = !error && data?.sent;
             if (sent) {
-                addToast('Consent SMS sent. Assignee must reply YES before task SMS goes out.', 'success');
+                addToast(t('sms.consent_sent'), 'success');
                 const patch = { ...task, assignee_sms_consent: 'pending' };
                 replaceTaskRow(task.id, patch);
             } else {
                 const reason = data?.reason || error?.message || 'unknown';
                 addToast(
                     reason === 'rate_limited_7d'
-                        ? 'Consent SMS was sent recently; try again in a few days or use Resend after 24h.'
+                        ? t('sms.rate_limited_7d')
                         : reason === 'rate_limited_resend_24h'
-                          ? 'Resend is limited to once per 24 hours.'
-                          : `Could not send consent SMS (${reason}).`,
+                          ? t('sms.rate_limited_24h')
+                          : t('sms.consent_send_failed', { reason }),
                     'warning',
                 );
             }
         } catch (e) {
-            addToast(handleApiError(e, 'Could not send consent SMS'), 'error');
+            addToast(handleApiError(e, t('toast.could_not_send_consent_sms')), 'error');
         } finally {
             setPingingTaskId(null);
         }
@@ -785,7 +785,7 @@ function ProjectDetailsView() {
         const normalizedPhone = normalizeAssigneePhone(rawPhone, { defaultRegion: 'US' });
         const phone = normalizedPhone.isValid ? normalizedPhone.e164 : null;
         if ((!email || !email.includes('@')) && !phone) {
-            addToast('No email or valid phone on file for this assignee.', 'warning');
+            addToast(t('sms.no_contact'), 'warning');
             return;
         }
 
@@ -794,9 +794,9 @@ function ProjectDetailsView() {
         if (phone && task.assignee_sms_consent === 'confirmed') deliveryChannels.push('sms');
         if (deliveryChannels.length === 0) {
             if (phone && !(email && email.includes('@'))) {
-                addToast('SMS ping requires consent — use “SMS OK?” first.', 'warning');
+                addToast(t('sms.requires_consent'), 'warning');
             } else {
-                addToast('No email or valid phone on file for this assignee.', 'warning');
+                addToast(t('sms.no_contact'), 'warning');
             }
             return;
         }
@@ -815,7 +815,7 @@ function ProjectDetailsView() {
                 .gte('created_at', tenMinAgo);
             if (countErr) console.warn('ping cooldown check:', countErr.message);
             if ((count ?? 0) >= 1) {
-                addToast('Wait a few minutes before pinging again.', 'info');
+                addToast(t('toast.wait_before_ping'), 'info');
                 return;
             }
         }
@@ -911,33 +911,42 @@ function ProjectDetailsView() {
                 if (ch.email && ch.sms) {
                     const sid = manualReminderResult?.sms?.sid;
                     addToast(
-                        sid ? `Reminder sent by email and SMS (SID: ${sid}).` : 'Reminder sent by email and SMS.',
+                        sid
+                            ? t('toast.reminder_sent_email_sms_sid', { sid })
+                            : t('toast.reminder_sent_email_sms'),
                         'success',
                     );
                 } else if (ch.sms && !ch.email) {
                     const sid = manualReminderResult?.sms?.sid;
-                    addToast(sid ? `Reminder sent by SMS (SID: ${sid}).` : 'Reminder sent by SMS.', 'success');
+                    addToast(
+                        sid
+                            ? t('toast.reminder_sent_sms_sid', { sid })
+                            : t('toast.reminder_sent_sms'),
+                        'success',
+                    );
                 } else if (ch.email) {
-                    addToast('Reminder sent by email.', 'success');
+                    addToast(t('toast.reminder_sent_email'), 'success');
                 } else {
-                    addToast('Reminder could not be delivered on any channel.', 'warning');
+                    addToast(t('toast.reminder_not_delivered'), 'warning');
                 }
                 if (smsAsked && phone && !ch.sms) {
                     addToast(
-                        `SMS not sent: ${res.error || 'blocked, not configured, or Twilio error.'}`,
+                        t('toast.sms_not_sent', {
+                            reason: res.error || t('toast.sms_not_sent_default_reason'),
+                        }),
                         'warning',
                     );
                 }
                 if (!phone && rawPhone) {
-                    addToast('SMS skipped: assignee phone is not a valid number format.', 'warning');
+                    addToast(t('toast.sms_skipped_invalid_phone'), 'warning');
                 } else if (!phone && !rawPhone && emailAsked && ch.email) {
-                    addToast('SMS skipped: this assignee has no phone number on file.', 'info');
+                    addToast(t('toast.sms_skipped_no_phone'), 'info');
                 }
             } else {
-                addToast(res.error || 'Could not send reminder.', 'error');
+                addToast(res.error || t('toast.could_not_send_reminder'), 'error');
             }
         } catch (e) {
-            addToast(handleApiError(e, 'Could not send ping'), 'error');
+            addToast(handleApiError(e, t('toast.could_not_send_ping')), 'error');
         } finally {
             setPingingTaskId(null);
         }
@@ -2178,37 +2187,37 @@ function ProjectDetailsView() {
                         <button
                             onClick={() => setShowProjectModal(true)}
                             className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
-                            title="Edit project settings"
+                            title={t('projectDetail.edit_project_title')}
                         >
-                            Edit Project
+                            {t('projectDetail.edit_project')}
                         </button>
                     </PermissionGuard>
                     <button 
                         onClick={() => setShowShare(true)}
                         className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 transition-colors"
-                        title="Assign crew members from organization directory or invite guests"
+                        title={t('projectDetail.manage_crew_title')}
                     >
-                        + Manage Crew
+                        {t('projectDetail.manage_crew')}
                     </button>
                     <PermissionGuard permission="can_create_projects">
                         <button 
                             onClick={() => setShowSaveAsTemplateModal(true)}
                             className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
-                            title="Save this project structure as a reusable template"
+                            title={t('projectDetail.save_as_template_title')}
                         >
-                            Save as template
+                            {t('projectDetail.save_as_template')}
                         </button>
                     </PermissionGuard>
                     <PermissionGuard permission="can_manage_progress_reports">
                         <button 
                             onClick={() => setShowProgressReportModal(true)}
                             className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg shadow-xs hover:bg-green-700 transition-colors flex items-center gap-2"
-                            title="Schedule and manage progress reports"
+                            title={t('projectDetail.progress_reports_title')}
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                             </svg>
-                            Progress Reports
+                            {t('projectDetail.progress_reports')}
                         </button>
                     </PermissionGuard>
                 </div>
@@ -2285,7 +2294,7 @@ function ProjectDetailsView() {
                                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                             >
-                                Tasks ({Math.max(allTasks.length, ganttTasks.length)})
+                                {t('projectTabs.tasks', { count: Math.max(allTasks.length, ganttTasks.length) })}
                             </button>
                             <button
                                 onClick={() => setActiveTab('gantt')}
@@ -2295,7 +2304,7 @@ function ProjectDetailsView() {
                                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                             >
-                                Gantt
+                                {t('projectTabs.gantt')}
                             </button>
                             <button
                                 onClick={() => {
@@ -2308,7 +2317,7 @@ function ProjectDetailsView() {
                                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                             >
-                                Updates
+                                {t('projectTabs.updates')}
                                 {collaborationUnreadCount > 0 && activeTab !== 'updates' ? (
                                     <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
                                         {collaborationUnreadCount > 99 ? '99+' : collaborationUnreadCount}
@@ -2316,7 +2325,7 @@ function ProjectDetailsView() {
                                 ) : null}
                                 {fieldIssuesCount > 0 ? (
                                     <span className="text-[10px] font-normal text-gray-500">
-                                        · {fieldIssuesCount} issue{fieldIssuesCount === 1 ? '' : 's'}
+                                        {t(fieldIssuesCount === 1 ? 'projectTabs.issues_suffix_one' : 'projectTabs.issues_suffix_other', { count: fieldIssuesCount })}
                                     </span>
                                 ) : null}
                             </button>
@@ -2358,12 +2367,12 @@ function ProjectDetailsView() {
                             <div className="p-4 lg:p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="tasks-section">
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3" ref={toolbarMenuRef}>
                                     <div className="flex min-w-0 flex-wrap items-center gap-3">
-                                        <h2 className="text-xl font-bold">Tasks ({Math.max(allTasks.length, ganttTasks.length)})</h2>
+                                        <h2 className="text-xl font-bold">{t('projectTabs.tasks_heading', { count: Math.max(allTasks.length, ganttTasks.length) })}</h2>
                                         <div className="inline-flex rounded-full border border-gray-200 bg-gray-50 p-1">
                                             {[
-                                                { key: 'all', label: 'All' },
-                                                { key: 'pending', label: 'Open' },
-                                                { key: 'completed', label: 'Done' },
+                                                { key: 'all', labelKey: 'projectTabs.filter_all' },
+                                                { key: 'pending', labelKey: 'projectTabs.filter_open' },
+                                                { key: 'completed', labelKey: 'projectTabs.filter_done' },
                                             ].map((option) => (
                                                 <button
                                                     key={option.key}
@@ -2376,7 +2385,7 @@ function ProjectDetailsView() {
                                                     }`}
                                                     aria-pressed={taskFilter === option.key}
                                                 >
-                                                    {option.label}
+                                                    {t(option.labelKey)}
                                                 </button>
                                             ))}
                                         </div>
@@ -2385,8 +2394,8 @@ function ProjectDetailsView() {
                                                 type="button"
                                                 onClick={() => setToolbarMenu((current) => current === 'sort' ? null : 'sort')}
                                                 className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-xs hover:bg-gray-50 hover:text-gray-900"
-                                                title="Sort tasks"
-                                                aria-label="Sort tasks"
+                                                title={t('projectTabs.sort_tasks')}
+                                                aria-label={t('projectTabs.sort_tasks')}
                                                 aria-expanded={toolbarMenu === 'sort'}
                                             >
                                                 <Icon path="M3 6h13.5M3 12h9m-9 6h6m9-10.5 3 3m0 0 3-3m-3 3V3m0 18-3-3m3 3 3-3" className="h-4 w-4" />
@@ -2394,9 +2403,9 @@ function ProjectDetailsView() {
                                             {toolbarMenu === 'sort' && (
                                                 <div className="absolute left-0 top-12 z-20 w-44 rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
                                                     {[
-                                                        { key: 'due_date', label: 'Due Date' },
-                                                        { key: 'priority', label: 'Priority' },
-                                                        { key: 'name', label: 'Task Name' },
+                                                        { key: 'due_date', labelKey: 'projectTabs.sort_due_date' },
+                                                        { key: 'priority', labelKey: 'projectTabs.sort_priority' },
+                                                        { key: 'name', labelKey: 'projectTabs.sort_name' },
                                                     ].map((option) => (
                                                         <button
                                                             key={option.key}
@@ -2411,7 +2420,7 @@ function ProjectDetailsView() {
                                                                     : 'text-gray-700 hover:bg-gray-50'
                                                             }`}
                                                         >
-                                                            <span>{option.label}</span>
+                                                            <span>{t(option.labelKey)}</span>
                                                             {taskSort === option.key && <Icon path="M5 13l4 4L19 7" className="h-4 w-4" />}
                                                         </button>
                                                     ))}
@@ -2426,8 +2435,8 @@ function ProjectDetailsView() {
                                                     type="button"
                                                     onClick={() => setToolbarMenu((current) => current === 'settings' ? null : 'settings')}
                                                     className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-xs hover:bg-gray-50 hover:text-gray-900"
-                                                    title="Task settings"
-                                                    aria-label="Task settings"
+                                                    title={t('projectTabs.task_settings')}
+                                                    aria-label={t('projectTabs.task_settings')}
                                                     aria-expanded={toolbarMenu === 'settings'}
                                                 >
                                                     <Icon path="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z M15 12a3 3 0 11-6 0 3 3 0 016 0z" className="h-4 w-4" />
@@ -2435,7 +2444,7 @@ function ProjectDetailsView() {
                                                 {toolbarMenu === 'settings' && (
                                                     <div className="absolute right-0 top-12 z-20 w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
                                                         <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                                            Dependency scheduling
+                                                            {t('projectDetail.dependency_scheduling')}
                                                         </div>
                                                         <button
                                                             type="button"
@@ -2446,7 +2455,7 @@ function ProjectDetailsView() {
                                                                     : 'text-gray-700 hover:bg-gray-50'
                                                             }`}
                                                         >
-                                                            <span>Auto-shift dates</span>
+                                                            <span>{t('projectDetail.auto_shift_dates')}</span>
                                                             {projectDependencyMode === 'auto' && <Icon path="M5 13l4 4L19 7" className="h-4 w-4" />}
                                                         </button>
                                                         <button
@@ -2458,7 +2467,7 @@ function ProjectDetailsView() {
                                                                     : 'text-gray-700 hover:bg-gray-50'
                                                             }`}
                                                         >
-                                                            <span>Manual with warnings</span>
+                                                            <span>{t('projectDetail.manual_with_warnings')}</span>
                                                             {projectDependencyMode === 'manual' && <Icon path="M5 13l4 4L19 7" className="h-4 w-4" />}
                                                         </button>
                                                     </div>
@@ -2473,7 +2482,7 @@ function ProjectDetailsView() {
                                                     className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-xs hover:bg-gray-50"
                                                     aria-expanded={toolbarMenu === 'actions'}
                                                 >
-                                                    <span>Actions</span>
+                                                    <span>{t('projectDetail.actions')}</span>
                                                     <Icon path="M6 9l6 6 6-6" className="h-4 w-4" />
                                                 </button>
                                                 {toolbarMenu === 'actions' && (
@@ -2486,7 +2495,7 @@ function ProjectDetailsView() {
                                                             }}
                                                             className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                                                         >
-                                                            Manage phases
+                                                            {t('projects.manage_phases')}
                                                         </button>
                                                         <button
                                                             type="button"
@@ -2496,7 +2505,7 @@ function ProjectDetailsView() {
                                                             }}
                                                             className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                                                         >
-                                                            Import MS Project XML
+                                                            {t('projectDetail.import_ms_project')}
                                                         </button>
                                                         <button
                                                             type="button"
@@ -2507,14 +2516,14 @@ function ProjectDetailsView() {
                                                             }}
                                                             className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                                                         >
-                                                            Weather / schedule impact
+                                                            {t('projectDetail.weather_schedule_impact')}
                                                         </button>
                                                     </div>
                                                 )}
                                             </div>
                                         </PermissionGuard>
                                         <PermissionGuard permission="can_create_tasks">
-                                            <button onClick={() => setShowTaskModal(true)} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full shadow-xs hover:bg-blue-700">+ New Task</button>
+                                            <button onClick={() => setShowTaskModal(true)} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full shadow-xs hover:bg-blue-700">{t('projectDetail.new_task')}</button>
                                         </PermissionGuard>
                                     </div>
                                 </div>
@@ -2587,7 +2596,7 @@ function ProjectDetailsView() {
                                                                     </ul>
                                                                 ) : (
                                                                     <p className="text-sm text-gray-400 px-3 py-2 bg-white">
-                                                                        No tasks in this phase.
+                                                                        {t('projectDetail.no_tasks_in_phase')}
                                                                     </p>
                                                                 )}
                                                             </PhaseTaskSection>
@@ -2598,7 +2607,7 @@ function ProjectDetailsView() {
                                                             projectId={project.id}
                                                             phaseKey="unassigned"
                                                             phaseId={null}
-                                                            title="Unassigned"
+                                                            title={t('tasks.unassigned')}
                                                             progressPercent={progressPercentForTasks(taskPhaseGroups.unassigned)}
                                                             onTaskDrop={handleTaskDrop}
                                                         >
@@ -2658,13 +2667,13 @@ function ProjectDetailsView() {
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                                             </svg>
                                         </div>
-                                        <h3 className="text-lg font-semibold text-gray-900 mb-2">No tasks yet</h3>
-                                        <p className="text-gray-500 mb-4">Break down your project into manageable tasks to track progress.</p>
+                                        <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('projectDetail.no_tasks_yet')}</h3>
+                                        <p className="text-gray-500 mb-4">{t('projectDetail.no_tasks_description')}</p>
                                         <button 
                                             onClick={() => setShowTaskModal(true)}
                                             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                                         >
-                                            Add Your First Task
+                                            {t('projectDetail.add_first_task')}
                                         </button>
                                     </div>
                                 )}
@@ -2967,7 +2976,7 @@ function ProjectDetailsView() {
                     >
                         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-200">
                             <h2 id="phases-modal-title" className="text-lg font-bold text-gray-900">
-                                Manage phases
+                                {t('projects.manage_phases')}
                             </h2>
                             <button
                                 type="button"

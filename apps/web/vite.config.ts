@@ -19,6 +19,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@siteweave/core-logic': path.resolve(__dirname, '../../packages/core-logic/src/index.js'),
+      '@siteweave/i18n': path.resolve(__dirname, '../../packages/i18n/index.js'),
       'frappe-gantt/dist/frappe-gantt.css': path.resolve(__dirname, './node_modules/frappe-gantt/dist/frappe-gantt.css')
     }
   },

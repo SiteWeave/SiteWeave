@@ -7,7 +7,7 @@ import ProjectProgressCard from './ProjectProgressCard';
 import PermissionGuard from './PermissionGuard';
 
 const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
-    const { i18n } = useTranslation();
+    const { i18n, t } = useTranslation();
     const { dispatch, state } = useAppContext();
     const [showActions, setShowActions] = useState(false);
     
@@ -69,12 +69,12 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
                 )}
             </div>
             <div>
-                <p className="text-xs text-gray-400 font-semibold">NEXT MILESTONE</p>
+                <p className="text-xs text-gray-400 font-semibold">{t('projectCard.next_milestone')}</p>
                 <p
                     className="text-sm font-medium ui-clamp-2"
-                    title={typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || 'No milestone')}
+                    title={typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || t('projectCard.no_milestone'))}
                 >
-                    {typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || 'No milestone')}
+                    {typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || t('projectCard.no_milestone'))}
                 </p>
             </div>
             
@@ -83,7 +83,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
             
             <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100">
                 <div className="min-w-0">
-                    <p className="text-xs text-gray-400 font-semibold">DUE DATE</p>
+                    <p className="text-xs text-gray-400 font-semibold">{t('projectCard.due_date')}</p>
                     <p className="text-sm font-medium ui-clamp-2">{formatDate(project.due_date)}</p>
                 </div>
                 <div className="flex shrink-0 -space-x-2">
@@ -91,7 +91,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
                         <Avatar key={member.id} name={member.name} size="sm" />
                     ))}
                     {teamMembers.length === 0 && (
-                        <div className="text-xs text-gray-400 italic">No team assigned</div>
+                        <div className="text-xs text-gray-400 italic">{t('projectCard.no_team_assigned')}</div>
                     )}
                 </div>
             </div>
