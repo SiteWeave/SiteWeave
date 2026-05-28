@@ -1,0 +1,35 @@
+---
+description: React Native (Expo) UI rules for apps/mobile — maps design skills to RN APIs
+globs: apps/mobile/**
+alwaysApply: false
+---
+
+# SiteWeave mobile (Expo / React Native)
+
+When editing `apps/mobile/**`, follow [`apps/mobile/MOBILE-DESIGN.md`](../../apps/mobile/MOBILE-DESIGN.md) for tokens and screen patterns.
+
+## Design skills → RN (not web CSS)
+
+- **Impeccable / Taste / Emil** — apply layout, hierarchy, motion *principles* only. Implement with `StyleSheet`, `Pressable`, `expo-haptics`, and `react-native-reanimated` — never default to Inter, purple gradients, or nested “card in card” web patterns.
+- **Emil** — use on demand for motion reviews; keep UI transitions ≤300ms unless navigational; respect `AccessibilityInfo.isReduceMotionEnabled()`.
+- **react-native-mobile-skill** — prefer for HIG/Material, 44×44 touch targets, and RN-specific polish.
+
+## Brand & tokens
+
+- Import colors/spacing from `apps/mobile/theme.js` (and `useBranding()` for org `primary_color` when available).
+- Default primary: `#3B82F6`. Do not invent a new palette per screen.
+
+## Components
+
+- Prefer extending `components/PressableWithFade.jsx` for tappable rows/buttons with haptics.
+- Use `react-native-safe-area-context` for screen edges; minimum touch target 44×44.
+
+## iOS / Apple docs
+
+- For HIG, safe areas, typography, or platform behavior, use the **Sosumi** MCP (`searchAppleDocumentation`, `fetchAppleDocumentation` with paths like `/design/human-interface-guidelines/...`).
+
+## Quality bar
+
+- Lists: pull-to-refresh where data is remote; skeleton or empty states for field-app screens.
+- Primary actions: light haptic via `useHaptics`.
+- Add stable `testID` on tab bar items, primary CTAs, and modal confirm/cancel controls.

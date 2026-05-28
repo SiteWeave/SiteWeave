@@ -1,15 +1,17 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useHaptics } from '../../hooks/useHaptics';
+import { useBranding } from '../../context/BrandingContext';
 
 export default function TabLayout() {
   const haptics = useHaptics();
+  const { primaryColor } = useBranding();
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#3B82F6',
+        tabBarActiveTintColor: primaryColor,
         tabBarInactiveTintColor: '#6B7280',
         animation: 'shift',
         lazy: false,
@@ -24,6 +26,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
+          tabBarButtonTestID: 'tab-home',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
@@ -33,6 +36,7 @@ export default function TabLayout() {
         name="projects"
         options={{
           title: 'Projects',
+          tabBarButtonTestID: 'tab-projects',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="folder" size={size} color={color} />
           ),
@@ -48,6 +52,7 @@ export default function TabLayout() {
         name="calendar"
         options={{
           title: 'Calendar',
+          tabBarButtonTestID: 'tab-calendar',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="calendar" size={size} color={color} />
           ),

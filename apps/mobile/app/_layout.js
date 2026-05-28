@@ -1,5 +1,8 @@
+import 'react-native-gesture-handler';
+import 'react-native-reanimated';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { AuthProvider, useAuth } from '../context/AuthContext';
+import { BrandingProvider } from '../context/BrandingContext';
 import { useEffect } from 'react';
 import NoOrganizationScreen from '../components/NoOrganizationScreen';
 
@@ -61,7 +64,9 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <BrandingProvider>
+        <RootLayoutNav />
+      </BrandingProvider>
     </AuthProvider>
   );
 }

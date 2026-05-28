@@ -497,6 +497,7 @@ export default function EventModal({ visible, onClose, selectedDate, onEventCrea
                 </PressableWithFade>
               ) : null}
               <PressableWithFade
+                testID="modal-cancel"
                 style={[styles.button, styles.cancelButton]}
                 onPress={handleClose}
                 disabled={loading}
@@ -505,6 +506,7 @@ export default function EventModal({ visible, onClose, selectedDate, onEventCrea
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </PressableWithFade>
               <PressableWithFade
+                testID="modal-save"
                 style={[
                   styles.button,
                   styles.saveButton,

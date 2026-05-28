@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "sosumi": {
+      "url": "https://sosumi.ai/mcp"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    }
+  }
+}

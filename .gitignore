@@ -86,3 +86,10 @@ apps/web-backup/
 
 # Local scratch / vendor mirrors (do not commit)
 _tmp_upstream/
+
+# SiteWeaveWeb sync staging (CI clones here; never commit a local mirror)
+_sw_web/
+
+# Agent skills installed via `npx skills add` (reinstall per machine; large vendor trees)
+.agents/
+skills-lock.json
