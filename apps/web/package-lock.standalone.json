@@ -14,7 +14,7 @@
         "@fullcalendar/react": "^6.1.20",
         "@fullcalendar/timegrid": "^6.1.20",
         "@siteweave/core-logic": "file:./packages/core-logic",
-        "@siteweave/i18n": "file:../../packages/i18n",
+        "@siteweave/i18n": "file:./packages/i18n",
         "@supabase/supabase-js": "^2.103.0",
         "exifr": "^7.1.3",
         "frappe-gantt": "^1.2.1",
@@ -45,10 +45,6 @@
         "terser": "^5.44.1",
         "vite": "^6.4.2"
       }
-    },
-    "../../packages/i18n": {
-      "name": "@siteweave/i18n",
-      "version": "1.0.0"
     },
     "node_modules/@alloc/quick-lru": {
       "version": "5.2.0",
@@ -1359,7 +1355,7 @@
       "link": true
     },
     "node_modules/@siteweave/i18n": {
-      "resolved": "../../packages/i18n",
+      "resolved": "packages/i18n",
       "link": true
     },
     "node_modules/@supabase/auth-js": {
@@ -4404,6 +4400,10 @@
         "@supabase/supabase-js": "^2.103.0",
         "libphonenumber-js": "^1.12.33"
       }
+    },
+    "packages/i18n": {
+      "name": "@siteweave/i18n",
+      "version": "1.0.0"
     }
   }
 }
