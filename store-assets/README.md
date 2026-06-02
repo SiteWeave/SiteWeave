@@ -19,6 +19,7 @@ Then rebuild the Store package:
 npm run build:win:msix
 ```
 
-## Windows installer icon
+## Windows / macOS installer icon
 
-- `icon.png` — used for NSIS `.exe` and Electron app icon
+- `icon.png` — used for NSIS `.exe`, macOS `.dmg`/`.zip`, and Electron app icon
+- Must be **at least 512×512** (electron-builder requirement); source from `appx-sources/logo-1080.png` (1024×1024)
