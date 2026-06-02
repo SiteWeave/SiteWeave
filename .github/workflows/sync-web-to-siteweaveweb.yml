@@ -50,6 +50,7 @@ jobs:
             --exclude 'node_modules' \
             --exclude 'dist' \
             --exclude '.git' \
+            --exclude '.github' \
             --exclude 'packages' \
             --exclude 'package-lock.standalone.json' \
             apps/web/ _sw_web/
