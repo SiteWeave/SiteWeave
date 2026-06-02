@@ -272,7 +272,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                          importType === 'outlook' ? t('calendar.import_outlook') : 
                          t('calendar.import_file_title')}
                     </h2>
-                    <button
+                    <button type="button"
                         onClick={onClose}
                         className="text-gray-400 hover:text-gray-600 text-2xl"
                     >
@@ -293,7 +293,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                                 <h4 className="font-semibold">{t('calendar.import_select_file')}</h4>
                                                 <p className="text-sm text-gray-600">{t('calendar.import_select_file')}</p>
                                             </div>
-                                            <button
+                                            <button type="button"
                                                 onClick={() => fileInputRef.current?.click()}
                                                 disabled={isImporting}
                                                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
@@ -317,7 +317,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                                 <h4 className="font-semibold">{t('calendar.import_google')}</h4>
                                                 <p className="text-sm text-gray-600">{t('calendar.import_connect_google')}</p>
                                             </div>
-                                            <button
+                                            <button type="button"
                                                 onClick={handleGoogleCalendarImport}
                                                 disabled={isImporting}
                                                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
@@ -334,7 +334,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                                 <h4 className="font-semibold">{t('calendar.import_outlook')}</h4>
                                                 <p className="text-sm text-gray-600">{t('calendar.import_connect_outlook')}</p>
                                             </div>
-                                            <button
+                                            <button type="button"
                                                 onClick={handleOutlookCalendarImport}
                                                 disabled={isImporting}
                                                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
@@ -363,7 +363,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                         {t('calendar.import_google')}
                                     </p>
                                 </div>
-                                <button
+                                <button type="button"
                                     onClick={handleGoogleCalendarImport}
                                     disabled={isImporting}
                                     className="px-8 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-lg font-semibold"
@@ -387,7 +387,7 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                                     </p>
                                     
                                 </div>
-                                <button
+                                <button type="button"
                                     onClick={handleOutlookCalendarImport}
                                     disabled={isImporting}
                                     className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-lg font-semibold"
@@ -431,14 +431,14 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                         </div>
 
                         <div className="flex justify-end gap-4 pt-4 border-t">
-                            <button
+                            <button type="button"
                                 onClick={handleCancelPreview}
                                 disabled={isImporting}
                                 className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50"
                             >
                                 {t('common.cancel')}
                             </button>
-                            <button
+                            <button type="button"
                                 onClick={handleImportEvents}
                                 disabled={isImporting}
                                 className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"

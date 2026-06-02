@@ -121,7 +121,7 @@ function OnboardingTooltip({
       <div className="flex items-center justify-between mt-4">
         <div className="flex gap-2">
           {step > 1 && (
-            <button
+            <button type="button"
               onClick={onPrevious}
               className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1"
             >
@@ -130,7 +130,7 @@ function OnboardingTooltip({
             </button>
           )}
           
-          <button
+          <button type="button"
             onClick={onNext}
             className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors flex items-center gap-2 ${
               action === 'prompt' 
@@ -147,7 +147,7 @@ function OnboardingTooltip({
           </button>
         </div>
 
-        <button
+        <button type="button"
           onClick={onSkip}
           className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
         >

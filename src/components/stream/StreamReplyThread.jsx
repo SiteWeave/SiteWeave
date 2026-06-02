@@ -4,11 +4,8 @@ import { formatRelativeTime } from '@siteweave/i18n';
 import { fetchStreamReplies, createStreamReply } from '@siteweave/core-logic';
 import { upsertById, removeById } from '@siteweave/core-logic';
 import { useToast } from '../../context/ToastContext';
-
-function initials(name) {
-  if (!name) return '?';
-  return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
-}
+import { SkeletonRow } from '../ui/Skeleton';
+import Avatar from '../Avatar';
 
 export default function StreamReplyThread({
   postId,
@@ -121,7 +118,7 @@ export default function StreamReplyThread({
       {loading ? (
         <div className="space-y-2">
           {[1, 2].map((i) => (
-            <div key={i} className="h-12 animate-pulse rounded-lg bg-slate-100" />
+            <SkeletonRow key={i} className="h-12" />
           ))}
         </div>
       ) : replies.length === 0 ? (
@@ -129,13 +126,12 @@ export default function StreamReplyThread({
       ) : (
         replies.map((reply) => (
           <div key={reply.id} className="flex gap-2.5">
-            <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
-              {reply.author?.avatar_url ? (
-                <img src={reply.author.avatar_url} alt={reply.author.name} className="h-6 w-6 rounded-full object-cover" />
-              ) : (
-                initials(reply.author?.name)
-              )}
-            </span>
+            <Avatar
+              name={reply.author?.name}
+              avatarUrl={reply.author?.avatar_url}
+              size="sm"
+              className="mt-0.5 shrink-0 bg-slate-200"
+            />
             <div className="min-w-0 flex-1 rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2">
               <p className="mb-0.5 text-[11px] text-slate-500">
                 <span className="font-medium text-slate-700">{reply.author?.name || t('stream.team_member')}</span>

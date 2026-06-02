@@ -39,9 +39,12 @@ export async function getOfflineQueueSize() {
  * Process queued actions with provided handlers.
  * handlers map shape: { [type]: async (payload) => void }
  */
-export async function processOfflineQueue(handlers = {}) {
+export async function processOfflineQueue(handlers = {}, { onComplete } = {}) {
   const queue = await readQueue();
-  if (!queue.length) return { processed: 0, failed: 0, remaining: 0 };
+  if (!queue.length) {
+    if (onComplete) await onComplete({ processed: 0, failed: 0, remaining: 0 });
+    return { processed: 0, failed: 0, remaining: 0 };
+  }
 
   const remaining = [];
   let processed = 0;
@@ -64,5 +67,7 @@ export async function processOfflineQueue(handlers = {}) {
   }
 
   await writeQueue(remaining);
-  return { processed, failed, remaining: remaining.length };
+  const result = { processed, failed, remaining: remaining.length };
+  if (onComplete) await onComplete(result);
+  return result;
 }

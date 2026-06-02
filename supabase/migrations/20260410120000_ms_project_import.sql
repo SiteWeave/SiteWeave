@@ -66,3 +66,6 @@ CREATE POLICY "Users can delete their organization schedule import templates"
 ON public.schedule_import_templates
 FOR DELETE
 USING (organization_id = (SELECT get_user_organization_id()));
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.schedule_import_templates TO authenticated;
+GRANT ALL ON TABLE public.schedule_import_templates TO service_role;

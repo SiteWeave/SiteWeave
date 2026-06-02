@@ -9,7 +9,7 @@ import { supabaseClient } from '../context/AppContext';
  * 
  * Usage:
  * <PermissionGuard permission="can_delete_projects">
- *   <button>Delete</button>
+ *   <button type="button">Delete</button>
  * </PermissionGuard>
  */
 function PermissionGuard({ permission, children, fallback = null }) {
@@ -49,7 +49,7 @@ export default PermissionGuard;
  * 
  * Usage:
  * <Can permission="can_delete_projects">
- *   <button>Delete</button>
+ *   <button type="button">Delete</button>
  * </Can>
  */
 export function Can({ permission, children, fallback = null }) {

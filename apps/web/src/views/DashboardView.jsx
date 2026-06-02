@@ -416,9 +416,9 @@ function DashboardView() {
 
     return (
         <>
-            <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 h-full">
+            <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 h-full view-fade-in">
                 <div className="xl:col-span-3">
-                    <header className="mb-8 app-card p-5" data-onboarding="dashboard-welcome">
+                    <header className="mb-8 app-card p-5" data-onboarding="dashboard-welcome" data-testid="dashboard-view">
                         <div className="flex min-w-0 items-center gap-4">
                             <div className="min-w-0 shrink">
                                 <h1 className="app-section-title mb-0.5 text-2xl sm:text-[1.75rem]">
@@ -431,14 +431,14 @@ function DashboardView() {
                             <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                                 <ViewSwitcher compact currentView={viewType} onViewChange={setViewType} />
                                 <PermissionGuard permission="can_create_projects">
-                                    <button
+                                    <button type="button"
                                         onClick={() => tryOpenCreateProject()}
                                         data-onboarding="new-project-btn"
                                         className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-primary"
                                     >
                                         + {t('dashboard.new_project')}
                                     </button>
-                                    <button
+                                    <button type="button"
                                         onClick={() => tryOpenTemplateModal()}
                                         title={t('dashboard.create_from_template_title')}
                                         className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-secondary"
@@ -505,26 +505,27 @@ function DashboardView() {
                             )}
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center justify-center py-20 px-6 text-center app-card">
+                        <div className="flex flex-col items-center justify-center py-20 px-6 text-center app-card" data-testid="dashboard-empty">
                             <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-5">
                                 <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                                 </svg>
                             </div>
                             <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                                {isGuestOnly ? 'No projects shared yet' : 'No projects yet'}
+                                {isGuestOnly ? t('dashboard.guest_no_projects_title') : t('dashboard.no_projects_yet')}
                             </h3>
                             <p className="text-gray-500 mb-6 max-w-md text-sm leading-relaxed">
                                 {isGuestOnly
-                                    ? 'Ask your contractor to send you a project invite link or code. You can sign in with any email.'
-                                    : 'Get started by creating your first construction project. Track progress, manage tasks, and collaborate with your team.'}
+                                    ? t('dashboard.guest_no_projects_description')
+                                    : t('dashboard.no_projects_description')}
                             </p>
                             {!isGuestOnly && (
-                            <button 
+                            <button type="button" 
                                 onClick={() => tryOpenCreateProject()}
-                                className="px-6 py-3 rounded-lg transition-colors font-medium text-sm app-action-primary"
+                                className="px-6 py-3 rounded-lg transition-colors font-medium text-sm app-action-primary btn-smooth"
+                                data-testid="dashboard-create-first-project"
                             >
-                                Create Your First Project
+                                {t('dashboard.create_first_project')}
                             </button>
                             )}
                         </div>

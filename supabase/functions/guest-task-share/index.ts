@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sha256Hex } from '../_shared/guestShare.ts'
+import { createServiceClient } from '../_shared/auth.ts'
+import { enforceRateLimit } from '../_shared/rateLimit.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -64,14 +66,13 @@ async function attachSignedUrls(
   supabase: any,
   photos: any[],
 ) {
-  const out = []
-  for (const p of photos || []) {
+  return Promise.all((photos || []).map(async (p) => {
     const bucket = p.storage_bucket || BUCKET
     const [full, thumb] = await Promise.all([
       supabase.storage.from(bucket).createSignedUrl(p.storage_path, SIGNED_TTL),
       supabase.storage.from(bucket).createSignedUrl(p.thumbnail_path || p.storage_path, SIGNED_TTL),
     ])
-    out.push({
+    return {
       id: p.id,
       task_id: p.task_id,
       caption: p.caption,
@@ -79,9 +80,8 @@ async function attachSignedUrls(
       is_completion_photo: p.is_completion_photo,
       full_url: full.data?.signedUrl || null,
       thumbnail_url: thumb.data?.signedUrl || null,
-    })
-  }
-  return out
+    }
+  }))
 }
 
 const TASK_SELECT_GUEST =
@@ -117,9 +117,17 @@ serve(async (req) => {
     })
   }
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-  const serviceKey = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim()
-  const supabase = createClient(supabaseUrl, serviceKey)
+  const supabase = createServiceClient()
+  const rateLimited = await enforceRateLimit(supabase, req, 'guest-task-share', {
+    ipMax: 60,
+    tokenMax: 30,
+  }, rawToken)
+  if (rateLimited) {
+    return new Response(rateLimited.body, {
+      status: rateLimited.status,
+      headers: { ...corsHeaders, ...Object.fromEntries(rateLimited.headers.entries()) },
+    })
+  }
 
   const share = await loadShare(supabase, rawToken)
   if (!share) {
@@ -147,19 +155,22 @@ serve(async (req) => {
 
     const sharedSet = new Set(taskIds)
 
-    const { data: allRows, error: tErr } = await supabase
-      .from('tasks')
-      .select(TASK_SELECT_GUEST)
-      .eq('project_id', share.project_id)
+    let allTasks: Record<string, unknown>[] = []
+    if (taskIds.length) {
+      const { data: sharedRows, error: tErr } = await supabase
+        .from('tasks')
+        .select(TASK_SELECT_GUEST)
+        .in('id', taskIds)
 
-    if (tErr) {
-      return new Response(JSON.stringify({ error: 'Not found' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      })
+      if (tErr) {
+        return new Response(JSON.stringify({ error: 'Not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+      allTasks = (sharedRows || []) as Record<string, unknown>[]
     }
 
-    const allTasks = (allRows || []) as Record<string, unknown>[]
     const taskMap = new Map<string, Record<string, unknown>>(
       allTasks.map((t) => [String(t.id), t]),
     )
@@ -169,16 +180,6 @@ serve(async (req) => {
       string,
       unknown
     >[]
-    const sharedIdSet = new Set(sharedOrdered.map((t) => String(t.id)))
-    const rest = allTasks
-      .filter((t) => !sharedIdSet.has(String(t.id)))
-      .sort((a, b) => {
-        const ca = String(a.created_at || '')
-        const cb = String(b.created_at || '')
-        if (ca !== cb) return ca < cb ? -1 : ca > cb ? 1 : 0
-        return String(a.text || '').localeCompare(String(b.text || ''))
-      })
-    const mergedOrder = [...sharedOrdered, ...rest]
 
     let photoRows: any[] = []
     if (taskIds.length) {
@@ -191,34 +192,30 @@ serve(async (req) => {
       photoRows = pr || []
     }
 
+    const signedPhotos = await attachSignedUrls(supabase, photoRows)
     const photosByTask = new Map<string, any[]>()
-    for (const row of photoRows || []) {
+    for (const row of signedPhotos) {
       const tid = row.task_id as string
       if (!photosByTask.has(tid)) photosByTask.set(tid, [])
       photosByTask.get(tid)!.push(row)
     }
 
-    const tasksOut = await Promise.all(
-      mergedOrder.map(async (t) => {
-        const id = String(t.id)
-        const interactive = sharedSet.has(id)
-        const photos = interactive
-          ? await attachSignedUrls(supabase, photosByTask.get(id) || [])
-          : []
-        return {
-          id,
-          text: t.text,
-          start_date: t.start_date,
-          due_date: t.due_date,
-          completed: t.completed,
-          parent_task_id: t.parent_task_id,
-          is_milestone: t.is_milestone,
-          created_at: t.created_at,
-          guest_interactive: interactive,
-          photos,
-        }
-      }),
-    )
+    const tasksOut = sharedOrdered.map((t) => {
+      const id = String(t.id)
+      const interactive = sharedSet.has(id)
+      return {
+        id,
+        text: t.text,
+        start_date: t.start_date,
+        due_date: t.due_date,
+        completed: t.completed,
+        parent_task_id: t.parent_task_id,
+        is_milestone: t.is_milestone,
+        created_at: t.created_at,
+        guest_interactive: interactive,
+        photos: interactive ? (photosByTask.get(id) || []) : [],
+      }
+    })
 
     const idList = [...projectTaskIds]
     let depRows: { task_id: string; successor_task_id: string; dependency_type: string; lag_days: number }[] = []

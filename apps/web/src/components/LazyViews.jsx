@@ -25,7 +25,7 @@ const ViewErrorFallback = ({ error, resetError }) => (
         <p className="text-sm text-gray-600 mb-4">
           {error?.message || 'An error occurred while loading this section.'}
         </p>
-        <button
+        <button type="button"
           onClick={resetError}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
         >

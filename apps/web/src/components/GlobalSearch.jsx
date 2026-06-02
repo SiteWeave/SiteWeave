@@ -112,7 +112,7 @@ function GlobalSearch({ isOpen, onClose }) {
                 {results.length > 0 ? (
                     <div className="max-h-96 overflow-y-auto">
                         {results.map((result, index) => (
-                            <button
+                            <button type="button"
                                 key={`${result.type}-${result.id}`}
                                 onClick={() => handleSelectResult(result)}
                                 className={`w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 ${

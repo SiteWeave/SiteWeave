@@ -16,8 +16,12 @@ import {
   subscribeProjectIssues,
 } from '@siteweave/core-logic';
 import PressableWithFade from './PressableWithFade';
+import { useHaptics } from '../hooks/useHaptics';
+import { useTranslation } from 'react-i18next';
 
 export default function FieldIssuesPanel({ project, supabase, currentUserId }) {
+  const { t } = useTranslation();
+  const haptics = useHaptics();
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState('');
@@ -27,7 +31,9 @@ export default function FieldIssuesPanel({ project, supabase, currentUserId }) {
     if (!project?.id || !supabase) return;
     try {
       setLoading(true);
-      const rows = await fetchProjectIssues(supabase, project.id, { statusFilter: 'open' });
+      const { issues: rows } = await fetchProjectIssues(supabase, project.id, {
+        statusFilter: 'open',
+      });
       setIssues(rows);
     } catch (e) {
       console.error('FieldIssuesPanel', e);
@@ -69,9 +75,11 @@ export default function FieldIssuesPanel({ project, supabase, currentUserId }) {
         { status: 'closed' },
         { previousStatus: issue.status, bridgeToStream: true },
       );
+      haptics.success();
       await load();
     } catch (e) {
-      Alert.alert('Error', e.message || 'Could not update issue');
+      haptics.error();
+      Alert.alert(t('common.error'), e.message || t('fieldIssues.status_error'));
     }
   };
 
@@ -88,7 +96,7 @@ export default function FieldIssuesPanel({ project, supabase, currentUserId }) {
         {item.assignee?.name ? <Text style={styles.assignee}>{item.assignee.name}</Text> : null}
       </View>
       <PressableWithFade onPress={() => toggleClose(item)} style={styles.closeBtn}>
-        <Text style={styles.closeBtnText}>Mark closed</Text>
+        <Text style={styles.closeBtnText}>{t('fieldIssues.mark_closed')}</Text>
       </PressableWithFade>
     </View>
   );
@@ -98,7 +106,7 @@ export default function FieldIssuesPanel({ project, supabase, currentUserId }) {
       <View style={styles.composer}>
         <TextInput
           style={styles.input}
-          placeholder="New field issue title…"
+          placeholder={t('fieldIssues.title_placeholder')}
           value={title}
           onChangeText={setTitle}
         />
@@ -110,14 +118,14 @@ export default function FieldIssuesPanel({ project, supabase, currentUserId }) {
           {creating ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
-            <Text style={styles.addBtnText}>Add</Text>
+            <Text style={styles.addBtnText}>{t('fieldIssues.create')}</Text>
           )}
         </Pressable>
       </View>
       {loading ? (
         <ActivityIndicator style={{ marginTop: 24 }} />
       ) : issues.length === 0 ? (
-        <Text style={styles.empty}>No open field issues.</Text>
+        <Text style={styles.empty}>{t('fieldIssues.no_open_issues')}</Text>
       ) : (
         <FlatList
           data={issues}

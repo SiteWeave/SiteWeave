@@ -4,6 +4,8 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
+import { jsonResponse, requireUser } from '../_shared/auth.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -16,16 +18,11 @@ const supabaseAdmin = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!, {
   auth: { persistSession: false }
 })
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
-
 serve(async (req) => {
-  // Handle CORS preflight
+  const corsHeaders = corsHeadersFor(req)
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return corsPreflightResponse(req)
   }
 
   if (req.method !== 'POST') {
@@ -36,15 +33,20 @@ serve(async (req) => {
   }
 
   try {
+    const authResult = await requireUser(req, corsHeaders)
+    if (authResult instanceof Response) return authResult
+    const { user: caller } = authResult
+
     const { userId } = await req.json()
 
     console.log('auto-confirm-user called with userId:', userId)
 
     if (!userId) {
-      return new Response(
-        JSON.stringify({ error: 'Missing required field: userId' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return jsonResponse({ error: 'Missing required field: userId' }, 400, corsHeaders)
+    }
+
+    if (userId !== caller.id) {
+      return jsonResponse({ error: 'You may only confirm your own account' }, 403, corsHeaders)
     }
 
     // Get the user

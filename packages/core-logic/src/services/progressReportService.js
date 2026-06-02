@@ -3,6 +3,15 @@
  * Handles all progress report-related database operations and scheduling logic
  */
 
+import {
+  calculateNextSendDate,
+  calculateFirstSendDate,
+  getOrgProgressReportScheduleSettings,
+  resolveScheduleNextSendAt,
+} from '../utils/progressReportScheduleTime.js';
+
+export { calculateNextSendDate, calculateFirstSendDate, resolveScheduleNextSendAt };
+
 /**
  * @param {import('@supabase/supabase-js').FunctionsHttpError | Error | null} error
  * @returns {string}
@@ -52,16 +61,59 @@ async function invokeAuthHeaders(supabase) {
 }
 
 /**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {Object} schedule
+ * @param {{ preserveFutureNext?: boolean, existingNextSendAt?: string|null }} [options]
+ * @returns {Promise<string|null>}
+ */
+async function computeNextSendAtIso(supabase, schedule, options = {}) {
+  const organizationId = schedule.organization_id;
+  if (!organizationId) return null;
+
+  const { preserveFutureNext, existingNextSendAt } = options;
+  if (
+    preserveFutureNext &&
+    existingNextSendAt &&
+    new Date(existingNextSendAt) > new Date() &&
+    schedule.is_active &&
+    schedule.frequency !== 'manual'
+  ) {
+    return existingNextSendAt;
+  }
+
+  const { sendHour, timeZone } = await getOrgProgressReportScheduleSettings(supabase, organizationId);
+  let next = resolveScheduleNextSendAt({
+    frequency: schedule.frequency,
+    frequency_value: schedule.frequency_value,
+    last_sent_at: schedule.last_sent_at ?? null,
+    is_active: Boolean(schedule.is_active),
+    sendHour,
+    timeZone,
+  });
+  if (next && next <= new Date()) {
+    next = calculateFirstSendDate(
+      schedule.frequency,
+      schedule.frequency_value,
+      sendHour,
+      timeZone
+    );
+  }
+  return next ? next.toISOString() : null;
+}
+
+/**
  * Create a new progress report schedule
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {Object} scheduleData - Schedule configuration
  * @returns {Promise<Object>} Created schedule
  */
 export async function createProgressReportSchedule(supabase, scheduleData) {
+  const next_send_at = await computeNextSendAtIso(supabase, scheduleData);
   const { data, error } = await supabase
     .from('progress_report_schedules')
     .insert({
       ...scheduleData,
+      next_send_at,
       updated_at: new Date().toISOString()
     })
     .select()
@@ -79,10 +131,35 @@ export async function createProgressReportSchedule(supabase, scheduleData) {
  * @returns {Promise<Object>} Updated schedule
  */
 export async function updateProgressReportSchedule(supabase, scheduleId, updates) {
+  const { data: existing, error: fetchError } = await supabase
+    .from('progress_report_schedules')
+    .select('organization_id, frequency, frequency_value, last_sent_at, is_active, next_send_at')
+    .eq('id', scheduleId)
+    .single();
+  if (fetchError) throw fetchError;
+
+  const merged = {
+    organization_id: updates.organization_id ?? existing.organization_id,
+    frequency: updates.frequency ?? existing.frequency,
+    frequency_value:
+      updates.frequency_value !== undefined ? updates.frequency_value : existing.frequency_value,
+    last_sent_at: updates.last_sent_at !== undefined ? updates.last_sent_at : existing.last_sent_at,
+    is_active: updates.is_active !== undefined ? updates.is_active : existing.is_active,
+  };
+  const scheduleTimingUnchanged =
+    (updates.frequency === undefined || updates.frequency === existing.frequency) &&
+    (updates.frequency_value === undefined || updates.frequency_value === existing.frequency_value) &&
+    (updates.is_active === undefined || updates.is_active === existing.is_active);
+  const next_send_at = await computeNextSendAtIso(supabase, merged, {
+    preserveFutureNext: scheduleTimingUnchanged,
+    existingNextSendAt: existing.next_send_at,
+  });
+
   const { data, error } = await supabase
     .from('progress_report_schedules')
     .update({
       ...updates,
+      next_send_at,
       updated_at: new Date().toISOString()
     })
     .eq('id', scheduleId)
@@ -314,54 +391,6 @@ export async function rejectReport(supabase, scheduleId, reason) {
     approval_status: 'rejected',
     custom_message: reason ? `${reason}\n\n${schedule?.custom_message || ''}` : schedule?.custom_message
   });
-}
-
-/**
- * Calculate next send date based on frequency.
- * frequency_value: weekly/bi-weekly = day of week 0-6 (0=Sunday); monthly = 1, 15, or -1 (last day).
- * @param {string} frequency - 'weekly' | 'bi-weekly' | 'monthly' | 'custom' | 'manual'
- * @param {number|null} frequencyValue - Day of week (0-6) or monthly day (1, 15, -1)
- * @param {Date|string|null} lastSentAt - Last sent date
- * @returns {Date|null} Next send date
- */
-export function calculateNextSendDate(frequency, frequencyValue = null, lastSentAt = null) {
-  const baseDate = lastSentAt ? new Date(lastSentAt) : new Date();
-  const dayOfWeek = frequencyValue != null && frequencyValue >= 0 && frequencyValue <= 6 ? frequencyValue : 0;
-
-  switch (frequency) {
-    case 'weekly': {
-      const next = new Date(baseDate);
-      next.setDate(next.getDate() + 7);
-      while (next.getDay() !== dayOfWeek) next.setDate(next.getDate() + 1);
-      return next;
-    }
-    case 'bi-weekly': {
-      const next = new Date(baseDate);
-      next.setDate(next.getDate() + 14);
-      while (next.getDay() !== dayOfWeek) next.setDate(next.getDate() + 1);
-      return next;
-    }
-    case 'monthly': {
-      const y = baseDate.getFullYear();
-      const m = baseDate.getMonth();
-      if (frequencyValue === -1 || frequencyValue === 31) {
-        return new Date(y, m + 2, 0);
-      }
-      if (frequencyValue === 15) {
-        return new Date(y, m + 1, 15);
-      }
-      return new Date(y, m + 1, 1);
-    }
-    case 'custom':
-      if (frequencyValue && frequencyValue > 0) {
-        return new Date(baseDate.getTime() + frequencyValue * 24 * 60 * 60 * 1000);
-      }
-      return null;
-    case 'manual':
-      return null;
-    default:
-      return null;
-  }
 }
 
 /**

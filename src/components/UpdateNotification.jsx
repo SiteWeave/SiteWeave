@@ -110,13 +110,13 @@ function UpdateNotification() {
               {t('updates.update_ready_desc')}
             </p>
             <div className="flex gap-2">
-              <button
+              <button type="button"
                 onClick={handleInstallUpdate}
                 className="px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition-colors"
               >
                 {t('updates.restart_install')}
               </button>
-              <button
+              <button type="button"
                 onClick={handleDismiss}
                 className="px-3 py-1.5 bg-white text-green-700 text-sm font-medium rounded border border-green-300 hover:bg-green-50 transition-colors"
               >
@@ -124,7 +124,7 @@ function UpdateNotification() {
               </button>
             </div>
           </div>
-          <button onClick={handleDismiss} className="flex-shrink-0 text-green-400 hover:text-green-600 transition-colors">
+          <button type="button" onClick={handleDismiss} className="flex-shrink-0 text-green-400 hover:text-green-600 transition-colors">
             <Icon path="M6 18L18 6M6 6l12 12" className="w-5 h-5" />
           </button>
         </div>
@@ -150,7 +150,7 @@ function UpdateNotification() {
             {updateError ? (
               <div>
                 <p className="text-sm text-red-600 mb-2">{t('updates.download_failed', { error: updateError.length > 60 ? updateError.slice(0, 57) + '...' : updateError })}</p>
-                <button
+                <button type="button"
                   onClick={handleCheckForUpdates}
                   disabled={checking}
                   className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition-colors disabled:opacity-60"
@@ -169,7 +169,7 @@ function UpdateNotification() {
               <p className="text-sm text-blue-700">{t('updates.downloading_background')}</p>
             )}
           </div>
-          <button onClick={handleDismiss} className="flex-shrink-0 text-blue-400 hover:text-blue-600 transition-colors">
+          <button type="button" onClick={handleDismiss} className="flex-shrink-0 text-blue-400 hover:text-blue-600 transition-colors">
             <Icon path="M6 18L18 6M6 6l12 12" className="w-5 h-5" />
           </button>
         </div>

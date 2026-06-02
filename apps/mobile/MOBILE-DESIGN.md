@@ -9,7 +9,7 @@ Reference for humans and agents working in `apps/mobile`. Web uses Tailwind in `
 | `primary` | `#3B82F6` | CTAs, active tab, links (overridden by org branding when loaded) |
 | `primaryDark` | `#2563EB` | Pressed / emphasis |
 | `secondary` | `#10B981` | Success accents (org secondary when set) |
-| `background` | `#F9FAFB` | Screen background |
+| `background` | `#F5F6F8` | Screen background (monday off-white) |
 | `surface` | `#FFFFFF` | Cards, modals |
 | `text` | `#111827` | Headings, body |
 | `textMuted` | `#6B7280` | Secondary labels |
@@ -32,9 +32,14 @@ Org-specific primary/secondary: `getOrganizationBranding()` in `packages/core-lo
 | Section title | 18–20, 700 |
 | Body | 15–16, 400–500 |
 | Caption | 12–13, 500–600 |
-| Button label | 16, 600–700 |
+| Button label | 17–18, 600–700 |
 
 Use system fonts (SF Pro / Roboto). Support Dynamic Type where practical.
+
+## Field touch targets
+
+- `touch.minSize`: **48** · `touch.minRowHeight`: **56** · `touch.fabSize`: **56**
+- New UI: `components/ui/*` — see `MOBILE-REDESIGN-SPEC.md`
 
 ## Screen patterns
 

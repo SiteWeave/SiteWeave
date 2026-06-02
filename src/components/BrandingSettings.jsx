@@ -149,7 +149,7 @@ function BrandingSettings({ compact = false }) {
               </span>
             </label>
             {branding.logo_url && (
-              <button
+              <button type="button"
                 onClick={() => setBranding({ ...branding, logo_url: null })}
                 className="ml-2 text-sm text-red-600 hover:text-red-700"
               >
@@ -260,7 +260,7 @@ function BrandingSettings({ compact = false }) {
       </BrandingSection>
 
       <div className="flex justify-end pt-1">
-        <button
+        <button type="button"
           onClick={handleSave}
           disabled={isSaving}
           className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"

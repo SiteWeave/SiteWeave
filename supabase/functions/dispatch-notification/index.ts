@@ -5,16 +5,18 @@ import { sendTwilioSms } from '../_shared/twilioSms.ts'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { createGuestShare } from '../_shared/guestShare.ts'
 import { gateOrSendOptInForSubstantiveSms, sendOptInIfEligible } from '../_shared/smsConsent.ts'
+import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
+import {
+  assertCanManageProject,
+  assertOrgMember,
+  createServiceClient,
+  jsonResponse,
+  requireUser,
+} from '../_shared/auth.ts'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const RESEND_FROM =
   Deno.env.get('RESEND_FROM') ?? 'SiteWeave Notifications <notifications@siteweave.org>'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
 
 function buildAppUrl(projectId?: string | null): string {
   const base = Deno.env.get('DESKTOP_APP_URL') || Deno.env.get('PUBLIC_APP_URL') || 'https://app.siteweave.org'
@@ -22,20 +24,22 @@ function buildAppUrl(projectId?: string | null): string {
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  const corsHeaders = corsHeadersFor(req)
+
+  if (req.method === 'OPTIONS') return corsPreflightResponse(req)
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders })
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseServiceKey = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim()
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
-
+    const supabase = createServiceClient()
     const body = await req.json()
     const action = body?.action
 
     if (action === 'dependency_unlocked') {
+      const authResult = await requireUser(req, corsHeaders)
+      if (authResult instanceof Response) return authResult
+      const { user } = authResult
       const {
         completedTaskId,
         completedTaskText,
@@ -58,6 +62,9 @@ serve(async (req) => {
           { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
         )
       }
+
+      const depAuthz = await assertCanManageProject(supabase, user.id, projectId, corsHeaders)
+      if (depAuthz instanceof Response) return depAuthz
 
       const { data: existing } = await supabase
         .from('task_dependency_notification_history')
@@ -180,6 +187,10 @@ serve(async (req) => {
     }
 
     if (action === 'notification_action') {
+      const authResult = await requireUser(req, corsHeaders)
+      if (authResult instanceof Response) return authResult
+      const { user } = authResult
+
       const { notificationId, userId, actionType } = body
       if (!notificationId || !actionType) {
         return new Response(JSON.stringify({ error: 'Missing notificationId/actionType' }), {
@@ -188,10 +199,42 @@ serve(async (req) => {
         })
       }
 
+      if (userId && userId !== user.id) {
+        return jsonResponse({ error: 'Forbidden' }, 403, corsHeaders)
+      }
+
+      const { data: notifRow } = await supabase
+        .from('user_notifications')
+        .select('id, organization_id, recipient_email')
+        .eq('id', notificationId)
+        .maybeSingle()
+
+      if (!notifRow) {
+        return jsonResponse({ error: 'Notification not found' }, 404, corsHeaders)
+      }
+
+      const member = await assertOrgMember(supabase, user.id, notifRow.organization_id, corsHeaders)
+      if (member instanceof Response) return member
+
+      const callerEmail = user.email?.toLowerCase()
+      const recipientEmail = String(notifRow.recipient_email || '').toLowerCase()
+      if (callerEmail && recipientEmail && !recipientEmail.includes('@')) {
+        // sms:... addresses — allow org members
+      } else if (callerEmail && recipientEmail && callerEmail !== recipientEmail) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_super_admin')
+          .eq('id', user.id)
+          .maybeSingle()
+        if (!profile?.is_super_admin) {
+          return jsonResponse({ error: 'Not allowed to update this notification' }, 403, corsHeaders)
+        }
+      }
+
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
       if (actionType === 'mark_read') {
         patch.read_at = new Date().toISOString()
-        patch.read_by_user_id = userId || null
+        patch.read_by_user_id = user.id
       }
       if (actionType === 'acknowledge') {
         patch.acknowledged_at = new Date().toISOString()
@@ -211,7 +254,7 @@ serve(async (req) => {
       const { error: logError } = await supabase.from('notification_action_history').insert({
         notification_id: notificationId,
         action_type: actionType,
-        acted_by_user_id: userId || null,
+        acted_by_user_id: user.id,
       })
 
       return new Response(
@@ -221,6 +264,10 @@ serve(async (req) => {
     }
 
     if (action === 'manual_task_reminder') {
+      const authResult = await requireUser(req, corsHeaders)
+      if (authResult instanceof Response) return authResult
+      const { user } = authResult
+
       const {
         taskId,
         taskText,
@@ -243,6 +290,9 @@ serve(async (req) => {
           headers: { 'Content-Type': 'application/json', ...corsHeaders },
         })
       }
+
+      const reminderAuthz = await assertCanManageProject(supabase, user.id, projectId, corsHeaders)
+      if (reminderAuthz instanceof Response) return reminderAuthz
 
       const normalizedEmail = recipientEmail ? String(recipientEmail).trim().toLowerCase() : null
       const normalizedPhone = normalizeAssigneePhone(recipientPhone || '')
@@ -478,6 +528,10 @@ serve(async (req) => {
     }
 
     if (action === 'sms_opt_in_request') {
+      const authResult = await requireUser(req, corsHeaders)
+      if (authResult instanceof Response) return authResult
+      const { user } = authResult
+
       const {
         recipientPhone,
         organizationId,
@@ -490,6 +544,10 @@ serve(async (req) => {
           headers: { 'Content-Type': 'application/json', ...corsHeaders },
         })
       }
+
+      const smsMember = await assertOrgMember(supabase, user.id, organizationId, corsHeaders)
+      if (smsMember instanceof Response) return smsMember
+
       const normalizedPhone = normalizeAssigneePhone(String(recipientPhone || ''))
       const smsPhone = normalizedPhone.isValid ? normalizedPhone.e164 : null
       if (!smsPhone) {

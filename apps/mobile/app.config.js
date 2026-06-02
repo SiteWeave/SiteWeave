@@ -5,7 +5,7 @@ module.exports = function(env) {
     expo: {
       name: "SiteWeave",
       slug: "siteweave-mobile",
-      version: "1.0.0",
+      version: "1.0.1",
       orientation: "portrait",
       icon: "./assets/icon.png",
       userInterfaceStyle: "light",
@@ -13,7 +13,7 @@ module.exports = function(env) {
       splash: {
         image: "./assets/splash-icon.png",
         resizeMode: "contain",
-        backgroundColor: "#ffffff"
+        backgroundColor: "#000000"
       },
       ios: {
         supportsTablet: true,
@@ -27,7 +27,7 @@ module.exports = function(env) {
       android: {
         adaptiveIcon: {
           foregroundImage: "./assets/adaptive-icon.png",
-          backgroundColor: "#ffffff"
+          backgroundColor: "#000000"
         },
         edgeToEdgeEnabled: false,
         package: "com.siteweave.mobile",
@@ -51,13 +51,7 @@ module.exports = function(env) {
             locationWhenInUsePermission: "We use your location to display local weather conditions.",
           }
         ],
-        [
-          "expo-notifications",
-          {
-            "icon": "./assets/icon.png",
-            "color": "#3B82F6"
-          }
-        ]
+        "./plugins/removePushEntitlement.js",
       ],
       extra: {
         router: {

@@ -259,7 +259,7 @@ function CategoryColorManager({ isOpen, onClose }) {
             <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
                 <div className="flex items-center justify-between p-4 border-b border-gray-200">
                     <h2 className="text-lg font-semibold text-gray-900">{t('calendar.category_manager_title')}</h2>
-                    <button
+                    <button type="button"
                         onClick={onClose}
                         className="p-1 rounded-lg hover:bg-gray-100 transition-colors"
                         aria-label={t('common.close')}
@@ -313,7 +313,7 @@ function CategoryColorManager({ isOpen, onClose }) {
                                             autoFocus
                                         />
                                     ) : (
-                                        <button
+                                        <button type="button"
                                             onClick={() => setEditingCategory(category.id)}
                                             className="text-left w-full px-2 py-1 text-sm font-medium text-gray-900 hover:bg-gray-100 rounded transition-colors"
                                         >
@@ -323,7 +323,7 @@ function CategoryColorManager({ isOpen, onClose }) {
                                 </div>
 
                                 <div className="flex-shrink-0">
-                                    <button
+                                    <button type="button"
                                         onClick={() => handleDeleteCategory(category.id)}
                                         className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                         disabled={isLoading || categories.length <= 1}
@@ -340,7 +340,7 @@ function CategoryColorManager({ isOpen, onClose }) {
                 </div>
 
                 <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50 rounded-b-xl">
-                    <button
+                    <button type="button"
                         onClick={handleAddCategory}
                         className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
                         disabled={isLoading}
@@ -350,7 +350,7 @@ function CategoryColorManager({ isOpen, onClose }) {
                         </svg>
                         {t('calendar.add_category')}
                     </button>
-                    <button
+                    <button type="button"
                         onClick={onClose}
                         className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     >

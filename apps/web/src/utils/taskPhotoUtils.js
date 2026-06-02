@@ -56,6 +56,17 @@ export function sortTaskPhotos(photos = []) {
   });
 }
 
+export function buildTaskCompletionPhotoDetails(task) {
+  const photos = Array.isArray(task?.task_photos) ? task.task_photos : [];
+  const completionPhotos = photos.filter((photo) => photo.is_completion_photo);
+
+  return {
+    photo_count: photos.length,
+    completion_photo_count: completionPhotos.length,
+    completion_photo_ids: completionPhotos.map((photo) => photo.id).filter(Boolean),
+  };
+}
+
 export function canManageTaskPhotos({
   project,
   userId,

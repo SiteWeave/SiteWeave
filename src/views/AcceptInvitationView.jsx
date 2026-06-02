@@ -178,7 +178,7 @@ function AcceptInvitationView() {
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900 mb-2">Invalid Invitation</h1>
                     <p className="text-gray-600 mb-6">{error}</p>
-                    <button
+                    <button type="button"
                         onClick={() => navigate('/login')}
                         className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                     >
@@ -233,7 +233,7 @@ function AcceptInvitationView() {
                 <div className="p-8 flex flex-col justify-center">
                     <div className="mb-6">
                         <div className="flex gap-2 mb-6">
-                            <button
+                            <button type="button"
                                 onClick={() => setIsSignUp(true)}
                                 className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
                                     isSignUp 
@@ -243,7 +243,7 @@ function AcceptInvitationView() {
                             >
                                 Sign Up
                             </button>
-                            <button
+                            <button type="button"
                                 onClick={() => setIsSignUp(false)}
                                 className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
                                     !isSignUp 

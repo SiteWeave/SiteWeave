@@ -237,7 +237,7 @@ function AcceptInvitationView() {
                 <div className="p-8 flex flex-col justify-center">
                     <div className="mb-6">
                         <div className="flex gap-2 mb-6">
-                            <button
+                            <button type="button"
                                 onClick={() => setIsSignUp(true)}
                                 className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
                                     isSignUp 
@@ -247,7 +247,7 @@ function AcceptInvitationView() {
                             >
                                 Sign Up
                             </button>
-                            <button
+                            <button type="button"
                                 onClick={() => setIsSignUp(false)}
                                 className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
                                     !isSignUp 

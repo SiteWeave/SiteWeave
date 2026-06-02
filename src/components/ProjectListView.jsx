@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     formatDateShort,
     getStatusColor,
@@ -7,8 +8,10 @@ import {
 } from '../utils/projectHelpers';
 import { supabaseClient } from '../context/AppContext';
 import PermissionGuard from './PermissionGuard';
+import { Skeleton } from './ui/Skeleton';
 
 function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
+    const { t } = useTranslation();
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
     const [projectData, setProjectData] = useState({});
     // Load progress for all projects (duration-weighted phase %; prefers task roll-up from DB)
@@ -103,14 +106,15 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
 
     if (projects.length === 0) {
         return (
-            <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-12 text-center">
-                <p className="text-gray-500">No projects found.</p>
+            <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-12 text-center" data-testid="projects-list-empty">
+                <p className="text-slate-600 font-medium mb-1">{t('dashboard.no_projects_yet')}</p>
+                <p className="text-slate-500 text-sm max-w-md mx-auto">{t('dashboard.no_projects_description')}</p>
             </div>
         );
     }
 
     return (
-        <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden" data-testid="projects-list-view">
             <div className="w-full">
                 <table className="w-full table-fixed">
                     <thead className="bg-gray-50 border-b border-gray-200">
@@ -165,6 +169,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                 <tr
                                     key={project.id}
                                     className="hover:bg-gray-50 transition-colors cursor-pointer"
+                                    data-testid={`project-row-${project.id}`}
                                     onClick={() => onProjectClick && onProjectClick(project)}
                                 >
                                     <td className="px-4 sm:px-6 py-4">
@@ -181,15 +186,15 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                     <td className="px-4 sm:px-6 py-4">
                                         {data.loading ? (
                                             <div className="flex items-center gap-2 flex-wrap">
-                                                <div className="flex-1 min-w-[80px] max-w-[120px] h-2.5 bg-gray-200 rounded-full animate-pulse"></div>
-                                                <div className="w-12 h-4 bg-gray-200 rounded animate-pulse"></div>
+                                                <Skeleton className="flex-1 min-w-[80px] max-w-[120px] h-2.5 rounded-full" />
+                                                <Skeleton className="w-12 h-4 rounded" />
                                             </div>
                                         ) : (
                                             <div className="flex items-center gap-2 flex-wrap">
                                                 <div className="flex-1 min-w-[80px] max-w-[120px] bg-gray-200 rounded-full h-2.5 relative overflow-hidden">
                                                     {progress > 0 ? (
                                                         <div
-                                                            className={`h-full rounded-full transition-all duration-300 ${getProgressColor(progress)}`}
+                                                            className={`h-full rounded-full transition-[width] duration-200 ease-out ${getProgressColor(progress)}`}
                                                             style={{
                                                                 width: `${Math.max(0, Math.min(100, progress))}%`,
                                                                 minWidth: '4px'
@@ -212,7 +217,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                     <td className="px-4 sm:px-6 py-3 text-right">
                                         <div className="flex items-center justify-end gap-1">
                                             <PermissionGuard permission="can_edit_projects">
-                                                <button
+                                                <button type="button"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         onEdit(project);
@@ -226,7 +231,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                                 </button>
                                             </PermissionGuard>
                                             <PermissionGuard permission="can_delete_projects">
-                                                <button
+                                                <button type="button"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         onDelete(project);

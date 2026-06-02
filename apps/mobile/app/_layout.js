@@ -33,7 +33,7 @@ function RootLayoutNav() {
     // Add a small delay to prevent race conditions with session checks
     const timer = setTimeout(() => {
       if (!user && !inAuthGroup && !onProjectInvite) {
-        router.replace('/(auth)/login');
+        router.replace('/(auth)');
       } else if (user && inAuthGroup && !onProjectInvite) {
         router.replace('/(tabs)');
       }
@@ -59,7 +59,7 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false, animation: 'none' }}>
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="project-invite" options={{ headerShown: false }} />
+      <Stack.Screen name="project-invite/[token]" options={{ headerShown: false }} />
     </Stack>
   );
 }

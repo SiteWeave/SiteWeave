@@ -424,6 +424,16 @@ TO authenticated
 WITH CHECK (false);
 
 -- ============================================================================
+-- Data API: explicit grants (RLS enforces row access)
+-- ============================================================================
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.project_stream_posts TO authenticated;
+GRANT ALL ON TABLE public.project_stream_posts TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.project_stream_replies TO authenticated;
+GRANT ALL ON TABLE public.project_stream_replies TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.task_comments TO authenticated;
+GRANT ALL ON TABLE public.task_comments TO service_role;
+
+-- ============================================================================
 -- Realtime publication (if using supabase realtime)
 -- ============================================================================
 DO $$

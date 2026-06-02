@@ -436,7 +436,7 @@ function DirectoryManagementModal({ show, onClose }) {
             {/* Tab Navigation */}
             <div className="border-b border-gray-200">
               <nav className="flex space-x-8">
-                <button
+                <button type="button"
                   onClick={() => setActiveTab('invite')}
                   className={`py-4 px-1 border-b-2 font-medium text-sm ${
                     activeTab === 'invite'
@@ -446,7 +446,7 @@ function DirectoryManagementModal({ show, onClose }) {
                 >
                   {t('team.tab_invite_email')}
                 </button>
-                <button
+                <button type="button"
                   onClick={() => setActiveTab('create')}
                   className={`py-4 px-1 border-b-2 font-medium text-sm ${
                     activeTab === 'create'
@@ -677,13 +677,13 @@ function DirectoryManagementModal({ show, onClose }) {
                                 <option key={role.id} value={role.id}>{role.name}</option>
                               ))}
                             </select>
-                            <button
+                            <button type="button"
                               onClick={() => handleUpdateRole(member.id)}
                               className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
                             >
                               {t('common.save')}
                             </button>
-                            <button
+                            <button type="button"
                               onClick={() => {
                                 setEditingUser(null);
                                 setNewRoleId('');
@@ -697,7 +697,7 @@ function DirectoryManagementModal({ show, onClose }) {
                           <>
                             {/* Don't allow editing role for Org Admins */}
                             {member.roles?.name !== 'Org Admin' && (
-                              <button
+                              <button type="button"
                                 onClick={() => {
                                   setEditingUser(member.id);
                                   setNewRoleId(member.role_id || '');
@@ -709,7 +709,7 @@ function DirectoryManagementModal({ show, onClose }) {
                               </button>
                             )}
                             {member.id !== user.id && (
-                              <button
+                              <button type="button"
                                 onClick={() => handleRemoveUser(member.id)}
                                 className="px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-md"
                               >

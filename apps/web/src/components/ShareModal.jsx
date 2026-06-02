@@ -284,7 +284,7 @@ function ShareModal({ projectId, onClose }) {
       <div className="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-gray-900">{t('projectDetail.manage_project_crew')}</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
+          <button type="button" onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
         </div>
 
         <form onSubmit={onSubmit}>

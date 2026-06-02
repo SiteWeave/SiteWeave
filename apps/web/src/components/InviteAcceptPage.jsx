@@ -648,7 +648,7 @@ function InviteAcceptPage() {
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Invalid Invitation</h2>
           <p className="text-gray-600 mb-6">{error}</p>
-          <button
+          <button type="button"
             onClick={() => navigate('/login')}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
@@ -672,7 +672,7 @@ function InviteAcceptPage() {
           </div>
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Unable to Load Invitation</h2>
           <p className="text-sm sm:text-base text-gray-600 mb-6">{error || 'Unable to load invitation. Please check the link and try again.'}</p>
-          <button
+          <button type="button"
             onClick={() => navigate('/login')}
             className="px-4 sm:px-6 py-2 text-sm sm:text-base bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
           >

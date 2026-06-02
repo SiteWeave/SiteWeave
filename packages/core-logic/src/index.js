@@ -22,6 +22,20 @@ export { normalizeAssigneePhone } from './utils/assigneePhone.js';
 export { upsertById, removeById, getRealtimeRow } from './utils/realtimeList.js';
 
 export {
+  CACHE_TTL,
+  cacheKey,
+  get as getMemoryCache,
+  set as setMemoryCache,
+  isFresh as isMemoryCacheFresh,
+  invalidate as invalidateMemoryCache,
+  clear as clearMemoryCache,
+} from './cache/memoryCache.js';
+
+export { runOptimistic, createOptimisticUpdate } from './utils/optimistic.js';
+
+export { loadWithFallback } from './utils/loadWithFallback.js';
+
+export {
   REPORT_REASONS,
   REASON_LABELS,
   REPORT_STATUS_COLORS,
@@ -46,7 +60,9 @@ export * from './services/taskPhotosService.js';
 export * from './services/typingService.js';
 export * from './services/contactsService.js';
 export * from './services/moderationService.js';
+export * from './services/feedbackService.js';
 export * from './services/progressReportService.js';
 export * from './services/brandingService.js';
 export * from './services/weatherImpactsService.js';
+export * from './services/profilePhotosService.js';
 

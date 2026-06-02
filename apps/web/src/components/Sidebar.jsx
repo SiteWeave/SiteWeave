@@ -77,7 +77,7 @@ function Sidebar() {
                 {!isCollapsed && (
                     <span>SiteWeave</span>
                 )}
-                <button 
+                <button type="button" 
                     onClick={() => setIsCollapsed(!isCollapsed)}
                     className="ml-auto p-1.5 hover:bg-gray-100 rounded transition-colors"
                     title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -116,7 +116,7 @@ function Sidebar() {
             <nav className="flex-1 px-3 py-2 space-y-1" data-onboarding="sidebar-nav" role="navigation" aria-label="Main navigation">
                 {navItems.map(item => (
                     <div key={item}>
-                        <button 
+                        <button type="button" 
                             onClick={() => {
                                 dispatch({type: 'SET_VIEW', payload: item});
                                 // Clear selected project when navigating away from Projects view
@@ -139,7 +139,7 @@ function Sidebar() {
                         {item === 'Projects' && state.activeView === 'Projects' && !isCollapsed && (
                             <div className="pl-8 mt-1.5 space-y-1 border-l-2 border-gray-200 ml-2.5" role="group" aria-label="Project list">
                                 {state.projects.map(p => (
-                                    <button 
+                                    <button type="button" 
                                         key={p.id} 
                                         onClick={(e) => {
                                             e.preventDefault();
@@ -179,7 +179,7 @@ function Sidebar() {
                             </div>
                         </div>
                     )}
-                    <button
+                    <button type="button"
                         onClick={handleLogout}
                         className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors shrink-0"
                         title="Sign out"

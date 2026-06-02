@@ -284,7 +284,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
           </div>
         </div>
 
-        <form className="space-y-4" onSubmit={handlePasswordSubmit}>
+        <form className="space-y-4" onSubmit={handlePasswordSubmit} data-testid="login-form">
           {isSignUp && (
             <>
               <div className="grid grid-cols-2 gap-2">
@@ -346,6 +346,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder={t('auth.work_email')}
+            data-testid="login-email"
             className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
           />
 
@@ -358,6 +359,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t('auth.password')}
               className="block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md text-sm"
+              data-testid="login-password"
             />
             <button
               type="button"
@@ -372,7 +374,8 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
           <button
             type="submit"
             disabled={isLoading || !canSubmit}
-            className="w-full py-2.5 px-4 rounded-md text-sm font-semibold text-white bg-gray-800 hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-2.5 px-4 rounded-md text-sm font-semibold text-white bg-gray-800 hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed btn-smooth"
+            data-testid="login-submit"
           >
             {isLoading ? <LoadingSpinner size="sm" text="" /> : isSignUp ? t('auth.create_account') : t('auth.log_in')}
           </button>

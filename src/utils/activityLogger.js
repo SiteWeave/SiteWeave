@@ -1,5 +1,18 @@
 import { supabaseClient } from '../context/AppContext';
 
+async function resolveUserAvatarForLog(user) {
+    if (!user?.id) return null;
+    const { data, error } = await supabaseClient
+        .from('profiles')
+        .select('contacts(avatar_url)')
+        .eq('id', user.id)
+        .maybeSingle();
+    if (!error && data?.contacts?.avatar_url) {
+        return data.contacts.avatar_url;
+    }
+    return user.user_metadata?.avatar_url || null;
+}
+
 /**
  * Log an activity to the activity_log table
  * @param {Object} params - Activity parameters
@@ -42,11 +55,13 @@ export async function logActivity({
             return;
         }
 
+        const userAvatar = await resolveUserAvatarForLog(user);
+
         const activityData = {
             user_id: user.id,
             organization_id: orgId,
             user_name: user.user_metadata?.full_name || user.email || 'Unknown User',
-            user_avatar: user.user_metadata?.avatar_url || null,
+            user_avatar: userAvatar,
             action,
             entity_type: entityType,
             entity_id: entityId,
@@ -237,10 +252,11 @@ export async function logPhaseProgressChange(phase, user, projectId, projectName
         console.warn('Cannot log phase progress change: user not provided');
         return;
     }    try {
+        const userAvatar = await resolveUserAvatarForLog(user);
         const activityData = {
             user_id: user.id,
             user_name: user.user_metadata?.full_name || user.email || 'Unknown User',
-            user_avatar: user.user_metadata?.avatar_url || null,
+            user_avatar: userAvatar,
             action: 'updated',
             entity_type: 'project_phase',
             entity_id: phase.id,

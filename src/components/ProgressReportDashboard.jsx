@@ -91,7 +91,7 @@ function ProgressReportDashboard() {
           <h2 className="text-2xl font-bold text-gray-900">
             {editingScheduleId ? t('progressReports.edit_title') : t('progressReports.create_org_title')}
           </h2>
-          <button
+          <button type="button"
             onClick={() => {
               setShowBuilder(false);
               setEditingScheduleId(null);
@@ -145,7 +145,7 @@ function ProgressReportDashboard() {
           <h2 className="text-2xl font-bold text-gray-900">{t('progressReports.dashboard.title')}</h2>
           <p className="text-gray-600 mt-1">{t('progressReports.dashboard.subtitle')}</p>
         </div>
-        <button
+        <button type="button"
           onClick={handleCreateNew}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
@@ -218,19 +218,19 @@ function ProgressReportDashboard() {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                      <button
+                      <button type="button"
                         onClick={() => handleEdit(schedule.id)}
                         className="text-blue-600 hover:text-blue-700 mr-3"
                       >
                         {t('progressReports.edit')}
                       </button>
-                      <button
+                      <button type="button"
                         onClick={() => handleSendNow(schedule.id)}
                         className="text-blue-600 hover:text-blue-700 mr-3"
                       >
                         {t('progressReports.send_now')}
                       </button>
-                      <button
+                      <button type="button"
                         onClick={() => openViewHistory(schedule.id)}
                         className="text-blue-600 hover:text-blue-700"
                       >
@@ -333,7 +333,7 @@ function ProgressReportDashboard() {
                     })}
                   </p>
                 </div>
-                <button
+                <button type="button"
                   onClick={() => handleSendNow(report.schedule_id)}
                   className="px-3 py-1 text-sm text-blue-600 hover:text-blue-700"
                 >

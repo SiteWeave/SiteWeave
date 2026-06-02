@@ -117,3 +117,8 @@ ON public.notification_action_history
 FOR INSERT
 TO service_role
 WITH CHECK (true);
+
+GRANT SELECT, UPDATE ON TABLE public.user_notifications TO authenticated;
+GRANT ALL ON TABLE public.user_notifications TO service_role;
+GRANT SELECT ON TABLE public.notification_action_history TO authenticated;
+GRANT ALL ON TABLE public.notification_action_history TO service_role;

@@ -21,6 +21,12 @@ import {
   SettingsSecondaryButton,
   SettingsDangerButton,
 } from '../components/settings/SettingsSection';
+import {
+  prepareWebAvatarFile,
+  uploadProfilePhoto,
+  removeProfilePhoto,
+  validateProfilePhotoFile,
+} from '@siteweave/core-logic';
 
 function SettingsView() {
   const { t, i18n } = useTranslation();
@@ -36,12 +42,19 @@ function SettingsView() {
   const [googleCalendarSynced, setGoogleCalendarSynced] = useState(false);
   const [outlookCalendarSynced, setOutlookCalendarSynced] = useState(false);
   const [isSavingOrgAssignmentEmail, setIsSavingOrgAssignmentEmail] = useState(false);
+  const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(null);
 
   // Form states
   const [fullName, setFullName] = useState(state.user?.user_metadata?.full_name || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+
+  useEffect(() => {
+    const contactAvatar = state.contacts?.find((contact) => contact.id === state.userContactId)?.avatar_url || null;
+    setAvatarUrl(contactAvatar || state.user?.user_metadata?.avatar_url || null);
+  }, [state.contacts, state.userContactId, state.user?.user_metadata?.avatar_url]);
 
   // Get app version dynamically
   useEffect(() => {
@@ -158,6 +171,92 @@ function SettingsView() {
     }
   };
 
+  const refreshAvatarInState = async () => {
+    if (!state.user?.id) return;
+
+    let contactId = state.userContactId;
+    let avatar_url = null;
+
+    if (contactId) {
+      const { data: contact } = await supabaseClient
+        .from('contacts')
+        .select('id, avatar_url')
+        .eq('id', contactId)
+        .maybeSingle();
+      if (contact?.id) {
+        contactId = contact.id;
+        avatar_url = contact.avatar_url;
+      }
+    } else {
+      const { data: profile } = await supabaseClient
+        .from('profiles')
+        .select('contact_id, contacts(avatar_url)')
+        .eq('id', state.user.id)
+        .maybeSingle();
+      contactId = profile?.contact_id || null;
+      avatar_url = profile?.contacts?.avatar_url || null;
+      if (contactId && !state.userContactId) {
+        dispatch({ type: 'SET_USER_CONTACT_ID', payload: contactId });
+      }
+    }
+
+    if (contactId) {
+      dispatch({
+        type: 'UPDATE_CONTACT',
+        payload: {
+          ...(state.contacts?.find((entry) => entry.id === contactId) || {}),
+          id: contactId,
+          avatar_url,
+        },
+      });
+    }
+
+    setAvatarUrl(avatar_url || state.user?.user_metadata?.avatar_url || null);
+  };
+
+  const handleAvatarFileSelected = async (event) => {
+    const rawFile = event?.target?.files?.[0];
+    event.target.value = '';
+    if (!rawFile || !state.user?.id) return;
+
+    try {
+      setIsUpdatingAvatar(true);
+      validateProfilePhotoFile(rawFile);
+      const prepared = await prepareWebAvatarFile(rawFile);
+      validateProfilePhotoFile(prepared);
+      const publicUrl = await uploadProfilePhoto(supabaseClient, {
+        userId: state.user.id,
+        file: prepared,
+      });
+      setAvatarUrl(publicUrl);
+      await refreshAvatarInState();
+      const { data: { user } } = await supabaseClient.auth.getUser();
+      dispatch({ type: 'SET_USER', payload: user });
+      addToast(t('toast.profile_updated_successfully'), 'success');
+    } catch (error) {
+      addToast(error?.message || t('toast.error_updating_profile', { message: 'Failed to update avatar' }), 'error');
+    } finally {
+      setIsUpdatingAvatar(false);
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    if (!state.user?.id) return;
+    try {
+      setIsUpdatingAvatar(true);
+      await removeProfilePhoto(supabaseClient, { userId: state.user.id });
+      setAvatarUrl(null);
+      await refreshAvatarInState();
+      const { data: { user } } = await supabaseClient.auth.getUser();
+      dispatch({ type: 'SET_USER', payload: user });
+      addToast(t('toast.profile_updated_successfully'), 'success');
+    } catch (error) {
+      addToast(error?.message || t('toast.error_updating_profile', { message: 'Failed to remove avatar' }), 'error');
+    } finally {
+      setIsUpdatingAvatar(false);
+    }
+  };
+
   const handleToggleDefaultAssignmentEmail = async (e) => {
     const checked = e.target.checked;
     const orgId = state.currentOrganization?.id;
@@ -212,6 +311,7 @@ function SettingsView() {
               <div className="flex items-center gap-4">
                 <Avatar
                   name={state.user?.user_metadata?.full_name || state.user?.email}
+                  avatarUrl={avatarUrl}
                   size="xl"
                 />
                 <div>
@@ -221,6 +321,28 @@ function SettingsView() {
                   {state.user?.user_metadata?.full_name?.trim() && state.user?.email ? (
                     <p className="text-sm text-gray-500">{state.user.email}</p>
                   ) : null}
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <label className="inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={handleAvatarFileSelected}
+                        disabled={isUpdatingAvatar}
+                      />
+                      {isUpdatingAvatar ? t('settings.updating') : avatarUrl ? 'Change photo' : 'Upload photo'}
+                    </label>
+                    {avatarUrl ? (
+                      <button
+                        type="button"
+                        onClick={handleRemoveAvatar}
+                        disabled={isUpdatingAvatar}
+                        className="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60"
+                      >
+                        Remove photo
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </SettingsField>
@@ -502,7 +624,7 @@ function SettingsView() {
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-gray-900">{t('settings.role_management')}</h2>
-              <button
+              <button type="button"
                 onClick={() => setShowRoleManagement(false)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
                 aria-label={t('common.close')}

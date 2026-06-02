@@ -1,0 +1,15 @@
+{
+  "failOn": "none",
+  "ignore": {
+    "overrides": [
+      {
+        "files": ["packages/core-logic/src/supabase/client.js"],
+        "rules": ["react-doctor/no-eval"]
+      }
+    ]
+  },
+  "surfaces": {
+    "prComment": { "excludeTags": ["design"] },
+    "score": { "excludeTags": ["design"] }
+  }
+}

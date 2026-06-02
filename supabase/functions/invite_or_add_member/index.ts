@@ -11,6 +11,13 @@ import { sendTwilioSms } from '../_shared/twilioSms.ts'
 import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
 import { createProjectAccessInvite, mapRoleToAccessLevel } from '../_shared/projectInvite.ts'
 import { assertCanInviteGuestCollaborator, GUEST_COLLABORATOR_LIMIT_ERROR } from '../_shared/workspaceTier.ts'
+import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
+import {
+  assertCanManageProject,
+  createServiceClient,
+  jsonResponse,
+  requireUser,
+} from '../_shared/auth.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -38,17 +45,11 @@ function mapContactType(role?: string): string {
   return 'Team'
 }
 
-// CORS headers helper
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
-
 serve(async (req) => {
-  // Handle CORS preflight requests
+  const corsHeaders = corsHeadersFor(req)
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return corsPreflightResponse(req)
   }
 
   if (req.method !== 'POST') {
@@ -59,37 +60,30 @@ serve(async (req) => {
   }
 
   try {
+    const authResult = await requireUser(req, corsHeaders)
+    if (authResult instanceof Response) return authResult
+    const { user } = authResult
+
     const body = await req.json()
     console.log('Received request body:', JSON.stringify(body))
     
-    const { projectId, entries, addedByUserId } = body
+    const { projectId, entries } = body
+    const addedByUserId = user.id
 
     if (!projectId || !Array.isArray(entries) || entries.length === 0) {
       console.error('Invalid payload:', { projectId, entries })
-      return new Response(
-        JSON.stringify({ error: 'Invalid payload', details: { projectId, entriesCount: entries?.length } }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      return jsonResponse(
+        { error: 'Invalid payload', details: { projectId, entriesCount: entries?.length } },
+        400,
+        corsHeaders,
       )
     }
+
+    const authz = await assertCanManageProject(supabaseAdmin, user.id, projectId, corsHeaders)
+    if (authz instanceof Response) return authz
+    const organizationId = authz.organizationId
     
     console.log('Processing entries for project:', projectId)
-
-    // Get the project's organization_id (required for project_contacts)
-    const { data: projectData, error: projectError } = await supabaseAdmin
-      .from('projects')
-      .select('organization_id')
-      .eq('id', projectId)
-      .single()
-
-    if (projectError || !projectData?.organization_id) {
-      console.error('Error fetching project or missing organization_id:', projectError)
-      return new Response(
-        JSON.stringify({ error: 'Project not found or missing organization', details: projectError }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    const organizationId = projectData.organization_id
     console.log('Project organization_id:', organizationId)
 
     const { data: orgRowForSms } = await supabaseAdmin

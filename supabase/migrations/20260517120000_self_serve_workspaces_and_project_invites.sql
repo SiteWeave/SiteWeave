@@ -155,3 +155,6 @@ CREATE POLICY "Org members can manage project access invites"
   WITH CHECK (
     organization_id = public.get_user_organization_id()
   );
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.project_access_invites TO authenticated;
+GRANT ALL ON TABLE public.project_access_invites TO service_role;

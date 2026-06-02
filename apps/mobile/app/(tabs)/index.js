@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, RefreshControl, FlatList } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, FlatList, Alert } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
@@ -11,36 +11,54 @@ import {
   fetchActiveProjectsCount,
   fetchCompletedTasksCount,
   fetchOverdueTasksCount,
-  fetchUserProjectsWithProgress
+  fetchUserProjectsWithProgress,
+  loadWithFallback,
 } from '@siteweave/core-logic';
 import QuickActionsModal from '../../components/QuickActionsModal';
 import KPICarousel from '../../components/KPICarousel';
 import MyDayItemModal from '../../components/MyDayItemModal';
+import PhotoAttachSheet from '../../components/PhotoAttachSheet';
+import { pickAndUploadTaskPhoto, resolveTaskOrganizationId } from '../../utils/pickAndUploadTaskPhoto';
+import { useBranding } from '../../context/BrandingContext';
 import ProjectCardCompact from '../../components/ProjectCardCompact';
 import ProfileDrawer from '../../components/ProfileDrawer';
 import PressableWithFade from '../../components/PressableWithFade';
-import WeatherWidget from '../../components/WeatherWidget';
+import WeatherCard from '../../components/ui/WeatherCard';
+import WeatherShiftSheet from '../../components/WeatherShiftSheet';
+import Card from '../../components/ui/Card';
+import { Text as UiText } from '../../components/ui/Text';
+import { colors, spacing, touch } from '../../theme';
+import { TAB_BAR_CLEARANCE, scrollBottomPadding } from '../../components/ui/FloatingTabBar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useHaptics } from '../../hooks/useHaptics';
+import { getCached, setCached } from '../../utils/persistentCache';
+import { SkeletonCard, SkeletonList } from '../../components/ui/Skeleton';
+import Avatar from '../../components/ui/Avatar';
 
 export default function HomeScreen() {
   const { t } = useTranslation();
-  const { user, supabase, activeOrganization, isProjectCollaborator } = useAuth();
+  const { user, supabase, activeOrganization, isProjectCollaborator, collaborationProjects, profileAvatarUrl } = useAuth();
+  const { primaryColor } = useBranding();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const [tasks, setTasks] = useState([]);
   const [events, setEvents] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [kpis, setKpis] = useState({ activeProjects: 0, completedTasks: 0, overdueTasks: 0 });
+  const [kpis, setKpis] = useState({ activeProjects: null, completedTasks: null, overdueTasks: null });
   const [myDayItems, setMyDayItems] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [showItemModal, setShowItemModal] = useState(false);
   const [showProfileDrawer, setShowProfileDrawer] = useState(false);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [showWeatherShift, setShowWeatherShift] = useState(false);
+  const [photoTask, setPhotoTask] = useState(null);
+  const [showPhotoSheet, setShowPhotoSheet] = useState(false);
+  const [photoUploadTaskId, setPhotoUploadTaskId] = useState(null);
 
   useEffect(() => {
     if (!supabase || !user) return;
@@ -66,35 +84,96 @@ export default function HomeScreen() {
       setTasks([]);
       setEvents([]);
       setProjects([]);
-      setKpis({ activeProjects: 0, completedTasks: 0, overdueTasks: 0 });
+      setKpis({ activeProjects: null, completedTasks: null, overdueTasks: null });
       setMyDayItems([]);
+      setLoading(false);
       return;
+    }
+
+    const cacheResource = `home:${activeOrganization?.id || 'guest'}`;
+    if (!refreshing) {
+      const cached = await getCached(user.id, cacheResource);
+      if (cached) {
+        if (cached.projects?.length) setProjects(cached.projects);
+        if (cached.tasks?.length) setTasks(cached.tasks);
+        if (cached.kpis) setKpis(cached.kpis);
+        setLoading(false);
+      }
     }
     
     try {
-      const [tasksData, eventsData, projectsData, activeCount, completedCount, overdueCount, unreadCount] = await Promise.all([
-        fetchUserIncompleteTasks(supabase, user.id),
-        fetchTodayEvents(supabase),
-        fetchUserProjectsWithProgress(supabase, user.id),
-        fetchActiveProjectsCount(supabase, user.id),
-        fetchCompletedTasksCount(supabase, user.id),
-        fetchOverdueTasksCount(supabase, user.id),
-        fetchUnreadNotificationCount(supabase, { userId: user.id, email: user.email || '' }),
+      if (!refreshing) setLoading(true);
+
+      const [
+        tasksData,
+        eventsData,
+        projectsData,
+        activeCount,
+        completedCount,
+        overdueCount,
+        unreadCount,
+      ] = await Promise.all([
+        loadWithFallback(
+          () => fetchUserIncompleteTasks(supabase, user.id, undefined, { limit: 20, orderByDueDate: true }),
+          [],
+          { label: 'home_tasks' },
+        ),
+        loadWithFallback(
+          () => fetchTodayEvents(supabase),
+          [],
+          { label: 'home_events' },
+        ),
+        loadWithFallback(
+          () => fetchUserProjectsWithProgress(supabase, user.id, { limit: 50 }),
+          [],
+          { label: 'home_projects' },
+        ),
+        loadWithFallback(
+          () => fetchActiveProjectsCount(supabase, user.id),
+          null,
+          { label: 'home_active_projects_count' },
+        ),
+        loadWithFallback(
+          () => fetchCompletedTasksCount(supabase, user.id),
+          null,
+          { label: 'home_completed_tasks_count' },
+        ),
+        loadWithFallback(
+          () => fetchOverdueTasksCount(supabase, user.id),
+          null,
+          { label: 'home_overdue_tasks_count' },
+        ),
+        loadWithFallback(
+          () => fetchUnreadNotificationCount(supabase, { userId: user.id, email: user.email || '' }),
+          0,
+          { label: 'home_unread_notifications' },
+        ),
       ]);
       
       const orgId = activeOrganization?.id;
       const orgTasks = orgId ? filterByOrganizationId(tasksData || [], orgId) : (tasksData || []);
       const orgEvents = orgId ? filterByOrganizationId(eventsData || [], orgId) : (eventsData || []);
-      const orgProjects = orgId ? filterByOrganizationId(projectsData || [], orgId) : (projectsData || []);
+      let orgProjects = orgId ? filterByOrganizationId(projectsData || [], orgId) : (projectsData || []);
+
+      if (!orgId && isProjectCollaborator && collaborationProjects?.length) {
+        const byId = new Map(orgProjects.map((p) => [p.id, p]));
+        for (const p of collaborationProjects) {
+          if (!byId.has(p.id)) {
+            byId.set(p.id, { ...p, progress: p.progress ?? 0 });
+          }
+        }
+        orgProjects = Array.from(byId.values());
+      }
       
       setTasks(orgTasks);
       setEvents(orgEvents);
       setProjects(orgProjects);
-      setKpis({
+      const nextKpis = {
         activeProjects: activeCount,
         completedTasks: completedCount,
         overdueTasks: overdueCount,
-      });
+      };
+      setKpis(nextKpis);
       setUnreadNotificationCount(unreadCount || 0);
 
       // Combine and prioritize My Day items (top 3)
@@ -136,8 +215,15 @@ export default function HomeScreen() {
         .slice(0, 3);
 
       setMyDayItems(combined);
+      await setCached(user.id, cacheResource, {
+        projects: orgProjects,
+        tasks: orgTasks,
+        kpis: nextKpis,
+      });
     } catch (error) {
       console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -173,7 +259,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadData();
-  }, [user, activeOrganization, isProjectCollaborator, supabase]);
+  }, [user, activeOrganization, isProjectCollaborator, collaborationProjects, supabase]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -191,6 +277,51 @@ export default function HomeScreen() {
     loadData(); // Refresh data after completion
   };
 
+  const openTaskPhotoSheet = (task) => {
+    if (!task?.project_id) {
+      Alert.alert(t('common.error'), t('mobile.task_photo_missing_project', { defaultValue: 'This task is not linked to a project.' }));
+      return;
+    }
+    const orgId = resolveTaskOrganizationId(task, activeOrganization, projects);
+    if (!orgId) {
+      Alert.alert(t('common.error'), t('mobile.task_photo_missing_org', { defaultValue: 'Could not resolve organization for this task.' }));
+      return;
+    }
+    haptics.light();
+    setPhotoTask(task);
+    setShowPhotoSheet(true);
+  };
+
+  const runTaskPhotoUpload = async (mode) => {
+    const task = photoTask;
+    if (!task) return;
+    const orgId = resolveTaskOrganizationId(task, activeOrganization, projects);
+    if (!orgId) return;
+
+    try {
+      setPhotoUploadTaskId(task.id);
+      const uploaded = await pickAndUploadTaskPhoto({
+        supabase,
+        task,
+        organizationId: orgId,
+        userId: user?.id,
+        mode,
+      });
+      if (uploaded) {
+        haptics.success();
+        Alert.alert(t('common.success'), t('mobile.task_photo_attached', { defaultValue: 'Photo attached to task.' }));
+      }
+    } catch (error) {
+      console.error('Error uploading task photo:', error);
+      haptics.error();
+      Alert.alert(t('common.error'), error.message || t('mobile.task_photo_upload_failed', { defaultValue: 'Could not upload photo.' }));
+    } finally {
+      setPhotoUploadTaskId(null);
+      setShowPhotoSheet(false);
+      setPhotoTask(null);
+    }
+  };
+
   const getUserName = () => {
     if (user?.user_metadata?.full_name) {
       return user.user_metadata.full_name.split(' ')[0]; // First name only
@@ -204,6 +335,8 @@ export default function HomeScreen() {
   const renderMyDayItem = ({ item }) => {
     const isTask = item.type === 'task';
     const isEvent = item.type === 'event';
+    const canAddPhoto = isTask && item.project_id && !item.completed;
+    const photoBusy = photoUploadTaskId === item.id;
 
     return (
       <PressableWithFade
@@ -240,7 +373,27 @@ export default function HomeScreen() {
               )}
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#4B5563" />
+          <View style={styles.myDayItemActions}>
+            {canAddPhoto ? (
+              <PressableWithFade
+                onPress={() => openTaskPhotoSheet(item)}
+                style={styles.myDayPhotoBtn}
+                hitSlop={touch.hitSlop}
+                disabled={photoBusy}
+                testID={`my-day-photo-${item.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={t('mobile.add_photo')}
+                hapticType="light"
+              >
+                <Ionicons
+                  name="camera-outline"
+                  size={22}
+                  color={photoBusy ? colors.textSubtle : primaryColor}
+                />
+              </PressableWithFade>
+            ) : null}
+            <Ionicons name="chevron-forward" size={20} color="#4B5563" />
+          </View>
         </View>
       </PressableWithFade>
     );
@@ -254,6 +407,7 @@ export default function HomeScreen() {
     <View style={[styles.safeArea, { paddingTop: insets.top }]}>
       <ScrollView
         style={styles.container}
+        contentContainerStyle={{ paddingBottom: scrollBottomPadding(insets, spacing.xxl) }}
         refreshControl={<RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
@@ -273,7 +427,7 @@ export default function HomeScreen() {
                 style={styles.notificationButton}
                 onPress={() => {
                   haptics.light();
-                  router.push('/notifications');
+                  router.push('/(tabs)/notifications');
                 }}
                 activeOpacity={0.7}
                 hapticType="light"
@@ -296,18 +450,17 @@ export default function HomeScreen() {
                 activeOpacity={0.7}
                 hapticType="light"
               >
-                <View style={styles.profileAvatar}>
-                  <Text style={styles.profileAvatarText}>
-                    {getUserName().charAt(0).toUpperCase()}
-                  </Text>
-                </View>
+                <Avatar
+                  name={getUserName()}
+                  avatarUrl={profileAvatarUrl}
+                  size="sm"
+                />
               </PressableWithFade>
             </View>
           </View>
         </View>
 
-        {/* Weather Widget */}
-        <WeatherWidget />
+        <WeatherCard onLogWeather={() => setShowWeatherShift(true)} />
 
         {/* Section A: KPIs Carousel */}
         <View style={styles.kpiSection}>
@@ -318,44 +471,74 @@ export default function HomeScreen() {
           />
         </View>
 
-        {/* Section B: My Day */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('mobile.my_day_section')}</Text>
-          {myDayItems.length > 0 ? (
-            <View>
-              {myDayItems.map((item, index) => (
-                <View key={`${item.type}-${item.id || index}`}>
-                  {renderMyDayItem({ item })}
-                </View>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.emptyText}>{t('mobile.no_items_today')}</Text>
-          )}
-        </View>
+        {/* Section B: My Day — hidden when loaded and nothing to show */}
+        {(loading || myDayItems.length > 0) && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('mobile.my_day_section')}</Text>
+            {loading && myDayItems.length === 0 ? (
+              <SkeletonList count={3} rowHeight={64} />
+            ) : (
+              <View>
+                {myDayItems.map((item, index) => (
+                  <View key={`${item.type}-${item.id || index}`}>
+                    {renderMyDayItem({ item })}
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
 
-        {/* Section C: Projects List */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('mobile.projects_count', { count: projects.length })}</Text>
-          {projects.length > 0 ? (
-            <FlatList
-              data={projects}
-              renderItem={renderProject}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>No projects found.</Text>
-              }
-            />
-          ) : (
-            <Text style={styles.emptyText}>No projects assigned to you.</Text>
-          )}
+          <UiText variant="sectionTitle" style={styles.sectionTitle}>
+            {t('mobile.recently_visited')}
+          </UiText>
+          <Card style={styles.recentsCard}>
+            {loading && projects.length === 0 ? (
+              <View style={{ gap: spacing.md, padding: spacing.sm }}>
+                <SkeletonCard height={72} />
+                <SkeletonCard height={72} />
+              </View>
+            ) : projects.length > 0 ? (
+              projects.slice(0, 5).map((p, i) => (
+                <PressableWithFade
+                  key={p.id}
+                  style={[styles.recentRow, i < Math.min(projects.length, 5) - 1 && styles.recentRowBorder]}
+                  onPress={() => router.push(`/(tabs)/projects/${p.id}`)}
+                  testID={`home-recent-${p.id}`}
+                >
+                  <View style={styles.recentIcon}>
+                    <Ionicons name="folder-outline" size={22} color={colors.primary} />
+                  </View>
+                  <View style={styles.recentText}>
+                    <Text style={styles.recentTitle} numberOfLines={1}>
+                      {p.name || p.title}
+                    </Text>
+                    <Text style={styles.recentSub}>
+                      {t('mobile.percent_complete', { percent: Math.round(p.progress_percent ?? p.progress ?? 0) })}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textSubtle} />
+                </PressableWithFade>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>{t('mobile.no_projects_assigned')}</Text>
+            )}
+            <PressableWithFade
+              style={styles.seeAll}
+              onPress={() => router.push('/(tabs)/projects')}
+              testID="home-see-all-projects"
+            >
+              <Text style={styles.seeAllText}>{t('mobile.see_all_projects')}</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+            </PressableWithFade>
+          </Card>
         </View>
       </ScrollView>
 
       {/* FAB */}
       <PressableWithFade
-        style={styles.fab}
+        style={[styles.fab, { bottom: TAB_BAR_CLEARANCE + spacing.md }]}
         onPress={() => {
           haptics.medium();
           setShowQuickActions(true);
@@ -379,10 +562,36 @@ export default function HomeScreen() {
           setSelectedItem(null);
         }}
         onComplete={handleItemComplete}
+        onAddPhoto={(task) => {
+          setShowItemModal(false);
+          setSelectedItem(null);
+          openTaskPhotoSheet(task);
+        }}
+        photoUploading={!!photoUploadTaskId}
+      />
+      <PhotoAttachSheet
+        visible={showPhotoSheet}
+        onClose={() => {
+          if (photoUploadTaskId) return;
+          setShowPhotoSheet(false);
+          setPhotoTask(null);
+        }}
+        uploading={!!photoUploadTaskId}
+        onCamera={() => runTaskPhotoUpload('camera')}
+        onLibrary={() => runTaskPhotoUpload('library')}
       />
       <ProfileDrawer
         visible={showProfileDrawer}
         onClose={() => setShowProfileDrawer(false)}
+      />
+      <WeatherShiftSheet
+        visible={showWeatherShift}
+        onClose={() => setShowWeatherShift(false)}
+        supabase={supabase}
+        organizationId={activeOrganization?.id}
+        userId={user?.id}
+        projects={projects}
+        onSaved={loadData}
       />
     </View>
   );
@@ -391,12 +600,44 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.background,
   },
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.background,
   },
+  recentsCard: { padding: 0, overflow: 'hidden', marginTop: spacing.sm },
+  recentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.lg,
+    gap: spacing.md,
+    minHeight: 56,
+  },
+  recentRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  recentIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recentText: { flex: 1 },
+  recentTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
+  recentSub: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
+  seeAll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    minHeight: touch.minSize,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  seeAllText: { fontSize: 16, fontWeight: '600', color: colors.primary },
   header: {
     padding: 20,
     backgroundColor: '#fff',
@@ -464,6 +705,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#3B82F6',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  profileAvatarImage: {
+    width: 32,
+    height: 32,
   },
   profileAvatarText: {
     fontSize: 14,
@@ -471,8 +717,9 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   kpiSection: {
-    backgroundColor: '#F9FAFB',
-    paddingVertical: 12,
+    backgroundColor: colors.background,
+    paddingTop: 0,
+    paddingBottom: spacing.sm,
   },
   section: {
     padding: 20,
@@ -507,6 +754,17 @@ const styles = StyleSheet.create({
   myDayItemText: {
     flex: 1,
   },
+  myDayItemActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  myDayPhotoBtn: {
+    minWidth: touch.minSize,
+    minHeight: touch.minSize,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   myDayItemTitle: {
     fontSize: 16,
     fontWeight: '600',
@@ -526,7 +784,6 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 20,
-    bottom: 20,
     width: 56,
     height: 56,
     borderRadius: 28,

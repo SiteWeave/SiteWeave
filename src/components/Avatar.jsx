@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
-function Avatar({ name, size = 'md', className = '' }) {
+function Avatar({ name, avatarUrl = null, size = 'md', className = '' }) {
   // Extract initials from name
   const getInitials = (name) => {
     if (!name) return '?';
@@ -47,6 +47,23 @@ function Avatar({ name, size = 'md', className = '' }) {
   const initials = getInitials(name);
   const colorClass = getColorFromName(name);
   const sizeClass = sizeClasses[size] || sizeClasses.md;
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [avatarUrl]);
+
+  if (avatarUrl && !imageFailed) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name || 'User avatar'}
+        className={`${sizeClass.split(' ').slice(0, 2).join(' ')} rounded-full object-cover ${className}`}
+        title={name}
+        onError={() => setImageFailed(true)}
+      />
+    );
+  }
 
   return (
     <div 

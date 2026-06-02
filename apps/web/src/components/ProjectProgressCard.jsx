@@ -74,7 +74,7 @@ function ProjectProgressCard({ project }) {
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2 mb-2 overflow-hidden">
                 <div
-                    className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(overallProgress, project.due_date)}`}
+                    className={`h-2 rounded-full transition-[width] duration-200 ease-out ${getProgressColor(overallProgress, project.due_date)}`}
                     style={{
                         width: `${Math.max(0, Math.min(100, overallProgress))}%`,
                         minWidth: overallProgress > 0 ? '2px' : '0px'

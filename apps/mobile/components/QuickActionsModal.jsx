@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { createFieldIssue, fetchUserProjectsWithProgress } from '@siteweave/core-logic';
 import { Ionicons } from '@expo/vector-icons';
 import PressableWithFade from './PressableWithFade';
+import ModalScrim from './ui/ModalScrim';
 import { useHaptics } from '../hooks/useHaptics';
 import { filterByOrganizationId } from '../utils/orgScope';
 import { enqueueOfflineAction, processOfflineQueue } from '../utils/offlineQueue';
@@ -13,16 +14,18 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 export default function QuickActionsModal({ visible, onClose }) {
   const { user, supabase, activeOrganization, syncPulse } = useAuth();
   const haptics = useHaptics();
+  const ISSUE_PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
+
   const [issueData, setIssueData] = useState({
     title: '',
     description: '',
     project_id: null,
+    priority: 'Medium',
   });
   const [projects, setProjects] = useState([]);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
   const modalTranslateY = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -31,7 +34,7 @@ export default function QuickActionsModal({ visible, onClose }) {
       flushOfflineIssues();
       loadProjects();
       // Reset form when modal opens
-      setIssueData({ title: '', description: '', project_id: null });
+      setIssueData({ title: '', description: '', project_id: null, priority: 'Medium' });
     }
   }, [visible, user, supabase, activeOrganization?.id]);
 
@@ -67,40 +70,18 @@ export default function QuickActionsModal({ visible, onClose }) {
 
   useEffect(() => {
     if (visible) {
-      // Reset animation values immediately when visible
-      backdropOpacity.setValue(0);
       modalTranslateY.setValue(1);
-      
-      // Use requestAnimationFrame to ensure values are set before animating
       requestAnimationFrame(() => {
-        Animated.parallel([
-          Animated.timing(backdropOpacity, {
-            toValue: 0.7,
-            duration: 150,
-            useNativeDriver: true,
-          }),
-          Animated.timing(modalTranslateY, {
-            toValue: 0,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]).start();
+        Animated.timing(modalTranslateY, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
       });
     } else {
-      Animated.parallel([
-        Animated.timing(backdropOpacity, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(modalTranslateY, {
-          toValue: 1,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      modalTranslateY.setValue(1);
     }
-  }, [visible]);
+  }, [visible, modalTranslateY]);
 
   const handleReportIssue = async () => {
     if (!issueData.title || !issueData.description) {
@@ -124,11 +105,11 @@ export default function QuickActionsModal({ visible, onClose }) {
         ...(orgId ? { organization_id: orgId } : {}),
         created_by_user_id: user.id,
         status: 'open',
-        priority: 'Medium',
+        priority: issueData.priority || 'Medium',
       });
       haptics.success();
       alert('Issue reported successfully!');
-      setIssueData({ title: '', description: '', project_id: null });
+      setIssueData({ title: '', description: '', project_id: null, priority: 'Medium' });
       onClose();
     } catch (error) {
       console.error('Error reporting issue:', error);
@@ -140,7 +121,7 @@ export default function QuickActionsModal({ visible, onClose }) {
           ...(selectedProject?.organization_id ? { organization_id: selectedProject.organization_id } : {}),
           created_by_user_id: user.id,
           status: 'open',
-          priority: 'Medium',
+          priority: issueData.priority || 'Medium',
         },
       });
       alert('No connection. Issue saved to sync queue.');
@@ -159,7 +140,7 @@ export default function QuickActionsModal({ visible, onClose }) {
       onRequestClose={onClose}
     >
       <View style={styles.modalContainer}>
-        <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
+        <ModalScrim onPress={onClose} opacity={0.5} />
         
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -241,6 +222,36 @@ export default function QuickActionsModal({ visible, onClose }) {
                     )}
                   </View>
                 )}
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Priority *</Text>
+                <View style={styles.priorityRow}>
+                  {ISSUE_PRIORITIES.map((level) => (
+                    <PressableWithFade
+                      key={level}
+                      style={[
+                        styles.priorityChip,
+                        issueData.priority === level && styles.priorityChipSelected,
+                      ]}
+                      onPress={() => {
+                        haptics.selection();
+                        setIssueData({ ...issueData, priority: level });
+                      }}
+                      disabled={loading}
+                      hapticType="selection"
+                    >
+                      <Text
+                        style={[
+                          styles.priorityChipText,
+                          issueData.priority === level && styles.priorityChipTextSelected,
+                        ]}
+                      >
+                        {level}
+                      </Text>
+                    </PressableWithFade>
+                  ))}
+                </View>
               </View>
 
               <TextInput
@@ -457,6 +468,32 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#9CA3AF',
     fontSize: 14,
+  },
+  priorityRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  priorityChip: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 22,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  priorityChipSelected: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+  },
+  priorityChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  priorityChipTextSelected: {
+    color: '#1D4ED8',
   },
 });
 

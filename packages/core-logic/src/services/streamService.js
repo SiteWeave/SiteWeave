@@ -53,28 +53,33 @@ export async function countStreamPostsSince(supabase, projectId, sinceIso) {
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {string} projectId
- * @param {{ limit?: number }} [options]
+ * @param {{ limit?: number, beforeCreatedAt?: string }} [options]
+ * @returns {Promise<{ posts: Array, hasMore: boolean }>}
  */
 export async function fetchStreamPosts(supabase, projectId, options = {}) {
   const limit = options.limit ?? 50;
+  const beforeCreatedAt = options.beforeCreatedAt ?? null;
 
-  // Fetch posts with reply count embedded via PostgREST aggregate.
-  // project_stream_replies(count) is a one-to-many so PostgREST returns
-  // the count inline without a secondary round-trip.
-  const { data, error } = await supabase
+  let query = supabase
     .from('project_stream_posts')
     .select('*, project_stream_replies(count)')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
     .limit(limit);
 
+  if (beforeCreatedAt) {
+    query = query.lt('created_at', beforeCreatedAt);
+  }
+
+  const { data, error } = await query;
+
   if (error) throw error;
-  if (!data?.length) return [];
+  if (!data?.length) return { posts: [], hasMore: false };
 
   const userIds = [...new Set(data.map((p) => p.author_id).filter(Boolean))];
   const userInfo = await fetchUserInfo(supabase, userIds);
 
-  return data.map((post) => {
+  const posts = data.map((post) => {
     const { project_stream_replies: repliesAgg, ...rest } = post;
     return {
       ...rest,
@@ -82,6 +87,8 @@ export async function fetchStreamPosts(supabase, projectId, options = {}) {
       reply_count: repliesAgg?.[0]?.count ?? 0,
     };
   });
+
+  return { posts, hasMore: data.length === limit };
 }
 
 /**

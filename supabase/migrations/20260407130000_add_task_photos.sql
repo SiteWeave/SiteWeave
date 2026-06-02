@@ -268,3 +268,7 @@ USING (
     bucket_id = 'task_photos'
     AND public.can_access_task_photo_object(name, true)
 );
+
+-- Data API: explicit grants (RLS enforces row access)
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.task_photos TO authenticated;
+GRANT ALL ON TABLE public.task_photos TO service_role;

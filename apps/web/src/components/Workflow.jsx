@@ -464,7 +464,7 @@ const Workflow = ({ projectId }) => {
                                                                     )}
                                                                 </div>
                                                                 {isCurrentStep && (
-                                                                    <button
+                                                                    <button type="button"
                                                                         onClick={() => handleStepComplete(workflow.id, index)}
                                                                         className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors shadow-xs"
                                                                     >
@@ -520,7 +520,7 @@ const Workflow = ({ projectId }) => {
                         <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-xl font-bold">Create New Workflow</h3>
-                                <button 
+                                <button type="button" 
                                     onClick={() => setShowCreateModal(false)}
                                     className="text-gray-400 hover:text-gray-600"
                                 >
@@ -656,13 +656,13 @@ const Workflow = ({ projectId }) => {
                         </div>
 
                         <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
-                            <button
+                            <button type="button"
                                 onClick={() => setShowCreateModal(false)}
                                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
                             >
                                 Cancel
                             </button>
-                            <button
+                            <button type="button"
                                 onClick={handleCreateWorkflow}
                                 disabled={isCreating}
                                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"

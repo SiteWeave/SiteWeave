@@ -261,7 +261,7 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
                                             </div>
                                             <div className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-gray-100">
                                                 <PermissionGuard permission="can_edit_projects">
-                                                    <button
+                                                    <button type="button"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             onEdit(project);
@@ -275,7 +275,7 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
                                                     </button>
                                                 </PermissionGuard>
                                                 <PermissionGuard permission="can_delete_projects">
-                                                    <button
+                                                    <button type="button"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             onDelete(project);

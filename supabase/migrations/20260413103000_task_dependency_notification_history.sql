@@ -46,3 +46,6 @@ ON public.task_dependency_notification_history
 FOR DELETE
 TO authenticated
 USING (organization_id = (SELECT public.get_user_organization_id()));
+
+GRANT SELECT, INSERT, DELETE ON TABLE public.task_dependency_notification_history TO authenticated;
+GRANT ALL ON TABLE public.task_dependency_notification_history TO service_role;

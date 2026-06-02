@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { createCalendarEvent, createTask, fetchUserProjectsWithProgress } from '@siteweave/core-logic';
 import PressableWithFade from './PressableWithFade';
+import ModalScrim from './ui/ModalScrim';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useHaptics } from '../hooks/useHaptics';
@@ -26,7 +27,6 @@ export default function EventModal({ visible, onClose, selectedDate, onEventCrea
   const [projectId, setProjectId] = useState(null);
   const [projects, setProjects] = useState([]);
   
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
   const modalTranslateY = useRef(new Animated.Value(1)).current;
   const insets = useSafeAreaInsets();
 
@@ -35,32 +35,18 @@ export default function EventModal({ visible, onClose, selectedDate, onEventCrea
       haptics.light();
       loadProjects();
       flushOfflineEvents();
-      Animated.timing(backdropOpacity, {
-        toValue: 0.7,
-        duration: 150,
-        useNativeDriver: true,
-      }).start();
-      
-      Animated.timing(modalTranslateY, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(backdropOpacity, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
+      modalTranslateY.setValue(1);
+      requestAnimationFrame(() => {
         Animated.timing(modalTranslateY, {
-          toValue: 1,
-          duration: 250,
+          toValue: 0,
+          duration: 300,
           useNativeDriver: true,
-        }),
-      ]).start();
+        }).start();
+      });
+    } else {
+      modalTranslateY.setValue(1);
     }
-  }, [visible]);
+  }, [visible, modalTranslateY]);
 
   useEffect(() => {
     if (!visible) return;
@@ -288,7 +274,7 @@ export default function EventModal({ visible, onClose, selectedDate, onEventCrea
       onRequestClose={handleClose}
     >
       <View style={styles.modalContainer}>
-        <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
+        <ModalScrim onPress={handleClose} opacity={0.5} />
         
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

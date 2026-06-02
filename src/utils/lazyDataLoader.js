@@ -3,6 +3,28 @@
  * Functions to load non-critical data on-demand
  */
 
+import {
+  TASK_LIST_COLUMNS,
+  fetchCalendarEvents,
+  getCalendarLoadRange,
+  isDateInCalendarLoadRange,
+} from '@siteweave/core-logic';
+
+/** Columns for file list views — avoid select('*'). */
+export const FILE_LIST_COLUMNS = [
+  'id',
+  'project_id',
+  'organization_id',
+  'name',
+  'type',
+  'file_url',
+  'modified_at',
+  'size_kb',
+].join(',');
+
+/** Tracks the date window currently loaded into calendar state. */
+let calendarLoadedRange = null;
+
 const LAD_DEBUG = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV;
 
 function ladLog(...args) {
@@ -13,70 +35,20 @@ function ladWarn(...args) {
   if (LAD_DEBUG) console.warn(...args);
 }
 
-/**
- * Task columns for list views + dashboard (excludes heavy deprecated workflow JSON).
- * Keep in sync with TaskItem, ProjectDetailsView, DashboardStats, and realtime payloads.
- */
-export const TASK_LIST_SELECT = [
-  'id',
-  'project_id',
-  'organization_id',
-  'text',
-  'due_date',
-  'priority',
-  'completed',
-  'assignee_id',
-  'recurrence',
-  'parent_task_id',
-  'is_recurring_instance',
-  'start_date',
-  'duration_days',
-  'is_milestone',
-  'created_at',
-  'project_phase_id',
-  'percent_complete',
-  'notify_assignee_email',
-  'contacts!fk_tasks_assignee_id(name, avatar_url, email, phone)',
-  'task_photos(id)',
-].join(',');
+/** @deprecated use TASK_LIST_COLUMNS from @siteweave/core-logic */
+export const TASK_LIST_SELECT = TASK_LIST_COLUMNS;
 
 /** Single in-flight load so concurrent callers share one network round-trip */
 let tasksLoadInFlight = null;
 
 async function runTasksLoadWithRetries(supabaseClient, dispatch, getState) {
-  const maxAttempts = 4;
-  const baseDelayMs = 350;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const state = getState();
-    if (!state || state.tasksLoaded) {
-      if (state?.tasksLoaded) ladLog('Tasks already loaded, skipping');
-      return;
-    }
-
-    if (attempt === 0) ladLog('📦 Lazy loading tasks...');
-    const startTime = performance.now();
-
-    try {
-      const { data: tasks, error } = await supabaseClient.from('tasks').select(TASK_LIST_SELECT);
-
-      if (error) throw error;
-
-      const endTime = performance.now();
-      ladLog(`✅ Tasks loaded in ${Math.round(endTime - startTime)}ms`);
-
-      dispatch({ type: 'SET_TASKS_LOADED', payload: tasks || [] });
-      return;
-    } catch (error) {
-      console.error('Error loading tasks:', error);
-      const isLast = attempt === maxAttempts - 1;
-      if (isLast) {
-        ladWarn('Tasks load failed after retries; counts may stay at 0 until navigation or refresh.');
-        return;
-      }
-      await new Promise((r) => setTimeout(r, baseDelayMs * (attempt + 1)));
-    }
+  const state = getState();
+  if (!state || state.tasksLoaded) {
+    if (state?.tasksLoaded) ladLog('Tasks already loaded, skipping');
+    return;
   }
+  // Org-wide task preload removed — project views load tasks on demand.
+  dispatch({ type: 'SET_TASKS_LOADED', payload: state.tasks || [] });
 }
 
 /**
@@ -118,7 +90,13 @@ export async function loadFilesIfNeeded(supabaseClient, dispatch, getState) {
   const startTime = performance.now();
 
   try {
-    const { data: files, error } = await supabaseClient.from('files').select('*');
+    const orgId = state.currentOrganization?.id;
+    let query = supabaseClient.from('files').select(FILE_LIST_COLUMNS);
+    if (orgId) {
+      query = query.eq('organization_id', orgId);
+    }
+
+    const { data: files, error } = await query;
 
     if (error) throw error;
 
@@ -133,15 +111,24 @@ export async function loadFilesIfNeeded(supabaseClient, dispatch, getState) {
 }
 
 /**
- * Load calendar events if not already loaded
+ * Load calendar events for a reference date (3-month window).
+ * Refetches when the reference date moves outside the currently loaded window.
  * @param {Object} supabaseClient - Supabase client instance
  * @param {Function} dispatch - Redux-like dispatch function
  * @param {() => Object} getState - Returns current app state
+ * @param {Date} [referenceDate]
  */
-export async function loadCalendarEventsIfNeeded(supabaseClient, dispatch, getState) {
+export async function loadCalendarEventsIfNeeded(
+  supabaseClient,
+  dispatch,
+  getState,
+  referenceDate = new Date(),
+) {
   const state = getState();
-  if (!state || state.calendarEventsLoaded) {
-    if (state?.calendarEventsLoaded) ladLog('Calendar events already loaded, skipping');
+  if (!state) return;
+
+  if (calendarLoadedRange && isDateInCalendarLoadRange(referenceDate, calendarLoadedRange)) {
+    ladLog('Calendar events already loaded for this window, skipping');
     return;
   }
 
@@ -149,12 +136,8 @@ export async function loadCalendarEventsIfNeeded(supabaseClient, dispatch, getSt
   const startTime = performance.now();
 
   try {
-    const { data: calendarEvents, error } = await supabaseClient
-      .from('calendar_events')
-      .select('*')
-      .order('start_time', { ascending: true });
-
-    if (error) throw error;
+    const calendarEvents = await fetchCalendarEvents(supabaseClient, referenceDate);
+    calendarLoadedRange = getCalendarLoadRange(referenceDate);
 
     const endTime = performance.now();
     ladLog(`✅ Calendar events loaded in ${Math.round(endTime - startTime)}ms`);
@@ -180,7 +163,7 @@ export async function loadProjectTasks(supabaseClient, dispatch, projectId, getS
   try {
     const { data: tasks, error } = await supabaseClient
       .from('tasks')
-      .select(TASK_LIST_SELECT)
+      .select(TASK_LIST_COLUMNS)
       .eq('project_id', projectId)
       .order('due_date', { ascending: true, nullsFirst: false })
       .order('id', { ascending: true });

@@ -286,7 +286,7 @@ const FieldIssues = ({ projectId }) => {
                         </select>
                     </div>
                 </div>
-                <button 
+                <button type="button" 
                     onClick={() => setShowCreateModal(true)}
                     type="button"
                     className="app-action-primary px-4 py-2 text-sm font-semibold rounded-lg"
@@ -320,7 +320,7 @@ const FieldIssues = ({ projectId }) => {
                                         }`}>
                                             {issue.title}
                                         </h3>
-                                        <button
+                                        <button type="button"
                                             onClick={() => handleToggleStatus(issue)}
                                             className={`px-2 py-1 text-xs font-semibold rounded-full border transition-colors ${
                                                 displayStatus === 'open'
@@ -352,14 +352,14 @@ const FieldIssues = ({ projectId }) => {
                                         {issue.priority}
                                     </span>
                                     <div className="flex items-center gap-1">
-                                        <button
+                                        <button type="button"
                                             onClick={() => handleEditIssue(issue)}
                                             className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
                                             title="Edit issue"
                                         >
                                             <Icon path="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" className="w-4 h-4" />
                                         </button>
-                                        <button
+                                        <button type="button"
                                             onClick={() => handleDeleteIssue(issue.id)}
                                             className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                                             title="Delete issue"
@@ -380,7 +380,7 @@ const FieldIssues = ({ projectId }) => {
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">No field issues</h3>
                     <p className="text-gray-500 mb-4">Create issues to track and resolve project problems.</p>
-                    <button 
+                    <button type="button" 
                         onClick={() => setShowCreateModal(true)}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                     >
@@ -396,7 +396,7 @@ const FieldIssues = ({ projectId }) => {
                         <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-xl font-bold">{isEditing ? 'Edit Issue' : 'Create New Issue'}</h3>
-                                <button 
+                                <button type="button" 
                                     onClick={() => {
                                         setShowCreateModal(false);
                                         setEditingIssue(null);
@@ -468,7 +468,7 @@ const FieldIssues = ({ projectId }) => {
                         </div>
 
                         <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
-                            <button
+                            <button type="button"
                                 onClick={() => {
                                     setShowCreateModal(false);
                                     setEditingIssue(null);
@@ -479,7 +479,7 @@ const FieldIssues = ({ projectId }) => {
                             >
                                 Cancel
                             </button>
-                            <button
+                            <button type="button"
                                 onClick={isEditing ? handleUpdateIssue : handleCreateIssue}
                                 disabled={isCreating}
                                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
@@ -503,14 +503,14 @@ const FieldIssues = ({ projectId }) => {
                             Are you sure you want to delete this issue? This action cannot be undone.
                         </p>
                         <div className="flex justify-end gap-3">
-                            <button
+                            <button type="button"
                                 onClick={() => setIssueToDelete(null)}
                                 disabled={isDeleting}
                                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
                             >
                                 Cancel
                             </button>
-                            <button
+                            <button type="button"
                                 onClick={confirmDeleteIssue}
                                 disabled={isDeleting}
                                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400"

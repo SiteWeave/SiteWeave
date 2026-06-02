@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useReducer, useState, useRef, useCallback } from 'react';
-import { createSupabaseClient } from '@siteweave/core-logic';
+import { createSupabaseClient, clearMemoryCache, PROJECT_LIST_COLUMNS, loadWithFallback } from '@siteweave/core-logic';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
 import { dedupeTasksById } from '../utils/taskDedupe';
 import {
@@ -55,8 +55,6 @@ const saveStateToStorage = (state) => {
       tasks: state.tasks,
       files: state.files,
       calendarEvents: state.calendarEvents,
-      messageChannels: state.messageChannels,
-      messages: state.messages,
       activityLog: state.activityLog,
       selectedProjectId: state.selectedProjectId,
       activeView: state.activeView,
@@ -95,8 +93,6 @@ const loadStateFromStorage = (currentUserId) => {
       tasks: parsed.tasks || [],
       files: parsed.files || [],
       calendarEvents: parsed.calendarEvents || [],
-      messageChannels: parsed.messageChannels || [],
-      messages: parsed.messages || [],
       activityLog: parsed.activityLog || [],
       selectedProjectId: parsed.selectedProjectId || null,
       activeView: parsed.activeView || 'Dashboard'
@@ -113,8 +109,7 @@ const getInitialState = () => {
     authLoading: true, // Add separate auth loading state
     activeView: 'Dashboard', 
     selectedProjectId: null, 
-    selectedChannelId: null,
-    projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], messageChannels: [], messages: [], activityLog: [],
+    projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], activityLog: [],
     user: null, // Changed from hardcoded user to null for proper auth
     userContactId: null, // The user's linked contact_id (from profiles table) — used for matching assignee_id on tasks
     userPreferences: null, // Add user preferences for onboarding
@@ -166,7 +161,6 @@ function appReducer(state, action) {
       saveStateToStorage(newState);
       return newState;
     case 'SET_PROJECT': return { ...state, selectedProjectId: action.payload };
-    case 'SET_CHANNEL': return { ...state, selectedChannelId: action.payload, activeView: 'Messages' };
     case 'SET_USER': 
       // When user is cleared (logout), also clear userContactId to prevent stale data
       return { ...state, user: action.payload, userContactId: action.payload ? state.userContactId : null };
@@ -217,29 +211,6 @@ function appReducer(state, action) {
       ...state, 
       calendarEvents: state.calendarEvents.filter(event => event.id !== action.payload) 
     };
-    case 'ADD_MESSAGE': {
-      // Prevent duplicates
-      const exists = state.messages.some(m => m.id === action.payload.id);
-      if (exists) return state;
-      return { ...state, messages: [...state.messages, action.payload] };
-    }
-    case 'UPDATE_MESSAGE': {
-      return { 
-        ...state, 
-        messages: state.messages.map(msg => 
-          msg.id === action.payload.id ? action.payload : msg
-        ) 
-      };
-    }
-    case 'SET_CHANNEL_MESSAGES': {
-      // Set messages for a specific channel (replaces existing messages for that channel)
-      const channelId = action.payload.channelId;
-      const newMessages = action.payload.messages;
-      // Remove existing messages for this channel and add new ones
-      const filteredMessages = state.messages.filter(m => m.channel_id !== channelId);
-      return { ...state, messages: [...filteredMessages, ...newMessages] };
-    }
-    case 'ADD_CHANNEL': return { ...state, messageChannels: [...state.messageChannels, action.payload] };
     case 'ADD_ACTIVITY': return { ...state, activityLog: [action.payload, ...state.activityLog].slice(0, 50) }; // Keep latest 50
     case 'ADD_CONTACT': {
       // Ensure project_contacts is always an array and prevent duplicates
@@ -625,6 +596,12 @@ export const AppProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    if (!state.user) {
+      clearMemoryCache();
+    }
+  }, [state.user]);
+
+  useEffect(() => {
     if (!state.authLoading && state.user) {
       // Only fetch data if user is authenticated
       async function fetchInitialData() {
@@ -920,14 +897,24 @@ export const AppProvider = ({ children }) => {
           }
 
           // === PHASE 1: Critical Data (Projects) - Load first for fast UI render ===
-          const { data: projects } = await supabaseClient.from('projects').select('*');
-          const finalProjects = projects || [];
-          
-          // Dispatch projects immediately so UI can render
-          dispatch({ type: 'SET_DATA', payload: { 
-            projects: finalProjects,
-            activeView: currentActiveViewRef.current || state.activeView
-          }});
+          let finalProjects = [];
+          try {
+            const { data: projects, error: projectsError } = await supabaseClient
+              .from('projects')
+              .select(PROJECT_LIST_COLUMNS)
+              .order('updated_at', { ascending: false });
+            if (projectsError) throw projectsError;
+            finalProjects = projects || [];
+            dispatch({ type: 'SET_DATA', payload: {
+              projects: finalProjects,
+              activeView: currentActiveViewRef.current || state.activeView,
+            }});
+          } catch (projectsErr) {
+            console.error('Error loading projects on boot:', projectsErr);
+            finalProjects = appStateRefForLazy.current?.projects?.length
+              ? appStateRefForLazy.current.projects
+              : [];
+          }
           
           // === PHASE 2: Essential Secondary Data (NOT tasks/files/events - loaded on demand) ===
           const fetchActivityLog = async () => {
@@ -944,10 +931,21 @@ export const AppProvider = ({ children }) => {
             return data || [];
           };
 
-          const [{ data: userPreferences, error: userPrefsError }, activityLog] = await Promise.all([
-            supabaseClient.from('user_preferences').select('*').eq('user_id', state.user.id).maybeSingle(),
-            fetchActivityLog()
-          ]);
+          const userPreferences = await loadWithFallback(
+            async () => {
+              const { data, error } = await supabaseClient
+                .from('user_preferences')
+                .select('*')
+                .eq('user_id', state.user.id)
+                .maybeSingle();
+              if (error) throw error;
+              return data;
+            },
+            null,
+            { label: 'user_preferences' },
+          );
+
+          const activityLog = await loadWithFallback(fetchActivityLog, [], { label: 'activity_log' });
           
           // Tasks, Files, and Calendar Events will be loaded on-demand when user navigates to those views
           
@@ -1011,26 +1009,15 @@ export const AppProvider = ({ children }) => {
           dispatch({ type: 'SET_DATA', payload: { 
             projects: finalProjects, 
             contacts: finalContacts, 
-            messageChannels: [], 
-            messages: [],
             activityLog: activityLog || [],
             activeView: currentActiveViewRef.current || state.activeView
           } });
 
           lastOrgIdForLazyRef.current = orgIdForLazy;
           
-          // Handle user preferences with error checking
-          if (userPrefsError) {
-            console.warn('User preferences table may not exist yet:', userPrefsError.message);
-            dispatch({ type: 'SET_USER_PREFERENCES', payload: null });
-          } else {
-            dispatch({ type: 'SET_USER_PREFERENCES', payload: userPreferences });
-          }
+          dispatch({ type: 'SET_USER_PREFERENCES', payload: userPreferences });
         } catch (error) {
           console.error('Error fetching initial data:', error);
-          // Still set loading to false even if there's an error
-          dispatch({ type: 'SET_DATA', payload: { projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], messageChannels: [], messages: [] } });
-          dispatch({ type: 'SET_USER_PREFERENCES', payload: null });
         }
       }
     fetchInitialData();
@@ -1222,10 +1209,9 @@ export const useLazyDataLoader = () => {
     await loadFiles(supabaseClient, dispatch, getState);
   }, [dispatch, getState]);
 
-  const loadCalendarEventsIfNeeded = useCallback(async () => {
-    if (getState()?.calendarEventsLoaded) return;
+  const loadCalendarEventsIfNeeded = useCallback(async (referenceDate = new Date()) => {
     const { loadCalendarEventsIfNeeded: loadEvents } = await import('../utils/lazyDataLoader');
-    await loadEvents(supabaseClient, dispatch, getState);
+    await loadEvents(supabaseClient, dispatch, getState, referenceDate);
   }, [dispatch, getState]);
 
   const loadProjectTasks = useCallback(

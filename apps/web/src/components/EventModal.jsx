@@ -381,7 +381,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                         {isEditMode ? t('calendar.event_edit_title') : t('calendar.event_add_title')}
                     </h2>
                     {isEditMode && onDelete && (
-                        <button
+                        <button type="button"
                             onClick={handleDelete}
                             disabled={isLoading}
                             className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"

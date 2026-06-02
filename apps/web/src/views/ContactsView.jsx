@@ -388,19 +388,19 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     </p>
                 </div>
                 <div className="flex gap-3">
-                    <button 
+                    <button type="button" 
                         onClick={() => setShowImportModal(true)} 
                         className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                     >
                         {t('contacts.import')}
                     </button>
-                    <button 
+                    <button type="button" 
                         onClick={() => setShowExportModal(true)} 
                         className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                     >
                         {t('contacts.export')}
                     </button>
-                    <button 
+                    <button type="button" 
                         onClick={() => setShowAddModal(true)} 
                         data-onboarding="add-contact-btn"
                         className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 transition-colors"
@@ -476,13 +476,13 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             </div>
 
             <div className="flex border-b border-gray-200 mb-6">
-                <button 
+                <button type="button" 
                     onClick={() => setActiveTab('Team')} 
                     className={`px-4 py-2 text-sm font-semibold ${activeTab === 'Team' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
                 >
                     {t('contacts.tab_team', { count: teamMembers.length })}
                 </button>
-                <button 
+                <button type="button" 
                     onClick={() => setActiveTab('Subcontractors')} 
                     className={`px-4 py-2 text-sm font-semibold ${activeTab === 'Subcontractors' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
                 >
@@ -587,13 +587,13 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                             {t('contacts.import_description')}
                         </p>
                         <div className="flex justify-end gap-4">
-                            <button 
+                            <button type="button" 
                                 onClick={() => setShowImportModal(false)}
                                 className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
                             >
                                 {t('common.cancel')}
                             </button>
-                            <button 
+                            <button type="button" 
                                 onClick={handleImportContacts}
                                 className="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                             >
@@ -613,13 +613,13 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                             {activeTab === 'Team' ? t('contacts.export_description_team') : t('contacts.export_description_trade')}
                         </p>
                         <div className="flex justify-end gap-4">
-                            <button 
+                            <button type="button" 
                                 onClick={() => setShowExportModal(false)}
                                 className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
                             >
                                 {t('common.cancel')}
                             </button>
-                            <button 
+                            <button type="button" 
                                 onClick={handleExportContacts}
                                 className="px-6 py-2 text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
                             >
@@ -698,13 +698,13 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                             </div>
                             
                             <div className="flex justify-end gap-3">
-                                <button
+                                <button type="button"
                                     onClick={closeAssignModal}
                                     className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
                                 >
                                     {t('common.close')}
                                 </button>
-                                <button
+                                <button type="button"
                                     onClick={handleConfirmAssign}
                                     disabled={isAssigningContact || !selectedAssignProject || unassignedProjects.length === 0}
                                     className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400"

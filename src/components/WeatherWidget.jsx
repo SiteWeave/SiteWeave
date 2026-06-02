@@ -315,7 +315,7 @@ function WeatherWidget({ compact = false }) {
             <span>{error}</span>
           )}
         </div>
-        <button
+        <button type="button"
           onClick={() => setShowCityInput(true)}
           className="w-full text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
         >
@@ -349,7 +349,7 @@ function WeatherWidget({ compact = false }) {
           </div>
         </div>
         <div className="flex items-center gap-1 ml-1">
-          <button
+          <button type="button"
             onClick={() => {
               const currentCity = localStorage.getItem(CITY_STORAGE_KEY) || weather?.city || '';
               setCityInput(currentCity);
@@ -361,7 +361,7 @@ function WeatherWidget({ compact = false }) {
           >
             ⚙
           </button>
-          <button
+          <button type="button"
             onClick={() => {
               if (source === 'geo') {
                 loadWeatherFromLocation();
@@ -377,7 +377,7 @@ function WeatherWidget({ compact = false }) {
           >
             ↻
           </button>
-          <button
+          <button type="button"
             onClick={handleResetWeather}
             className="text-xs text-gray-400 hover:text-gray-600 p-1"
             title={t('weather.disable')}
@@ -422,7 +422,7 @@ function WeatherWidget({ compact = false }) {
     <div ref={widgetRef} className="bg-white p-4 rounded-lg border border-gray-200">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <button
+          <button type="button"
             onClick={() => {
               const currentCity = localStorage.getItem(CITY_STORAGE_KEY) || weather?.city || '';
               setCityInput(currentCity);
@@ -434,7 +434,7 @@ function WeatherWidget({ compact = false }) {
           >
             ⚙
           </button>
-          <button
+          <button type="button"
             onClick={() => {
               if (source === 'geo') {
                 loadWeatherFromLocation();
@@ -450,7 +450,7 @@ function WeatherWidget({ compact = false }) {
           >
             ↻
           </button>
-          <button
+          <button type="button"
             onClick={handleResetWeather}
             className="text-xs text-gray-400 hover:text-gray-600"
             title={t('weather.disable')}

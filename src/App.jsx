@@ -311,14 +311,14 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen min-w-0 bg-gray-50 overflow-hidden">
+    <div className="flex h-screen min-w-0 bg-gray-50 overflow-hidden" data-testid="app-shell">
       {/* Sidebar - granular boundary so main content can stay up if sidebar crashes */}
       <ErrorBoundary>
         <Sidebar />
       </ErrorBoundary>
 
       {/* Main Content - boundary so sidebar stays up if view crashes */}
-      <main className="flex-1 min-w-0 overflow-y-auto px-4 py-6 lg:px-6">
+      <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-y-contain px-4 py-6 pb-24 lg:px-6">
         <ErrorBoundary>
           {renderView()}
         </ErrorBoundary>

@@ -103,7 +103,7 @@ function ContactSelector({
         </div>
 
         {!showManualInput ? (
-          <button
+          <button type="button"
             onClick={() => setShowManualInput(true)}
             className="text-sm text-blue-600 hover:text-blue-700"
           >
@@ -119,13 +119,13 @@ function ContactSelector({
               onKeyPress={(e) => e.key === 'Enter' && handleAddManualEmail()}
               className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
             />
-            <button
+            <button type="button"
               onClick={handleAddManualEmail}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               Add
             </button>
-            <button
+            <button type="button"
               onClick={() => {
                 setShowManualInput(false);
                 setManualEmail('');
@@ -177,7 +177,7 @@ function ContactSelector({
                     <option value="bcc">BCC</option>
                   </select>
                 )}
-                <button
+                <button type="button"
                   onClick={() => handleRemoveRecipient(index)}
                   className="text-red-600 hover:text-red-700"
                   aria-label="Remove recipient"
@@ -196,7 +196,7 @@ function ContactSelector({
       {searchTerm && unselectedContacts.length > 0 && (
         <div className="border border-gray-200 rounded-lg max-h-60 overflow-y-auto">
           {unselectedContacts.map((contact) => (
-            <button
+            <button type="button"
               key={contact.id}
               onClick={() => handleAddContact(contact)}
               className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 text-left"

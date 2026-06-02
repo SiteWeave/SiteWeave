@@ -58,6 +58,7 @@ import { useStreamUnread } from '../hooks/useStreamUnread';
 import { useIssuesUnread } from '../hooks/useIssuesUnread';
 import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
 import Icon from '../components/Icon';
+import { SkeletonList } from '../components/ui/Skeleton';
 
 function ProjectDetailsView() {
     const { t } = useTranslation();
@@ -289,6 +290,7 @@ function ProjectDetailsView() {
 
     // Load tasks for this project; keep a local list so it cannot be overwritten by cache/auth
     const [projectTasksList, setProjectTasksList] = useState([]);
+    const [tasksLoading, setTasksLoading] = useState(false);
     const allTasksFromState = useMemo(
         () => (tasksState || []).filter((t) => t.project_id === state.selectedProjectId),
         [tasksState, state.selectedProjectId]
@@ -311,6 +313,7 @@ function ProjectDetailsView() {
             return;
         }
         setProjectTasksList([]);
+        setTasksLoading(true);
         const ac = new AbortController();
         (async () => {
             try {
@@ -333,6 +336,8 @@ function ProjectDetailsView() {
                 dispatch({ type: 'MERGE_TASKS', payload: [...otherTasks, ...list] });
             } catch (e) {
                 if (!ac.signal.aborted) console.error('Error loading project tasks:', e);
+            } finally {
+                if (!ac.signal.aborted) setTasksLoading(false);
             }
         })();
         return () => ac.abort();
@@ -389,10 +394,18 @@ function ProjectDetailsView() {
     };
 
     const hydrateTaskRows = async (rows) => {
-        const base = await Promise.all((rows || []).map(async (task) => ({
+        const allPhotos = (rows || []).flatMap((task) => task.task_photos || []);
+        const signedPhotos = allPhotos.length
+            ? await attachTaskPhotoUrls(supabaseClient, allPhotos)
+            : [];
+        const photoById = new Map(signedPhotos.map((photo) => [photo.id, photo]));
+
+        const base = (rows || []).map((task) => ({
             ...task,
-            task_photos: await hydratePhotoRows(task.task_photos || []),
-        })));
+            task_photos: sortTaskPhotos(
+                (task.task_photos || []).map((photo) => photoById.get(photo.id) || photo),
+            ),
+        }));
         const phones = new Set();
         for (const t of base) {
             const n = normalizeAssigneePhone(String(t.contacts?.phone || '').trim(), { defaultRegion: 'US' });
@@ -706,23 +719,6 @@ function ProjectDetailsView() {
             .order('order', { ascending: true });
         if (!error) setProjectPhases(data || []);
     }, [project?.id]);
-    
-    if (!project) {
-        return (
-            <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('projects.no_project_selected')}</h2>
-                    <p className="text-gray-500 mb-4">{t('projects.no_project_description')}</p>
-                    <button 
-                        onClick={() => dispatch({ type: 'SET_VIEW', payload: 'Dashboard' })}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                        {t('projects.go_to_dashboard')}
-                    </button>
-                </div>
-            </div>
-        );
-    }
 
     const handleRequestAssigneeSmsConsent = async (task, { forceResend = false } = {}) => {
         const fallbackContact = task.assignee_id
@@ -1287,7 +1283,6 @@ function ProjectDetailsView() {
                         title: createdTask.text,
                         description: createdTask.text,
                         dueDate: createdTask.due_date,
-                        priority: createdTask.priority,
                     };
                     const projectDetails = { name: project.name, address: project.address };
                     const res = await sendTaskAssignmentEmail(
@@ -2095,9 +2090,26 @@ function ProjectDetailsView() {
         }
     }, [dependencyDrawerTask, dependencyDrawerTaskId]);
 
+    if (!project) {
+        return (
+            <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                    <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('projects.no_project_selected')}</h2>
+                    <p className="text-gray-500 mb-4">{t('projects.no_project_description')}</p>
+                    <button
+                        type="button"
+                        onClick={() => dispatch({ type: 'SET_VIEW', payload: 'Dashboard' })}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                        {t('projects.go_to_dashboard')}
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <div>
+        <div className="view-fade-in" data-testid="project-details-view">
             <header className="mb-8 flex flex-wrap items-start justify-between gap-4" data-onboarding="project-header">
                 <div className="min-w-0 flex-1">
                     <h1 className="text-3xl font-bold text-gray-900 ui-ellipsis-1" title={project.name}>{project.name}</h1>
@@ -2170,7 +2182,7 @@ function ProjectDetailsView() {
                             <div className="flex -space-x-2">
                                 {crewMembers.slice(0, 5).map(member => (
                                     member.avatar_url ? (
-                                        <img key={member.id} src={member.avatar_url} title={member.name} className="w-8 h-8 rounded-full" />
+                                        <img key={member.id} src={member.avatar_url} alt={member.name || ''} title={member.name} className="w-8 h-8 rounded-full" />
                                     ) : (
                                         <Avatar key={member.id} name={member.name} size="sm" />
                                     )
@@ -2184,7 +2196,7 @@ function ProjectDetailsView() {
                         </div>
                     )}
                     <PermissionGuard permission="can_edit_projects">
-                        <button
+                        <button type="button"
                             onClick={() => setShowProjectModal(true)}
                             className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
                             title={t('projectDetail.edit_project_title')}
@@ -2192,7 +2204,7 @@ function ProjectDetailsView() {
                             {t('projectDetail.edit_project')}
                         </button>
                     </PermissionGuard>
-                    <button 
+                    <button type="button" 
                         onClick={() => setShowShare(true)}
                         className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 transition-colors"
                         title={t('projectDetail.manage_crew_title')}
@@ -2200,7 +2212,7 @@ function ProjectDetailsView() {
                         {t('projectDetail.manage_crew')}
                     </button>
                     <PermissionGuard permission="can_create_projects">
-                        <button 
+                        <button type="button" 
                             onClick={() => setShowSaveAsTemplateModal(true)}
                             className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
                             title={t('projectDetail.save_as_template_title')}
@@ -2209,7 +2221,7 @@ function ProjectDetailsView() {
                         </button>
                     </PermissionGuard>
                     <PermissionGuard permission="can_manage_progress_reports">
-                        <button 
+                        <button type="button" 
                             onClick={() => setShowProgressReportModal(true)}
                             className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg shadow-xs hover:bg-green-700 transition-colors flex items-center gap-2"
                             title={t('projectDetail.progress_reports_title')}
@@ -2286,7 +2298,7 @@ function ProjectDetailsView() {
                     {/* Tab Navigation */}
                     <div className="border-b border-gray-200 mb-6">
                         <nav className="-mb-px flex flex-wrap gap-x-5 gap-y-2">
-                            <button
+                            <button type="button"
                                 onClick={() => setActiveTab('tasks')}
                                 className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === 'tasks'
@@ -2296,7 +2308,7 @@ function ProjectDetailsView() {
                             >
                                 {t('projectTabs.tasks', { count: Math.max(allTasks.length, ganttTasks.length) })}
                             </button>
-                            <button
+                            <button type="button"
                                 onClick={() => setActiveTab('gantt')}
                                 className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === 'gantt'
@@ -2306,7 +2318,7 @@ function ProjectDetailsView() {
                             >
                                 {t('projectTabs.gantt')}
                             </button>
-                            <button
+                            <button type="button"
                                 onClick={() => {
                                     setCollabPanel('stream');
                                     setActiveTab('updates');
@@ -2330,7 +2342,7 @@ function ProjectDetailsView() {
                                 ) : null}
                             </button>
                             {canViewActivityHistory && (
-                            <button
+                            <button type="button"
                                 onClick={() => setActiveTab('activity')}
                                 className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === 'activity'
@@ -2523,7 +2535,7 @@ function ProjectDetailsView() {
                                             </div>
                                         </PermissionGuard>
                                         <PermissionGuard permission="can_create_tasks">
-                                            <button onClick={() => setShowTaskModal(true)} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full shadow-xs hover:bg-blue-700">{t('projectDetail.new_task')}</button>
+                                            <button type="button" onClick={() => setShowTaskModal(true)} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full shadow-xs hover:bg-blue-700">{t('projectDetail.new_task')}</button>
                                         </PermissionGuard>
                                     </div>
                                 </div>
@@ -2533,6 +2545,9 @@ function ProjectDetailsView() {
                                     onBulkDelete={handleBulkDelete}
                                     onClearSelection={() => setSelectedTasks([])}
                                 />
+                                {tasksLoading && allTasks.length === 0 ? (
+                                    <SkeletonList count={6} rowClassName="h-16" className="py-4 space-y-3" />
+                                ) : null}
                                 {tasks.length > 0 ? (
                                     <div
                                         className={`space-y-3 ${tasks.length > 7 ? 'max-h-[min(70vh,560px)] overflow-y-auto pr-1' : ''}`}
@@ -2669,7 +2684,7 @@ function ProjectDetailsView() {
                                         </div>
                                         <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('projectDetail.no_tasks_yet')}</h3>
                                         <p className="text-gray-500 mb-4">{t('projectDetail.no_tasks_description')}</p>
-                                        <button 
+                                        <button type="button" 
                                             onClick={() => setShowTaskModal(true)}
                                             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                                         >

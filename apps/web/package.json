@@ -12,7 +12,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lock:standalone": "node scripts/generate-standalone-lock.mjs"
+    "lock:standalone": "node scripts/generate-standalone-lock.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "doctor:react": "react-doctor ."
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.20",
@@ -38,6 +41,7 @@
     "react-router-dom": "^7.13.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/vite": "^4.2.0",
     "@vitejs/plugin-react": "^4.3.1",

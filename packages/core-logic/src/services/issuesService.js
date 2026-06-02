@@ -51,16 +51,26 @@ async function enrichIssues(supabase, rows) {
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {string} projectId
- * @param {{ statusFilter?: 'all'|'open'|'closed' }} [options]
+ * @param {{ statusFilter?: 'all'|'open'|'closed', limit?: number, beforeCreatedAt?: string }} [options]
+ * @returns {Promise<{ issues: Array, hasMore: boolean }>}
  */
 export async function fetchProjectIssues(supabase, projectId, options = {}) {
   const { statusFilter = 'all' } = options;
+  const limit = options.limit ?? 50;
+  const beforeCreatedAt = options.beforeCreatedAt ?? null;
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('project_issues')
     .select(ISSUE_SELECT)
     .eq('project_id', projectId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (beforeCreatedAt) {
+    query = query.lt('created_at', beforeCreatedAt);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
 
@@ -73,7 +83,8 @@ export async function fetchProjectIssues(supabase, projectId, options = {}) {
     return statusFilter === 'closed' ? closed : !closed;
   });
 
-  return enrichIssues(supabase, rows);
+  const issues = await enrichIssues(supabase, rows);
+  return { issues, hasMore: (data || []).length === limit };
 }
 
 /**

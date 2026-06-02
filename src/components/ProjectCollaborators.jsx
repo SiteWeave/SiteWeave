@@ -140,7 +140,7 @@ function ProjectCollaborators({ projectId }) {
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">Add Collaborator</h3>
-            <button
+            <button type="button"
               onClick={() => setShowAddForm(!showAddForm)}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
             >
@@ -218,7 +218,7 @@ function ProjectCollaborators({ projectId }) {
                       <option value="editor">Editor</option>
                       <option value="admin">Admin</option>
                     </select>
-                    <button
+                    <button type="button"
                       onClick={() => handleRemoveCollaborator(collab.user_id)}
                       className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-md text-sm"
                     >

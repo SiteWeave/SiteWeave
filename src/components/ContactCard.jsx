@@ -43,7 +43,7 @@ function ContactCard({
         
         if (actionType === 'add') {
             return (
-                <button onClick={() => onAction(contact.id)} className="text-blue-500 hover:text-blue-700" title={t('contacts.add_to_project')}>
+                <button type="button" onClick={() => onAction(contact.id)} className="text-blue-500 hover:text-blue-700" title={t('contacts.add_to_project')}>
                     <Icon path="M12 4.5v15m7.5-7.5h-15" className="w-5 h-5" />
                 </button>
             );
@@ -51,7 +51,7 @@ function ContactCard({
 
         if (actionType === 'remove') {
             return (
-                <button onClick={() => onAction(contact.id)} className="text-red-500 hover:text-red-700" title={t('contacts.remove_from_project')}>
+                <button type="button" onClick={() => onAction(contact.id)} className="text-red-500 hover:text-red-700" title={t('contacts.remove_from_project')}>
                     <Icon path="M19.5 12h-15" className="w-5 h-5" />
                 </button>
             );
@@ -190,7 +190,7 @@ function ContactCard({
                 
                 {showActions && (onEdit || onDelete || onAssignToProject || onDeactivate) && (
                     <div className="relative">
-                        <button
+                        <button type="button"
                             onClick={() => setShowActionsMenu(!showActionsMenu)}
                             className="p-1.5 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors opacity-0 group-hover:opacity-100"
                         >
@@ -201,7 +201,7 @@ function ContactCard({
                         {showActionsMenu && (
                             <div className="absolute right-0 top-9 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[170px] py-2">
                                 {onEdit && (
-                                    <button
+                                    <button type="button"
                                         onClick={handleEdit}
                                         className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                                     >
@@ -210,7 +210,7 @@ function ContactCard({
                                     </button>
                                 )}
                                 {onAssignToProject && (
-                                    <button
+                                    <button type="button"
                                         onClick={handleAssign}
                                         className="w-full px-4 py-2 text-left text-sm text-blue-700 hover:bg-blue-50 flex items-center gap-2"
                                     >
@@ -219,7 +219,7 @@ function ContactCard({
                                     </button>
                                 )}
                                 {onDeactivate && (
-                                    <button
+                                    <button type="button"
                                         onClick={handleDeactivate}
                                         className="w-full px-4 py-2 text-left text-sm text-amber-700 hover:bg-amber-50 flex items-center gap-2"
                                     >
@@ -228,7 +228,7 @@ function ContactCard({
                                     </button>
                                 )}
                                 {onDelete && (
-                                    <button
+                                    <button type="button"
                                         onClick={handleDelete}
                                         className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                                     >

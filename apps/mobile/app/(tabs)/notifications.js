@@ -7,12 +7,15 @@ import PressableWithFade from '../../components/PressableWithFade';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
+import { colors, spacing, touch } from '../../theme';
 import {
   fetchUserNotifications,
   markNotificationRead,
   acknowledgeNotification,
   resolveNotificationRoute,
 } from '../../utils/notifications';
+import { getCached, setCached } from '../../utils/persistentCache';
+import { SkeletonList } from '../../components/ui/Skeleton';
 
 export default function NotificationsScreen() {
   const { t } = useTranslation();
@@ -31,11 +34,18 @@ export default function NotificationsScreen() {
     }
     try {
       setLoading(true);
+      const cacheResource = 'notifications';
+      const cached = await getCached(user.id, cacheResource);
+      if (cached?.length) {
+        setNotifications(cached);
+        setLoading(false);
+      }
       const data = await fetchUserNotifications(supabase, {
         userId: user.id,
         email: user.email || '',
       });
       setNotifications(data);
+      await setCached(user.id, cacheResource, data);
     } catch (error) {
       console.error('Error loading notifications:', error);
       setNotifications([]);
@@ -92,13 +102,16 @@ export default function NotificationsScreen() {
   };
 
   const handleMarkRead = async (item) => {
+    const readAt = new Date().toISOString();
+    const prev = notifications;
+    setNotifications((list) =>
+      list.map((n) => (n.id === item.id ? { ...n, read_at: readAt } : n)),
+    );
     try {
       await markNotificationRead(supabase, { notificationId: item.id, userId: user?.id });
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === item.id ? { ...n, read_at: new Date().toISOString() } : n)),
-      );
     } catch (error) {
       console.error('Error marking notification read:', error);
+      setNotifications(prev);
     }
   };
 
@@ -149,11 +162,7 @@ export default function NotificationsScreen() {
   return (
     <View style={[styles.safeArea, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <PressableWithFade style={styles.backButton} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </PressableWithFade>
         <Text style={styles.headerTitle}>{t('mobile.notifications_title')}</Text>
-        <View style={styles.backButton} />
       </View>
       <View style={styles.filterRow}>
         <PressableWithFade
@@ -167,8 +176,8 @@ export default function NotificationsScreen() {
         </PressableWithFade>
       </View>
       {loading ? (
-        <View style={styles.centerState}>
-          <Text style={styles.stateText}>{t('mobile.loading_notifications')}</Text>
+        <View style={styles.listContent}>
+          <SkeletonList count={8} rowHeight={88} />
         </View>
       ) : (
         <FlatList
@@ -189,32 +198,31 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F9FAFB' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
   header: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    backgroundColor: '#fff',
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: '#111827' },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: colors.text },
   backButton: {
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  listContent: { padding: 14, paddingBottom: 30 },
+  listContent: { padding: spacing.lg, paddingBottom: 120 },
   filterRow: {
     paddingHorizontal: 14,
     paddingTop: 10,
   },
   filterChip: {
     alignSelf: 'flex-start',
-    minHeight: 40,
+    minHeight: touch.minRowHeight,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#D1D5DB',

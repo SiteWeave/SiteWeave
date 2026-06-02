@@ -1,0 +1,67 @@
+import * as ImagePicker from 'expo-image-picker';
+import { uploadTaskPhotoSet } from '@siteweave/core-logic';
+import { uriToUploadFile } from './imageUpload';
+
+/**
+ * Pick from camera or library and attach a photo to a task.
+ */
+export async function pickAndUploadTaskPhoto({
+  supabase,
+  task,
+  organizationId,
+  userId,
+  mode,
+}) {
+  if (!task?.id || !task?.project_id || !organizationId || !supabase) {
+    throw new Error('Task photo upload is missing project or organization context.');
+  }
+
+  const permission =
+    mode === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) {
+    throw new Error('Photo permission is required to attach task photos.');
+  }
+
+  const mediaTypes = ImagePicker.MediaTypeOptions?.Images ?? ['images'];
+  const result =
+    mode === 'camera'
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes,
+          quality: 0.8,
+          allowsEditing: false,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes,
+          quality: 0.8,
+          allowsEditing: false,
+        });
+
+  if (result.canceled || !result.assets?.[0]) return null;
+
+  const asset = result.assets[0];
+  const originalFile = await uriToUploadFile(asset.uri, {
+    mimeType: asset.mimeType || 'image/jpeg',
+    fileName: asset.fileName || undefined,
+  });
+
+  await uploadTaskPhotoSet(supabase, {
+    taskId: task.id,
+    organizationId,
+    projectId: task.project_id,
+    originalFile,
+    thumbnailFile: null,
+    uploadedByUserId: userId,
+    capturedAt: new Date().toISOString(),
+  });
+
+  return true;
+}
+
+export function resolveTaskOrganizationId(task, activeOrganization, projects = []) {
+  if (task?.organization_id) return task.organization_id;
+  if (activeOrganization?.id) return activeOrganization.id;
+  const project = projects.find((p) => p.id === task?.project_id);
+  return project?.organization_id ?? null;
+}

@@ -192,7 +192,7 @@ function RoleManagement() {
       {canCustomRoles && (
         <PermissionGuard permission="can_manage_roles">
           <div className="mb-6">
-            <button
+            <button type="button"
               onClick={handleCreateRole}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2"
             >

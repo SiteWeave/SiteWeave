@@ -10,6 +10,7 @@ import { upsertById, removeById } from '@siteweave/core-logic';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import ReportContentModal from './moderation/ReportContentModal';
+import { SkeletonRow } from './ui/Skeleton';
 
 function formatWhen(iso) {
   if (!iso) return '';
@@ -167,7 +168,7 @@ export default function TaskCommentsPanel({ task, project, inModal = false }) {
 
       {loading ? (
         <div className="mb-3 space-y-2">
-          {[1, 2].map((i) => <div key={i} className="h-8 animate-pulse rounded-lg bg-slate-200/60" />)}
+          {[1, 2].map((i) => <SkeletonRow key={i} className="h-8" />)}
         </div>
       ) : comments.length === 0 ? (
         <p className="mb-2 text-xs italic text-slate-400">No comments yet.</p>

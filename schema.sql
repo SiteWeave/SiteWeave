@@ -4664,17 +4664,70 @@ ON public.schedule_import_templates FOR DELETE
 USING (organization_id = (SELECT public.get_user_organization_id()));
 
 -- ============================================================================
+-- DATA API: explicit grants (RLS enforces row access)
+-- ============================================================================
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.task_photos TO authenticated;
+GRANT ALL ON TABLE public.task_photos TO service_role;
+
+GRANT SELECT ON TABLE public.task_notification_history TO authenticated;
+GRANT ALL ON TABLE public.task_notification_history TO service_role;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.schedule_import_templates TO authenticated;
+GRANT ALL ON TABLE public.schedule_import_templates TO service_role;
+
+GRANT SELECT, INSERT, DELETE ON TABLE public.task_dependency_notification_history TO authenticated;
+GRANT ALL ON TABLE public.task_dependency_notification_history TO service_role;
+
+GRANT SELECT, UPDATE ON TABLE public.user_notifications TO authenticated;
+GRANT ALL ON TABLE public.user_notifications TO service_role;
+
+GRANT SELECT ON TABLE public.notification_action_history TO authenticated;
+GRANT ALL ON TABLE public.notification_action_history TO service_role;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.weather_impacts TO authenticated;
+GRANT ALL ON TABLE public.weather_impacts TO service_role;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.project_access_invites TO authenticated;
+GRANT ALL ON TABLE public.project_access_invites TO service_role;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.project_stream_posts TO authenticated;
+GRANT ALL ON TABLE public.project_stream_posts TO service_role;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.project_stream_replies TO authenticated;
+GRANT ALL ON TABLE public.project_stream_replies TO service_role;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.task_comments TO authenticated;
+GRANT ALL ON TABLE public.task_comments TO service_role;
+
+-- ============================================================================
 -- TASK NOTIFICATION GUEST SHARES (no client policies; service_role only)
 -- ============================================================================
 REVOKE ALL ON public.task_notification_guest_shares FROM PUBLIC;
 REVOKE ALL ON public.task_notification_guest_shares FROM anon, authenticated;
 
+GRANT ALL ON TABLE public.task_notification_guest_shares TO service_role;
+
 -- ============================================================================
 -- SMS PHONE CONSENT
 -- ============================================================================
-CREATE POLICY "sms_phone_consent_select_authenticated"
+CREATE POLICY "sms_phone_consent_select_org_scoped"
 ON public.sms_phone_consent FOR SELECT TO authenticated
-USING (true);
+USING (
+  public.get_user_organization_id() IS NOT NULL
+  AND (
+    pending_organization_id = public.get_user_organization_id()
+    OR EXISTS (
+      SELECT 1
+      FROM public.contacts c
+      WHERE c.organization_id = public.get_user_organization_id()
+        AND c.phone IS NOT NULL
+        AND (
+          c.phone = sms_phone_consent.phone_e164
+          OR sms_phone_consent.phone_e164 LIKE '%' || RIGHT(regexp_replace(c.phone, '[^0-9]', '', 'g'), 10)
+        )
+    )
+  )
+);
 
 GRANT SELECT ON TABLE public.sms_phone_consent TO authenticated;
 GRANT ALL ON TABLE public.sms_phone_consent TO service_role;

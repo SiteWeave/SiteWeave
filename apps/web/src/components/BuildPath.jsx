@@ -395,13 +395,13 @@ function BuildPath({ project }) {
                 <h3 className="font-bold text-lg">{t('build_path.progress_status')}</h3>
                 {isAuthorized() && (
                     <div className="flex gap-2">
-                        <button
+                        <button type="button"
                             onClick={() => setShowPhaseModal(true)}
                             className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
                         >
                             + Add Phase
                         </button>
-                        <button
+                        <button type="button"
                             onClick={() => setIsEditing(!isEditing)}
                             className="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700"
                         >
@@ -496,7 +496,7 @@ function BuildPath({ project }) {
                                 )}
                             </div>
                             {isEditing && isAuthorized() && (
-                                <button
+                                <button type="button"
                                     onClick={() => handleDeletePhase(phase.id)}
                                     className="px-2 py-1 text-xs bg-red-100 text-red-600 rounded hover:bg-red-200"
                                 >

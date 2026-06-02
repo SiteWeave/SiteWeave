@@ -96,7 +96,7 @@ function NotificationBadge() {
             <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-semibold text-gray-800">Notifications</h3>
-                    <button 
+                    <button type="button" 
                         onClick={() => setIsVisible(false)}
                         className="text-gray-400 hover:text-gray-600"
                     >

@@ -8,22 +8,22 @@ export default function KPICarousel({ activeProjects, completedTasks, overdueTas
     {
       title: t('mobile.kpi_active'),
       subtitle: t('mobile.kpi_projects'),
-      value: activeProjects,
+      value: activeProjects ?? '—',
       color: '#3B82F6',
       icon: 'business-outline',
     },
     {
       title: t('mobile.kpi_tasks'),
       subtitle: t('mobile.kpi_completed'),
-      value: completedTasks,
+      value: completedTasks ?? '—',
       color: '#10B981',
       icon: 'checkmark-circle-outline',
     },
     {
       title: t('mobile.kpi_overdue'),
       subtitle: t('mobile.kpi_tasks'),
-      value: overdueTasks,
-      color: overdueTasks > 0 ? '#EF4444' : '#6B7280',
+      value: overdueTasks ?? '—',
+      color: (overdueTasks ?? 0) > 0 ? '#EF4444' : '#6B7280',
       icon: 'alert-circle-outline',
     },
   ];
@@ -52,7 +52,8 @@ export default function KPICarousel({ activeProjects, completedTasks, overdueTas
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 0,
+    paddingBottom: 8,
   },
   dashboardCard: {
     flexDirection: 'row',

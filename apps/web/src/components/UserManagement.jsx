@@ -180,7 +180,7 @@ function UserManagement() {
           </form>
 
           <div className="mt-4">
-            <button
+            <button type="button"
               onClick={() => setShowCreateUser(!showCreateUser)}
               className="text-blue-600 hover:text-blue-700 text-sm"
             >
@@ -260,7 +260,7 @@ function UserManagement() {
                   </div>
                 </div>
                 <PermissionGuard permission="can_manage_users">
-                  <button
+                  <button type="button"
                     onClick={() => handleRemoveUser(user.id)}
                     className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-md text-sm"
                   >

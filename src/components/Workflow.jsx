@@ -215,7 +215,7 @@ const Workflow = ({ projectId }) => {
         <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold">Workflows ({workflows.length})</h2>
-                <button 
+                <button type="button" 
                     onClick={() => setShowCreateModal(true)}
                     className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700"
                 >
@@ -430,7 +430,7 @@ const Workflow = ({ projectId }) => {
                                                                     )}
                                                                 </div>
                                                                 {isCurrentStep && (
-                                                                    <button
+                                                                    <button type="button"
                                                                         onClick={() => handleStepComplete(workflow.id, index)}
                                                                         className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors shadow-xs"
                                                                     >
@@ -469,7 +469,7 @@ const Workflow = ({ projectId }) => {
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">No workflows yet</h3>
                     <p className="text-gray-500 mb-4">Create workflows to track multi-step processes and task progress.</p>
-                    <button 
+                    <button type="button" 
                         onClick={() => setShowCreateModal(true)}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                     >
@@ -485,7 +485,7 @@ const Workflow = ({ projectId }) => {
                         <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-xl font-bold">Create New Workflow</h3>
-                                <button 
+                                <button type="button" 
                                     onClick={() => setShowCreateModal(false)}
                                     className="text-gray-400 hover:text-gray-600"
                                 >
@@ -621,13 +621,13 @@ const Workflow = ({ projectId }) => {
                         </div>
 
                         <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
-                            <button
+                            <button type="button"
                                 onClick={() => setShowCreateModal(false)}
                                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
                             >
                                 Cancel
                             </button>
-                            <button
+                            <button type="button"
                                 onClick={handleCreateWorkflow}
                                 disabled={isCreating}
                                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"

@@ -238,7 +238,7 @@ function SetupWizard({ show, onComplete }) {
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
-              <button
+              <button type="button"
                 onClick={handleSaveMemberRole}
                 disabled={loading}
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
@@ -285,7 +285,7 @@ function SetupWizard({ show, onComplete }) {
             <div className="bg-white border border-gray-200 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-medium">Create Managed Account</h4>
-                <button
+                <button type="button"
                   onClick={() => setShowCreateForm(!showCreateForm)}
                   className="text-sm text-blue-600 hover:text-blue-700"
                 >
@@ -345,13 +345,13 @@ function SetupWizard({ show, onComplete }) {
             )}
 
             <div className="flex justify-between pt-4">
-              <button
+              <button type="button"
                 onClick={() => setStep(1)}
                 className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 Back
               </button>
-              <button
+              <button type="button"
                 onClick={handleComplete}
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >

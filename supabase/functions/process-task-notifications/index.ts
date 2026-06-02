@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
+import { createServiceClient, requireCronOrServiceRole } from '../_shared/auth.ts'
 import { buildMinimalDigestEmail, formatDigestDueDate } from '../_shared/notificationEmailTemplates.ts'
 import { sendTwilioSms } from '../_shared/twilioSms.ts'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
@@ -35,23 +36,55 @@ function buildAppUrl(projectId?: string | null): string {
   return projectId ? `${base}/?project=${projectId}` : base
 }
 
+function maxLeadDaysFromConfigRows(
+  rows: Array<{ task_start_notification_lead_days?: unknown }> | null,
+  fallback = 14,
+): number {
+  let max = fallback
+  for (const row of rows || []) {
+    for (const day of normalizeLeadDays(row.task_start_notification_lead_days, [])) {
+      max = Math.max(max, day)
+    }
+  }
+  return max
+}
+
 serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req)
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return corsPreflightResponse(req)
   }
 
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders })
   }
 
+  const cronDenied = requireCronOrServiceRole(req, corsHeaders)
+  if (cronDenied) return cronDenied
+
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseServiceKey = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim()
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    const supabase = createServiceClient()
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const todayIso = isoDateOnly(today)
+
+    const [{ data: orgLeadRows }, { data: projectLeadRows }] = await Promise.all([
+      supabase.from('organizations').select('task_start_notification_lead_days'),
+      supabase
+        .from('projects')
+        .select('task_start_notification_lead_days')
+        .not('task_start_notification_lead_days', 'is', null),
+    ])
+
+    const maxLeadDays = maxLeadDaysFromConfigRows([
+      ...(orgLeadRows || []),
+      ...(projectLeadRows || []),
+    ])
+    const maxLeadDate = new Date(today)
+    maxLeadDate.setDate(maxLeadDate.getDate() + maxLeadDays)
+    const maxLeadDateIso = isoDateOnly(maxLeadDate)
 
     const { data: tasks, error: taskError } = await supabase
       .from('tasks')
@@ -78,6 +111,8 @@ serve(async (req) => {
       .eq('completed', false)
       .not('start_date', 'is', null)
       .not('assignee_id', 'is', null)
+      .gte('start_date', todayIso)
+      .lte('start_date', maxLeadDateIso)
 
     if (taskError) {
       return new Response(

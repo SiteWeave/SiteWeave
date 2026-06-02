@@ -27,7 +27,7 @@ function CredentialCard({ fullName, username, password, email, roleName, onClose
         <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-semibold text-gray-600 uppercase">Full Name</label>
-            <button
+            <button type="button"
               onClick={() => handleCopy(fullName, 'Name')}
               className="text-xs text-blue-600 hover:text-blue-700"
               title="Copy"
@@ -41,7 +41,7 @@ function CredentialCard({ fullName, username, password, email, roleName, onClose
         <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-semibold text-gray-600 uppercase">Username</label>
-            <button
+            <button type="button"
               onClick={() => handleCopy(username, 'Username')}
               className="text-xs text-blue-600 hover:text-blue-700"
               title="Copy"
@@ -55,7 +55,7 @@ function CredentialCard({ fullName, username, password, email, roleName, onClose
         <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-semibold text-gray-600 uppercase">Temporary Password</label>
-            <button
+            <button type="button"
               onClick={() => handleCopy(password, 'Password')}
               className="text-xs text-blue-600 hover:text-blue-700"
               title="Copy"
@@ -70,7 +70,7 @@ function CredentialCard({ fullName, username, password, email, roleName, onClose
           <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-semibold text-gray-600 uppercase">Email</label>
-              <button
+              <button type="button"
                 onClick={() => handleCopy(email, 'Email')}
                 className="text-xs text-blue-600 hover:text-blue-700"
                 title="Copy"
@@ -91,14 +91,14 @@ function CredentialCard({ fullName, username, password, email, roleName, onClose
       </div>
 
       <div className="flex items-center justify-between pt-4 border-t border-gray-200 print:hidden">
-        <button
+        <button type="button"
           onClick={handlePrint}
           className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
         >
           <Icon path="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M10.5 2.25H3.375c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" className="w-4 h-4" />
           Print
         </button>
-        <button
+        <button type="button"
           onClick={onClose}
           className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
         >

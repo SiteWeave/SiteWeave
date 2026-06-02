@@ -1,7 +1,21 @@
-import { View, Text, StyleSheet, Modal, TextInput, Pressable } from 'react-native';
+import { View, StyleSheet, Modal, TextInput, Pressable, ScrollView } from 'react-native';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { normalizeTaskProgressUpdate } from '@siteweave/core-logic';
 import PressableWithFade from './PressableWithFade';
 import TaskCommentsSection from './TaskCommentsSection';
+import ProgressEditor from './ui/ProgressEditor';
+import DateField from './ui/DateField';
+import { Text } from './ui/Text';
+import Button from './ui/Button';
+import { colors, spacing, touch } from '../theme';
+
+function initialPercent(task) {
+  if (!task) return 0;
+  if (task.completed) return 100;
+  const p = Number(task.percent_complete);
+  return Number.isFinite(p) ? Math.max(0, Math.min(100, Math.round(p))) : 0;
+}
 
 export default function TaskDetailModal({
   visible,
@@ -14,17 +28,22 @@ export default function TaskDetailModal({
   onSave,
   loading = false,
 }) {
+  const { t } = useTranslation();
   const [text, setText] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('Medium');
   const [completionPercent, setCompletionPercent] = useState(0);
+  const [startDate, setStartDate] = useState(null);
+  const [dueDate, setDueDate] = useState(null);
 
   useEffect(() => {
     if (task) {
       setText(task.text || '');
       setDescription(task.description || '');
       setPriority(task.priority || 'Medium');
-      setCompletionPercent(task.completed ? 100 : 0);
+      setCompletionPercent(initialPercent(task));
+      setStartDate(task.start_date || null);
+      setDueDate(task.due_date || null);
     }
   }, [task]);
 
@@ -32,23 +51,44 @@ export default function TaskDetailModal({
 
   const priorities = ['Low', 'Medium', 'High'];
 
+  const buildPayload = (overrides = {}) => {
+    const base = {
+      text: text.trim(),
+      description: description.trim(),
+      priority,
+      start_date: startDate,
+      due_date: dueDate,
+      percent_complete: completionPercent,
+      completed: completionPercent >= 100,
+      ...overrides,
+    };
+    return normalizeTaskProgressUpdate(base);
+  };
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={(event) => event.stopPropagation()}>
-          <Text style={styles.title}>Task details</Text>
+        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <Text variant="sectionTitle" style={styles.title}>
+            {t('mobile.task_details', { defaultValue: 'Task details' })}
+          </Text>
 
-          <Text style={styles.label}>Task</Text>
+          <Text variant="caption" style={styles.label}>
+            {t('mobile.task_name_label', { defaultValue: 'Task' })}
+          </Text>
           <TextInput
             style={styles.input}
             value={text}
             onChangeText={setText}
             editable={!loading}
             placeholder="Task name"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.textSubtle}
           />
 
-          <Text style={styles.label}>Notes</Text>
+          <Text variant="caption" style={styles.label}>
+            Notes
+          </Text>
           <TextInput
             style={[styles.input, styles.textArea]}
             value={description}
@@ -56,10 +96,12 @@ export default function TaskDetailModal({
             editable={!loading}
             multiline
             placeholder="Add notes for field crew"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.textSubtle}
           />
 
-          <Text style={styles.label}>Priority</Text>
+          <Text variant="caption" style={styles.label}>
+            Priority
+          </Text>
           <View style={styles.priorityRow}>
             {priorities.map((value) => (
               <PressableWithFade
@@ -73,21 +115,25 @@ export default function TaskDetailModal({
             ))}
           </View>
 
-          <Text style={styles.label}>Completion</Text>
-          <View style={styles.percentRow}>
-            {[0, 25, 50, 75, 100].map((value) => (
-              <PressableWithFade
-                key={value}
-                style={[styles.percentButton, completionPercent === value && styles.percentButtonActive]}
-                onPress={() => setCompletionPercent(value)}
-                disabled={loading}
-              >
-                <Text style={[styles.percentText, completionPercent === value && styles.percentTextActive]}>
-                  {value}%
-                </Text>
-              </PressableWithFade>
-            ))}
-          </View>
+          <Text variant="caption" style={styles.label}>
+            Progress
+          </Text>
+          <ProgressEditor value={completionPercent} onChange={setCompletionPercent} showMarkComplete />
+
+          <DateField
+            label={t('mobile.task_start_date', { defaultValue: 'Start date' })}
+            value={startDate}
+            onChange={setStartDate}
+            disabled={loading}
+            testID="task-start-date"
+          />
+          <DateField
+            label={t('mobile.task_due_date', { defaultValue: 'Due date' })}
+            value={dueDate}
+            onChange={setDueDate}
+            disabled={loading}
+            testID="task-due-date"
+          />
 
           {project && supabase && currentUserId ? (
             <TaskCommentsSection
@@ -100,40 +146,16 @@ export default function TaskDetailModal({
           ) : null}
 
           <View style={styles.actionRow}>
-            <PressableWithFade style={styles.secondaryButton} onPress={onClose} disabled={loading}>
-              <Text style={styles.secondaryText}>Cancel</Text>
-            </PressableWithFade>
-            <PressableWithFade
-              style={styles.primaryButton}
-              onPress={() =>
-                onSave?.({
-                  text: text.trim(),
-                  description: description.trim(),
-                  priority,
-                  completed: completionPercent >= 100,
-                })
-              }
+            <Button label="Cancel" variant="secondary" onPress={onClose} disabled={loading} style={styles.half} />
+            <Button
+              label={loading ? 'Saving…' : 'Save'}
+              onPress={() => onSave?.(buildPayload())}
               disabled={loading || !text.trim()}
-            >
-              <Text style={styles.primaryText}>{loading ? 'Saving...' : 'Save'}</Text>
-            </PressableWithFade>
+              testID="task-detail-save"
+              style={styles.half}
+            />
           </View>
-
-          <PressableWithFade
-            style={styles.completeButton}
-            onPress={() => {
-              setCompletionPercent(100);
-              onSave?.({
-                text: text.trim(),
-                description: description.trim(),
-                priority,
-                completed: true,
-              });
-            }}
-            disabled={loading}
-          >
-            <Text style={styles.completeText}>Set 100% and complete</Text>
-          </PressableWithFade>
+          </ScrollView>
         </Pressable>
       </Pressable>
     </Modal>
@@ -141,97 +163,38 @@ export default function TaskDetailModal({
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(17, 24, 39, 0.45)',
-    justifyContent: 'flex-end',
-  },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    padding: 18,
-    paddingBottom: 28,
-    gap: 10,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: spacing.xxl,
+    maxHeight: '92%',
   },
-  title: { fontSize: 24, fontWeight: '800', color: '#111827', marginBottom: 4 },
-  label: { fontSize: 13, fontWeight: '700', color: '#4B5563' },
+  title: { marginBottom: spacing.lg },
+  label: { marginBottom: spacing.sm, marginTop: spacing.md },
   input: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: colors.border,
     borderRadius: 12,
-    minHeight: 56,
-    paddingHorizontal: 14,
+    padding: spacing.lg,
     fontSize: 17,
-    color: '#111827',
+    minHeight: touch.minSize,
+    color: colors.text,
   },
-  textArea: {
-    minHeight: 96,
-    paddingTop: 12,
-    textAlignVertical: 'top',
-  },
-  priorityRow: { flexDirection: 'row', gap: 8 },
+  textArea: { minHeight: 88, textAlignVertical: 'top' },
+  priorityRow: { flexDirection: 'row', gap: spacing.sm },
   priorityButton: {
     flex: 1,
-    minHeight: 52,
+    minHeight: touch.minSize,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-  priorityButtonActive: {
-    borderColor: '#2563EB',
-    backgroundColor: '#EFF6FF',
-  },
-  priorityText: { fontSize: 16, fontWeight: '700', color: '#374151' },
-  priorityTextActive: { color: '#1D4ED8' },
-  percentRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  percentButton: {
-    minWidth: 64,
-    minHeight: 48,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-  percentButtonActive: {
-    borderColor: '#2563EB',
-    backgroundColor: '#EFF6FF',
-  },
-  percentText: { fontSize: 15, fontWeight: '700', color: '#374151' },
-  percentTextActive: { color: '#1D4ED8' },
-  actionRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
-  secondaryButton: {
-    flex: 1,
-    minHeight: 56,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  secondaryText: { fontSize: 17, fontWeight: '700', color: '#374151' },
-  primaryButton: {
-    flex: 1,
-    minHeight: 56,
-    borderRadius: 12,
-    backgroundColor: '#2563EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryText: { fontSize: 17, fontWeight: '800', color: '#fff' },
-  completeButton: {
-    minHeight: 56,
-    borderRadius: 12,
-    backgroundColor: '#16A34A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-  },
-  completeText: { fontSize: 17, fontWeight: '800', color: '#fff' },
+  priorityButtonActive: { backgroundColor: colors.primaryLight },
+  priorityText: { fontSize: 15, fontWeight: '600', color: colors.textSecondary },
+  priorityTextActive: { color: colors.primary, fontWeight: '700' },
+  actionRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.xxl },
+  half: { flex: 1 },
 });

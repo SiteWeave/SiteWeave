@@ -122,7 +122,7 @@ function InvitationManager({ projectId }) {
                                 </div>
                                 
                                 <div className="flex items-center gap-2">
-                                    <button
+                                    <button type="button"
                                         onClick={() => handleResend(invitation.id)}
                                         disabled={actionLoading[invitation.id] === 'resend'}
                                         className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
@@ -137,7 +137,7 @@ function InvitationManager({ projectId }) {
                                             </>
                                         )}
                                     </button>
-                                    <button
+                                    <button type="button"
                                         onClick={() => handleCancel(invitation.id)}
                                         disabled={actionLoading[invitation.id] === 'cancel'}
                                         className="px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"

@@ -1207,7 +1207,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
         </p>
 
         {scheduleId && (
-          <button
+          <button type="button"
             onClick={handleSendTest}
             disabled={isSendingTest}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"

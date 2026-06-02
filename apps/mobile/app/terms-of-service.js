@@ -7,9 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { acceptTermsOfService, hasAcceptedTermsOfService } from '@siteweave/core-logic';
 import { useHaptics } from '../hooks/useHaptics';
 import { useRouter } from 'expo-router';
-
-const TOS_VERSION = '1.0.0';
-const TOS_URL = 'https://www.siteweave.org/legal/terms-of-service';
+import { TOS_VERSION, TOS_URL } from '../constants/legal';
 
 export default function TermsOfServiceScreen() {
   const { user, supabase } = useAuth();

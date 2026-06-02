@@ -1,6 +1,6 @@
 directories:
   output: release
-  buildResources: build
+  buildResources: store-assets
   app: .
 appId: com.siteweave.app
 productName: SiteWeave
@@ -19,7 +19,7 @@ files:
   - 'node_modules/electron-updater/**/*'
 win:
   target: nsis
-  icon: build/icon.png
+  icon: store-assets/icon.png
   verifyUpdateCodeSignature: false
 mac:
   target:
@@ -30,11 +30,11 @@ mac:
 # AppX target for MSIX/Store (build with: npm run build:win:appx)
 appx:
   applicationId: SiteWeaveLLC.SiteWeave
-  displayName: SiteWeave
+  displayName: Site Weave
   publisherDisplayName: Site Weave LLC
   identityName: SiteWeaveLLC.SiteWeave
   publisher: CN=068B28E9-7E32-44B0-8497-76E29332ECEA
-  backgroundColor: "#FFFFFF"
+  backgroundColor: "#000000"
 nsis:
   artifactName: ${productName}-Setup-${version}.${ext}
   oneClick: false

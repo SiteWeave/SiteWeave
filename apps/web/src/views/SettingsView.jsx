@@ -502,7 +502,7 @@ function SettingsView() {
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-gray-900">{t('settings.role_management')}</h2>
-              <button
+              <button type="button"
                 onClick={() => setShowRoleManagement(false)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
                 aria-label={t('common.close')}

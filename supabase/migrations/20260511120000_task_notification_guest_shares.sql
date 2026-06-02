@@ -29,3 +29,4 @@ REVOKE ALL ON public.task_notification_guest_shares FROM PUBLIC;
 REVOKE ALL ON public.task_notification_guest_shares FROM anon, authenticated;
 
 -- Intentionally no policies for anon/authenticated; service_role bypasses RLS for edge functions.
+GRANT ALL ON TABLE public.task_notification_guest_shares TO service_role;

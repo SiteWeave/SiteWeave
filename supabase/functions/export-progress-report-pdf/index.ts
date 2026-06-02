@@ -142,7 +142,7 @@ serve(async (req) => {
           error: EXPORT_FEATURE_LOCKED_ERROR,
           message: 'PDF export is available on the business plan. Contact sales to upgrade.',
         }),
-        { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        { status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
       )
     }
 

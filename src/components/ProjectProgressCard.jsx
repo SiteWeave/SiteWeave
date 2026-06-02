@@ -4,6 +4,7 @@ import { getLocalizedProjectStatus } from '@siteweave/i18n';
 import { computeWeightedProjectProgressPercent } from '../utils/projectProgressRollup.js';
 import { getStatusColor } from '../utils/projectHelpers';
 import { supabaseClient } from '../context/AppContext';
+import { SkeletonText } from './ui/Skeleton';
 
 function ProjectProgressCard({ project }) {
     const { t } = useTranslation();
@@ -59,11 +60,7 @@ function ProjectProgressCard({ project }) {
     if (isLoading) {
         return (
             <div className="p-4 bg-white rounded-xl" style={{ boxShadow: '0px 4px 12px rgba(0,0,0,0.05)' }}>
-                <div className="animate-pulse">
-                    <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                    <div className="h-3 bg-gray-200 rounded w-full mb-2"></div>
-                    <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                </div>
+                <SkeletonText lines={3} />
             </div>
         );
     }
@@ -79,7 +76,7 @@ function ProjectProgressCard({ project }) {
             {/* Progress Bar */}
             <div className="w-full bg-gray-200 rounded-full h-2 mb-2 overflow-hidden">
                 <div 
-                    className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(overallProgress, project.due_date)}`}
+                    className={`h-2 rounded-full transition-[width] duration-200 ease-out ${getProgressColor(overallProgress, project.due_date)}`}
                     style={{ 
                         width: `${Math.max(0, Math.min(100, overallProgress))}%`,
                         minWidth: overallProgress > 0 ? '2px' : '0px'

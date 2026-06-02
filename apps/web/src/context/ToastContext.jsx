@@ -102,7 +102,7 @@ const Toast = ({ toast, onRemove }) => {
       <div className="flex-1 text-center">
         <p className={`${type === 'error' ? 'text-base font-bold' : 'text-sm font-medium'} leading-relaxed`}>{message}</p>
       </div>
-      <button 
+      <button type="button" 
         onClick={handleRemove}
         className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors p-1 rounded hover:bg-gray-100"
         aria-label="Close notification"

@@ -166,7 +166,7 @@ function ProgressReportModal({ projectId, onClose }) {
                   ? t('progressReports.create_project_title')
                   : t('progressReports.create_org_title')}
             </h2>
-            <button
+            <button type="button"
               onClick={() => {
                 setShowBuilder(false);
                 setEditingScheduleId(null);
@@ -208,7 +208,7 @@ function ProgressReportModal({ projectId, onClose }) {
           <h2 className="text-2xl font-bold text-gray-900">
             {projectId ? t('progressReports.project_heading') : t('progressReports.org_heading')}
           </h2>
-          <button
+          <button type="button"
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
           >
@@ -225,7 +225,7 @@ function ProgressReportModal({ projectId, onClose }) {
                 ? t('progressReports.project_scope_desc')
                 : t('progressReports.org_scope_desc')}
             </p>
-            <button
+            <button type="button"
               onClick={handleCreateNew}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
@@ -238,7 +238,7 @@ function ProgressReportModal({ projectId, onClose }) {
           ) : schedules.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-gray-500 mb-4">{t('progressReports.no_schedules')}</p>
-              <button
+              <button type="button"
                 onClick={handleCreateNew}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
@@ -279,32 +279,32 @@ function ProgressReportModal({ projectId, onClose }) {
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
-                        <button
+                        <button type="button"
                           onClick={() => handleSendNow(schedule.id)}
                           className="px-2.5 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 font-medium"
                         >
                           {t('progressReports.send_now')}
                         </button>
-                        <button
+                        <button type="button"
                           onClick={() => handleExportPDF(schedule.id)}
                           className="px-2.5 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50 font-medium"
                           title={t('progressReports.export_pdf')}
                         >
                           {t('progressReports.export_pdf')}
                         </button>
-                        <button
+                        <button type="button"
                           onClick={() => openHistory(schedule.id)}
                           className="px-2.5 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50 font-medium"
                         >
                           {t('progressReports.history')}
                         </button>
-                        <button
+                        <button type="button"
                           onClick={() => handleEdit(schedule.id)}
                           className="px-2.5 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50 font-medium"
                         >
                           {t('progressReports.edit')}
                         </button>
-                        <button
+                        <button type="button"
                           onClick={() => handleDelete(schedule.id)}
                           className="px-2.5 py-1 text-xs text-red-500 hover:text-red-700 font-medium"
                         >

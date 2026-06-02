@@ -2,20 +2,27 @@ import { View, Text, StyleSheet, Modal, TextInput, KeyboardAvoidingView, Platfor
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import PressableWithFade from './PressableWithFade';
+import ModalScrim from './ui/ModalScrim';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { uploadProfilePhoto, removeProfilePhoto, validateProfilePhotoFile } from '@siteweave/core-logic';
+import { uriToUploadFile } from '../utils/imageUpload';
+import { prepareMobileAvatarUri } from '../utils/prepareAvatarImage';
+import Avatar from './ui/Avatar';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function EditProfileModal({ visible, onClose, onProfileUpdated }) {
-  const { user, supabase } = useAuth();
+  const { user, supabase, profileAvatarUrl, refreshProfileAvatar } = useAuth();
   const [fullName, setFullName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(null);
+  const [avatarLoading, setAvatarLoading] = useState(false);
   
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
   const modalTranslateY = useRef(new Animated.Value(1)).current;
   const insets = useSafeAreaInsets();
 
@@ -24,37 +31,24 @@ export default function EditProfileModal({ visible, onClose, onProfileUpdated })
       setFullName(user?.user_metadata?.full_name || '');
       setNewPassword('');
       setConfirmPassword('');
+      setAvatarUrl(profileAvatarUrl || user?.user_metadata?.avatar_url || null);
     }
-  }, [visible, user]);
+  }, [visible, user, profileAvatarUrl]);
 
   useEffect(() => {
     if (visible) {
-      Animated.timing(backdropOpacity, {
-        toValue: 0.7,
-        duration: 150,
-        useNativeDriver: true,
-      }).start();
-      
-      Animated.timing(modalTranslateY, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(backdropOpacity, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
+      modalTranslateY.setValue(1);
+      requestAnimationFrame(() => {
         Animated.timing(modalTranslateY, {
-          toValue: 1,
-          duration: 250,
+          toValue: 0,
+          duration: 300,
           useNativeDriver: true,
-        }),
-      ]).start();
+        }).start();
+      });
+    } else {
+      modalTranslateY.setValue(1);
     }
-  }, [visible]);
+  }, [visible, modalTranslateY]);
 
   const handleSave = async () => {
     if (!user || !supabase) return;
@@ -85,6 +79,71 @@ export default function EditProfileModal({ visible, onClose, onProfileUpdated })
       alert('Failed to update profile. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getDisplayName = () => {
+    if (fullName?.trim()) return fullName.trim();
+    if (user?.user_metadata?.full_name?.trim()) return user.user_metadata.full_name.trim();
+    if (user?.email) return user.email;
+    return 'User';
+  };
+
+  const handlePickAvatar = async () => {
+    if (!user || !supabase || avatarLoading) return;
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permission.status !== 'granted') {
+        alert('Photo permission is required to upload a profile picture.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      const prepared = await prepareMobileAvatarUri(asset.uri);
+      const uploadFile = await uriToUploadFile(prepared.uri, {
+        mimeType: prepared.mimeType,
+        fileName: `avatar-${Date.now()}.jpg`,
+      });
+      validateProfilePhotoFile({ type: uploadFile.type, size: uploadFile.size || asset.fileSize || 0 });
+
+      setAvatarLoading(true);
+      const publicUrl = await uploadProfilePhoto(supabase, { userId: user.id, file: uploadFile });
+      setAvatarUrl(publicUrl);
+      await refreshProfileAvatar();
+      const { data: { user: updatedUser } } = await supabase.auth.getUser();
+      onProfileUpdated?.(updatedUser);
+      alert('Profile photo updated successfully.');
+    } catch (error) {
+      console.error('Error updating profile photo:', error);
+      alert(error?.message || 'Failed to update profile photo.');
+    } finally {
+      setAvatarLoading(false);
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    if (!user || !supabase || avatarLoading) return;
+    try {
+      setAvatarLoading(true);
+      await removeProfilePhoto(supabase, { userId: user.id });
+      setAvatarUrl(null);
+      await refreshProfileAvatar();
+      const { data: { user: updatedUser } } = await supabase.auth.getUser();
+      onProfileUpdated?.(updatedUser);
+      alert('Profile photo removed.');
+    } catch (error) {
+      console.error('Error removing profile photo:', error);
+      alert(error?.message || 'Failed to remove profile photo.');
+    } finally {
+      setAvatarLoading(false);
     }
   };
 
@@ -139,7 +198,7 @@ export default function EditProfileModal({ visible, onClose, onProfileUpdated })
       onRequestClose={handleClose}
     >
       <View style={styles.modalContainer}>
-        <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
+        <ModalScrim onPress={onClose} opacity={0.5} />
         
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -175,6 +234,33 @@ export default function EditProfileModal({ visible, onClose, onProfileUpdated })
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Profile Photo</Text>
+              <View style={styles.avatarRow}>
+                <Avatar name={getDisplayName()} avatarUrl={avatarUrl} size="xl" />
+                <View style={styles.avatarActions}>
+                  <PressableWithFade
+                    style={[styles.avatarActionButton, avatarLoading && styles.avatarActionButtonDisabled]}
+                    onPress={handlePickAvatar}
+                    disabled={avatarLoading || loading || changingPassword}
+                  >
+                    <Text style={styles.avatarActionButtonText}>
+                      {avatarLoading ? 'Uploading...' : avatarUrl ? 'Change Photo' : 'Upload Photo'}
+                    </Text>
+                  </PressableWithFade>
+                  {avatarUrl ? (
+                    <PressableWithFade
+                      style={[styles.avatarRemoveButton, avatarLoading && styles.avatarActionButtonDisabled]}
+                      onPress={handleRemoveAvatar}
+                      disabled={avatarLoading || loading || changingPassword}
+                    >
+                      <Text style={styles.avatarRemoveButtonText}>Remove</Text>
+                    </PressableWithFade>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+
             <View style={styles.formGroup}>
               <Text style={styles.label}>Full Name</Text>
               <TextInput
@@ -325,6 +411,65 @@ const styles = StyleSheet.create({
   },
   formGroup: {
     marginBottom: 24,
+  },
+  avatarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  avatarImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#E5E7EB',
+  },
+  avatarFallback: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarFallbackText: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  avatarActions: {
+    flex: 1,
+    gap: 8,
+  },
+  avatarActionButton: {
+    minHeight: 44,
+    borderRadius: 8,
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarActionButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  avatarRemoveButton: {
+    minHeight: 40,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarRemoveButtonText: {
+    color: '#B91C1C',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  avatarActionButtonDisabled: {
+    opacity: 0.55,
   },
   label: {
     fontSize: 14,

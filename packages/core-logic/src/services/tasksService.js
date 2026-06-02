@@ -3,6 +3,30 @@
  * Handles all task-related database operations
  */
 
+/** List columns for dashboards, mobile home, lazy loader — keep in sync with TaskItem / TaskCard. */
+export const TASK_LIST_COLUMNS = [
+  'id',
+  'project_id',
+  'organization_id',
+  'text',
+  'due_date',
+  'priority',
+  'completed',
+  'assignee_id',
+  'recurrence',
+  'parent_task_id',
+  'is_recurring_instance',
+  'start_date',
+  'duration_days',
+  'is_milestone',
+  'created_at',
+  'project_phase_id',
+  'percent_complete',
+  'notify_assignee_email',
+  'contacts!fk_tasks_assignee_id(name, avatar_url, email, phone)',
+  'task_photos(id)',
+].join(',');
+
 /**
  * Fetch all tasks
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
@@ -42,13 +66,12 @@ async function resolveUserContactId(supabase, userId) {
  * @returns {Promise<Array>} Array of tasks
  */
 export async function fetchUserTasks(supabase, userId, contactId) {
-  // Resolve auth.uid() -> contact_id (tasks.assignee_id stores contacts.id)
   const resolvedContactId = contactId || await resolveUserContactId(supabase, userId);
   if (!resolvedContactId) return [];
   
   const { data, error } = await supabase
     .from('tasks')
-    .select('*')
+    .select(TASK_LIST_COLUMNS)
     .eq('assignee_id', resolvedContactId)
     .order('created_at', { ascending: false });
   
@@ -61,20 +84,32 @@ export async function fetchUserTasks(supabase, userId, contactId) {
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} userId - Auth user ID (auth.uid()) — will be resolved to contact_id
  * @param {string} [contactId] - Optional pre-resolved contact_id (skips lookup if provided)
+ * @param {{ limit?: number, orderByDueDate?: boolean }} [options]
  * @returns {Promise<Array>} Array of incomplete tasks
  */
-export async function fetchUserIncompleteTasks(supabase, userId, contactId) {
-  // Resolve auth.uid() -> contact_id (tasks.assignee_id stores contacts.id)
+export async function fetchUserIncompleteTasks(supabase, userId, contactId, options = {}) {
   const resolvedContactId = contactId || await resolveUserContactId(supabase, userId);
   if (!resolvedContactId) return [];
-  
-  const { data, error } = await supabase
+
+  let query = supabase
     .from('tasks')
-    .select('*')
+    .select(TASK_LIST_COLUMNS)
     .eq('assignee_id', resolvedContactId)
-    .eq('completed', false)
-    .order('created_at', { ascending: false });
-  
+    .eq('completed', false);
+
+  if (options.orderByDueDate) {
+    query = query
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: false });
+  } else {
+    query = query.order('created_at', { ascending: false });
+  }
+
+  if (options.limit != null) {
+    query = query.limit(options.limit);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   return data || [];
 }
@@ -97,6 +132,28 @@ export async function createTask(supabase, taskData) {
 }
 
 /**
+ * Normalize percent_complete and completed so they stay in sync (0–100).
+ * @param {Object} updates - Partial task updates
+ * @returns {Object}
+ */
+export function normalizeTaskProgressUpdate(updates) {
+  const next = { ...updates };
+  if (
+    next.percent_complete !== undefined &&
+    next.percent_complete !== null &&
+    next.percent_complete !== ''
+  ) {
+    const parsed = Number(next.percent_complete);
+    const bounded = Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : 0;
+    next.percent_complete = bounded;
+    next.completed = bounded >= 100;
+  } else if (next.completed !== undefined) {
+    next.percent_complete = next.completed ? 100 : 0;
+  }
+  return next;
+}
+
+/**
  * Update a task
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} taskId - Task ID
@@ -104,9 +161,10 @@ export async function createTask(supabase, taskData) {
  * @returns {Promise<Object>} Updated task
  */
 export async function updateTask(supabase, taskId, updates) {
+  const normalized = normalizeTaskProgressUpdate(updates);
   const { data, error } = await supabase
     .from('tasks')
-    .update(updates)
+    .update(normalized)
     .eq('id', taskId)
     .select();
   
@@ -124,7 +182,7 @@ export async function updateTask(supabase, taskId, updates) {
  * @returns {Promise<Object>} Updated task
  */
 export async function completeTask(supabase, taskId) {
-  return updateTask(supabase, taskId, { completed: true });
+  return updateTask(supabase, taskId, { percent_complete: 100, completed: true });
 }
 
 /**
@@ -150,7 +208,6 @@ export async function deleteTask(supabase, taskId) {
  * @returns {Promise<number>} Count of completed tasks
  */
 export async function fetchCompletedTasksCount(supabase, userId) {
-  // Use RLS policies - they automatically filter based on user permissions
   const { count, error } = await supabase
     .from('tasks')
     .select('*', { count: 'exact', head: true })
@@ -172,7 +229,6 @@ export async function fetchOverdueTasksCount(supabase, userId) {
   today.setHours(0, 0, 0, 0);
   const todayStr = today.toISOString().split('T')[0];
   
-  // Use RLS policies - they automatically filter based on user permissions
   const { count, error } = await supabase
     .from('tasks')
     .select('*', { count: 'exact', head: true })
@@ -181,6 +237,45 @@ export async function fetchOverdueTasksCount(supabase, userId) {
   
   if (error) throw error;
   return count || 0;
+}
+
+/**
+ * Fetch overdue incomplete tasks for dashboard modals (RLS-scoped).
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {number} [limit]
+ */
+export async function fetchOverdueTasksList(supabase, limit = 100) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = today.toISOString().split('T')[0];
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .select(TASK_LIST_COLUMNS)
+    .eq('completed', false)
+    .lt('due_date', todayStr)
+    .order('due_date', { ascending: true })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
+}
+
+/**
+ * Fetch recently completed tasks for dashboard modals (RLS-scoped).
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {number} [limit]
+ */
+export async function fetchCompletedTasksList(supabase, limit = 100) {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select(TASK_LIST_COLUMNS)
+    .eq('completed', true)
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
 }
 
 /**
@@ -200,4 +295,3 @@ export async function fetchTasksByProject(supabase, projectId) {
   if (error) throw error;
   return data || [];
 }
-

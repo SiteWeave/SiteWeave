@@ -14,6 +14,7 @@ import {
   resolveNotificationRoute,
   getLastNotificationRoute,
 } from '../utils/notifications';
+import { ensureTermsAccepted } from '../utils/ensureTermsAccepted';
 
 const AuthContext = createContext();
 
@@ -49,6 +50,7 @@ export function AuthProvider({ children }) {
   const [collaborationProjects, setCollaborationProjects] = useState([]);
   const [pendingNotificationRoute, setPendingNotificationRoute] = useState(null);
   const [syncPulse, setSyncPulse] = useState(0);
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState(null);
   
   // Get Supabase credentials from environment
   // Expo uses EXPO_PUBLIC_ prefix for environment variables
@@ -144,6 +146,48 @@ export function AuthProvider({ children }) {
     }
   }, [user?.id]);
 
+  const refreshProfileAvatar = async (targetUser = user) => {
+    if (!targetUser?.id || !supabase) {
+      setProfileAvatarUrl(null);
+      return;
+    }
+
+    try {
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('contact_id')
+        .eq('id', targetUser.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error('Error loading profile avatar:', profileError);
+        setProfileAvatarUrl(targetUser?.user_metadata?.avatar_url || null);
+        return;
+      }
+
+      let avatarUrl = targetUser?.user_metadata?.avatar_url || null;
+      if (profile?.contact_id) {
+        const { data: contact, error: contactError } = await supabase
+          .from('contacts')
+          .select('avatar_url')
+          .eq('id', profile.contact_id)
+          .maybeSingle();
+        if (!contactError && contact?.avatar_url) {
+          avatarUrl = contact.avatar_url;
+        }
+      }
+
+      setProfileAvatarUrl(avatarUrl);
+    } catch (error) {
+      console.error('Error loading profile avatar:', error);
+      setProfileAvatarUrl(targetUser?.user_metadata?.avatar_url || null);
+    }
+  };
+
+  useEffect(() => {
+    refreshProfileAvatar(user);
+  }, [user?.id, user?.user_metadata?.avatar_url]);
+
   // Deep links: siteweave://project-invite/{token} or https://app.../project-invite/{token}
   useEffect(() => {
     const handleUrl = async (url) => {
@@ -162,6 +206,14 @@ export function AuthProvider({ children }) {
     const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
     return () => sub.remove();
   }, [user?.id]);
+
+  // Record ToS acceptance for new sessions (welcome screen = agree on signup path).
+  useEffect(() => {
+    if (!user?.id || !supabase) return;
+    ensureTermsAccepted(supabase, user.id).catch((err) => {
+      console.warn('Could not record Terms of Service acceptance:', err?.message || err);
+    });
+  }, [user?.id, supabase]);
 
   // Register push token when user is available
   useEffect(() => {
@@ -612,6 +664,7 @@ export function AuthProvider({ children }) {
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
+    setProfileAvatarUrl(null);
     setActiveOrganization(null);
     setOrganizationError(null);
   };
@@ -637,9 +690,22 @@ export function AuthProvider({ children }) {
         },
       });
 
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
       if (error) {
         console.error('Error deleting account:', error);
-        throw error;
+        const ctx = error.context;
+        if (ctx && typeof ctx.json === 'function') {
+          try {
+            const body = await ctx.json();
+            if (body?.error) throw new Error(body.error);
+          } catch (parseErr) {
+            if (parseErr?.message && parseErr.message !== error.message) throw parseErr;
+          }
+        }
+        throw new Error(error.message || 'Failed to delete account');
       }
 
       // Sign out after successful deletion
@@ -661,6 +727,8 @@ export function AuthProvider({ children }) {
       isProjectCollaborator,
       collaborationProjects,
       loadUserOrganization,
+      profileAvatarUrl,
+      refreshProfileAvatar,
       signIn, 
       signInWithGoogle, 
       signInWithMicrosoft, 

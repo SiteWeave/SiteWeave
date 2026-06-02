@@ -10,3 +10,7 @@ ON public.task_notification_history
 FOR SELECT
 TO authenticated
 USING (organization_id = (SELECT public.get_user_organization_id()));
+
+-- Data API: explicit grants (writes via service_role / edge functions)
+GRANT SELECT ON TABLE public.task_notification_history TO authenticated;
+GRANT ALL ON TABLE public.task_notification_history TO service_role;

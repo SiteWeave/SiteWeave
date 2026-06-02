@@ -5,47 +5,33 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { completeTask } from '@siteweave/core-logic';
 import PressableWithFade from './PressableWithFade';
+import ModalScrim from './ui/ModalScrim';
 import { useHaptics } from '../hooks/useHaptics';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export default function MyDayItemModal({ visible, item, onClose, onComplete }) {
+export default function MyDayItemModal({ visible, item, onClose, onComplete, onAddPhoto, photoUploading = false }) {
   const { t } = useTranslation();
   const { supabase } = useAuth();
   const haptics = useHaptics();
   
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
   const modalTranslateY = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (visible) {
       haptics.light();
-      Animated.timing(backdropOpacity, {
-        toValue: 0.7,
-        duration: 150,
-        useNativeDriver: true,
-      }).start();
-      
-      Animated.timing(modalTranslateY, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(backdropOpacity, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
+      modalTranslateY.setValue(1);
+      requestAnimationFrame(() => {
         Animated.timing(modalTranslateY, {
-          toValue: 1,
-          duration: 250,
+          toValue: 0,
+          duration: 300,
           useNativeDriver: true,
-        }),
-      ]).start();
+        }).start();
+      });
+    } else {
+      modalTranslateY.setValue(1);
     }
-  }, [visible]);
+  }, [visible, modalTranslateY]);
 
   if (!item) return null;
 
@@ -109,7 +95,7 @@ export default function MyDayItemModal({ visible, item, onClose, onComplete }) {
       onRequestClose={onClose}
     >
       <View style={styles.modalContainer}>
-        <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
+        <ModalScrim onPress={onClose} opacity={0.5} />
         
         <View style={styles.modalWrapper}>
           <Animated.View 
@@ -210,6 +196,18 @@ export default function MyDayItemModal({ visible, item, onClose, onComplete }) {
 
           {isTask && !item.completed && (
             <View style={styles.actions}>
+              {item.project_id && onAddPhoto ? (
+                <PressableWithFade
+                  style={[styles.photoButton, photoUploading && styles.photoButtonDisabled]}
+                  onPress={() => onAddPhoto(item)}
+                  disabled={photoUploading}
+                  hapticType="light"
+                  testID="my-day-modal-add-photo"
+                >
+                  <Ionicons name="camera-outline" size={20} color="#3B82F6" />
+                  <Text style={styles.photoButtonText}>{t('mobile.add_photo')}</Text>
+                </PressableWithFade>
+              ) : null}
               <PressableWithFade
                 style={styles.completeButton}
                 onPress={handleCompleteTask}
@@ -292,6 +290,27 @@ const styles = StyleSheet.create({
     padding: 20,
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
+    gap: 12,
+  },
+  photoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 8,
+    gap: 8,
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+  },
+  photoButtonDisabled: {
+    opacity: 0.5,
+  },
+  photoButtonText: {
+    color: '#3B82F6',
+    fontSize: 16,
+    fontWeight: '600',
   },
   completeButton: {
     backgroundColor: '#10B981',

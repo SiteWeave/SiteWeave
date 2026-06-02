@@ -59,3 +59,6 @@ USING (
 );
 
 COMMENT ON TABLE public.weather_impacts IS 'Manual schedule impact events (e.g. weather); optional task/phase date shift with dependency cascade.';
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.weather_impacts TO authenticated;
+GRANT ALL ON TABLE public.weather_impacts TO service_role;

@@ -8,6 +8,7 @@ import {
   STREAM_POST_TYPES,
 } from '@siteweave/core-logic';
 import PressableWithFade from './PressableWithFade';
+import { SkeletonCard } from './ui/Skeleton';
 
 const TYPE_LABELS = Object.fromEntries(STREAM_POST_TYPES.map((t) => [t.value, t.label]));
 
@@ -26,7 +27,7 @@ export default function ProjectStreamPanel({ project, supabase, currentUserId })
     if (!project?.id || !supabase) return;
     try {
       setError(null);
-      const rows = await fetchStreamPosts(supabase, project.id);
+      const { posts: rows } = await fetchStreamPosts(supabase, project.id);
       setPosts(rows);
     } catch (e) {
       console.error('ProjectStreamPanel load error:', e);
@@ -114,8 +115,10 @@ export default function ProjectStreamPanel({ project, supabase, currentUserId })
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="small" color="#6B7280" />
+      <View style={styles.skeletonPosts}>
+        {[1, 2, 3].map((i) => (
+          <SkeletonCard key={i} height={112} style={styles.skeletonPost} />
+        ))}
       </View>
     );
   }
@@ -203,6 +206,8 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 16, paddingBottom: 32 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  skeletonPosts: { padding: 12, gap: 12 },
+  skeletonPost: { marginBottom: 8 },
   heading: { fontSize: 18, fontWeight: '600', color: '#111827', marginBottom: 12 },
   errorBox: { backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12, marginBottom: 12 },
   errorText: { fontSize: 13, color: '#B91C1C', textAlign: 'center' },

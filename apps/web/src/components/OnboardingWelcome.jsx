@@ -43,14 +43,14 @@ function OnboardingWelcome({ user, onStartTour, onSkip }) {
 
           {/* Action Buttons */}
           <div className="flex flex-col gap-3">
-            <button
+            <button type="button"
               onClick={onStartTour}
               className="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors"
             >
               Take a Quick Tour
             </button>
             
-            <button
+            <button type="button"
               onClick={onSkip}
               className="w-full px-6 py-3 text-gray-600 font-medium rounded-lg hover:bg-gray-100 transition-colors"
             >

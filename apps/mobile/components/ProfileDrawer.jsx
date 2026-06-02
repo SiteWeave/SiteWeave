@@ -1,13 +1,14 @@
 import { View, Text, StyleSheet, Modal, Animated, Dimensions, Alert } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import i18n from '../i18n';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import PressableWithFade from './PressableWithFade';
+import ModalScrim from './ui/ModalScrim';
 import EditProfileModal from './EditProfileModal';
 import FeedbackModal from './FeedbackModal';
+import Avatar from './ui/Avatar';
 import { useHaptics } from '../hooks/useHaptics';
 import { useRouter } from 'expo-router';
 
@@ -15,7 +16,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function ProfileDrawer({ visible, onClose }) {
   const { t } = useTranslation();
-  const { user, signOut, deleteAccount, supabase } = useAuth();
+  const { user, signOut, deleteAccount, supabase, profileAvatarUrl } = useAuth();
   const haptics = useHaptics();
   const router = useRouter();
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -50,42 +51,23 @@ export default function ProfileDrawer({ visible, onClose }) {
     }
   };
   
-  // Animation values
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
   const drawerTranslateY = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (visible) {
       haptics.light();
-      // Backdrop fades in quickly first
-      Animated.timing(backdropOpacity, {
-        toValue: 0.7,
-        duration: 150,
-        useNativeDriver: true,
-      }).start();
-      
-      // Then drawer slides up smoothly
-      Animated.timing(drawerTranslateY, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      // Animate out together
-      Animated.parallel([
-        Animated.timing(backdropOpacity, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
+      drawerTranslateY.setValue(1);
+      requestAnimationFrame(() => {
         Animated.timing(drawerTranslateY, {
-          toValue: 1,
-          duration: 250,
+          toValue: 0,
+          duration: 300,
           useNativeDriver: true,
-        }),
-      ]).start();
+        }).start();
+      });
+    } else {
+      drawerTranslateY.setValue(1);
     }
-  }, [visible]);
+  }, [visible, drawerTranslateY]);
 
   const handleSignOut = async () => {
     try {
@@ -126,6 +108,7 @@ export default function ProfileDrawer({ visible, onClose }) {
       await deleteAccount();
       haptics.success();
       onClose();
+      router.replace('/(auth)');
       Alert.alert(t('mobile.account_deleted'), t('mobile.account_deleted_message'));
     } catch (error) {
       console.error('Error deleting account:', error);
@@ -158,15 +141,7 @@ export default function ProfileDrawer({ visible, onClose }) {
       onRequestClose={onClose}
     >
       <View style={styles.modalContainer}>
-        {/* Backdrop - only fades, doesn't move */}
-        <Animated.View 
-          style={[
-            styles.backdrop, 
-            { 
-              opacity: backdropOpacity,
-            }
-          ]}
-        />
+        <ModalScrim onPress={onClose} opacity={0.5} />
         
         {/* Drawer - only slides, doesn't fade */}
         <View style={[styles.drawerWrapper, { paddingTop: insets.top }]}>
@@ -185,11 +160,7 @@ export default function ProfileDrawer({ visible, onClose }) {
             <View style={styles.drawer}>
               <View style={styles.header}>
                 <View style={styles.profileSection}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>
-                      {getUserName().charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
+                  <Avatar name={getUserName()} avatarUrl={profileAvatarUrl} size="lg" />
                   <View style={styles.profileInfo}>
                     <Text style={styles.profileName}>{getUserName()}</Text>
                     {getUserEmail() && (
@@ -227,33 +198,6 @@ export default function ProfileDrawer({ visible, onClose }) {
 
                 <View style={styles.divider} />
 
-                <View style={styles.menuItem}>
-                  <Ionicons name="language-outline" size={24} color="#111827" />
-                  <Text style={styles.menuItemText}>{t('settings.language')}</Text>
-                  <View style={styles.languageRow}>
-                    <PressableWithFade
-                      style={[styles.langChip, i18n.language === 'en' && styles.langChipActive]}
-                      onPress={() => {
-                        haptics.light();
-                        i18n.changeLanguage('en');
-                      }}
-                    >
-                      <Text style={[styles.langChipText, i18n.language === 'en' && styles.langChipTextActive]}>EN</Text>
-                    </PressableWithFade>
-                    <PressableWithFade
-                      style={[styles.langChip, i18n.language === 'es' && styles.langChipActive]}
-                      onPress={() => {
-                        haptics.light();
-                        i18n.changeLanguage('es');
-                      }}
-                    >
-                      <Text style={[styles.langChipText, i18n.language === 'es' && styles.langChipTextActive]}>ES</Text>
-                    </PressableWithFade>
-                  </View>
-                </View>
-
-                <View style={styles.divider} />
-
                 <PressableWithFade
                   style={styles.menuItem}
                   onPress={() => {
@@ -267,42 +211,6 @@ export default function ProfileDrawer({ visible, onClose }) {
                 >
                   <Ionicons name="ban-outline" size={24} color="#111827" />
                   <Text style={styles.menuItemText}>{t('mobile.blocked_users_menu')}</Text>
-                  <Ionicons name="chevron-forward" size={20} color="#4B5563" />
-                </PressableWithFade>
-
-                <View style={styles.divider} />
-
-                <PressableWithFade
-                  style={styles.menuItem}
-                  onPress={() => {
-                    haptics.light();
-                    onClose();
-                    router.push('/privacy-policy');
-                  }}
-                  activeOpacity={0.7}
-                  disabled={deleting}
-                  hapticType="light"
-                >
-                  <Ionicons name="shield-checkmark-outline" size={24} color="#111827" />
-                  <Text style={styles.menuItemText}>{t('mobile.privacy_policy')}</Text>
-                  <Ionicons name="chevron-forward" size={20} color="#4B5563" />
-                </PressableWithFade>
-
-                <View style={styles.divider} />
-
-                <PressableWithFade
-                  style={styles.menuItem}
-                  onPress={() => {
-                    haptics.light();
-                    onClose();
-                    router.push('/terms-of-service');
-                  }}
-                  activeOpacity={0.7}
-                  disabled={deleting}
-                  hapticType="light"
-                >
-                  <Ionicons name="document-text-outline" size={24} color="#111827" />
-                  <Text style={styles.menuItemText}>{t('mobile.terms_of_service')}</Text>
                   <Ionicons name="chevron-forward" size={20} color="#4B5563" />
                 </PressableWithFade>
 
@@ -440,6 +348,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#3B82F6',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 56,
+    height: 56,
   },
   avatarText: {
     fontSize: 24,
@@ -488,31 +401,6 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#E5E7EB',
     marginVertical: 8,
-  },
-  languageRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  langChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    minWidth: 44,
-    alignItems: 'center',
-  },
-  langChipActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-  },
-  langChipText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4B5563',
-  },
-  langChipTextActive: {
-    color: '#fff',
   },
 });
 

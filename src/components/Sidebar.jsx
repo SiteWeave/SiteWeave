@@ -24,6 +24,7 @@ function Sidebar() {
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [isCollapsed, setIsCollapsed] = useState(false);
+    const avatarUrl = state.contacts?.find((contact) => contact.id === state.userContactId)?.avatar_url || state.user?.user_metadata?.avatar_url || null;
 
     const projects = state.projects || [];
 
@@ -91,7 +92,7 @@ function Sidebar() {
                 {!isCollapsed && (
                     <span>SiteWeave</span>
                 )}
-                <button 
+                <button type="button" 
                     onClick={() => setIsCollapsed(!isCollapsed)}
                     className="ml-auto p-1.5 hover:bg-gray-100 rounded transition-colors"
                     title={isCollapsed ? t('common.expand_sidebar') : t('common.collapse_sidebar')}
@@ -130,7 +131,7 @@ function Sidebar() {
             <nav className="flex-1 px-3 py-2 space-y-1" data-onboarding="sidebar-nav" role="navigation" aria-label={t('sidebar.main_navigation')}>
                 {navItems.map(item => (
                     <div key={item.id}>
-                        <button 
+                        <button type="button" 
                             onClick={() => {
                                 const targetView = item.id === 'Team' && ['Messages', 'Contacts'].includes(state.activeView)
                                     ? state.activeView
@@ -164,7 +165,7 @@ function Sidebar() {
                         {item.id === 'Projects' && state.activeView === 'Projects' && !isCollapsed && (
                             <div className="pl-8 mt-1.5 space-y-1 border-l-2 border-gray-200 ml-2.5" role="group" aria-label={t('sidebar.project_list')}>
                                 {projects.map(p => (
-                                    <button 
+                                    <button type="button" 
                                         key={p.id} 
                                         onClick={(e) => {
                                             e.preventDefault();
@@ -192,6 +193,7 @@ function Sidebar() {
                         <div className="flex items-center gap-3">
                             <Avatar 
                                 name={state.user?.user_metadata?.full_name || state.user?.email} 
+                                avatarUrl={avatarUrl}
                                 size="lg"
                             />
                             <div className="flex-1 min-w-0">
@@ -204,7 +206,7 @@ function Sidebar() {
                             </div>
                         </div>
                     )}
-                    <button
+                    <button type="button"
                         onClick={handleLogout}
                         className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
                         title={t('common.sign_out')}

@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Modal, ScrollView, Alert, TextInput } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Modal, ScrollView, Alert, TextInput, Animated, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import PressableWithFade from './PressableWithFade';
+import ModalScrim from './ui/ModalScrim';
 import { useAuth } from '../context/AuthContext';
 import { reportContent, REPORT_REASONS } from '@siteweave/core-logic';
 import { useHaptics } from '../hooks/useHaptics';
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 export default function ReportContentModal({ visible, onClose, contentType, contentId, reportedUserId, reportedUserName }) {
   const { user, supabase } = useAuth();
@@ -14,6 +17,22 @@ export default function ReportContentModal({ visible, onClose, contentType, cont
   const [selectedReason, setSelectedReason] = useState(null);
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const sheetTranslateY = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (visible) {
+      sheetTranslateY.setValue(1);
+      requestAnimationFrame(() => {
+        Animated.timing(sheetTranslateY, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      });
+    } else {
+      sheetTranslateY.setValue(1);
+    }
+  }, [visible, sheetTranslateY]);
 
   const handleSubmit = async () => {
     if (!selectedReason) {
@@ -71,11 +90,27 @@ export default function ReportContentModal({ visible, onClose, contentType, cont
     <Modal
       visible={visible}
       transparent={true}
-      animationType="slide"
+      animationType="none"
       onRequestClose={handleClose}
     >
-      <View style={[styles.overlay, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <View style={styles.modalContent}>
+      <View style={styles.container}>
+        <ModalScrim onPress={handleClose} opacity={0.5} />
+        <Animated.View
+          style={[
+            styles.modalContent,
+            { paddingTop: insets.top, paddingBottom: insets.bottom },
+            {
+              transform: [
+                {
+                  translateY: sheetTranslateY.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, SCREEN_HEIGHT],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
           <View style={styles.header}>
             <Text style={styles.title}>Report Content</Text>
             <PressableWithFade
@@ -168,16 +203,15 @@ export default function ReportContentModal({ visible, onClose, contentType, cont
               </Text>
             </PressableWithFade>
           </View>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  container: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {

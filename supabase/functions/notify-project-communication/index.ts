@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+import { createServiceClient } from '../_shared/auth.ts'
 import {
   buildAppProjectUrl,
   getProjectRecipients,
@@ -22,7 +23,7 @@ const STREAM_TYPE_LABELS: Record<string, string> = {
   milestone: 'Milestone',
 }
 
-async function loadPushTokens(supabase: ReturnType<typeof createClient>, userIds: string[]) {
+async function loadPushTokens(supabase: SupabaseClient, userIds: string[]) {
   if (!userIds.length) return []
   const { data } = await supabase
     .from('profiles')
@@ -45,9 +46,7 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceKey = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim()
-    const supabase = createClient(supabaseUrl, serviceKey)
+    const supabase = createServiceClient()
 
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {

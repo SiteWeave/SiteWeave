@@ -14,14 +14,14 @@ function TaskBulkActions({ selectedTasks, onBulkComplete, onBulkDelete, onClearS
                         {t(selectedTasks.length === 1 ? 'tasks.bulk_selected_one' : 'tasks.bulk_selected_other', { count: selectedTasks.length })}
                     </span>
                     <div className="flex gap-2">
-                        <button
+                        <button type="button"
                             onClick={() => onBulkComplete(selectedTasks)}
                             className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 flex items-center gap-1"
                         >
                             <Icon path="M4.5 12.75l6 6 9-13.5" className="w-4 h-4" />
                             {t('tasks.complete_all')}
                         </button>
-                        <button
+                        <button type="button"
                             onClick={() => onBulkDelete(selectedTasks)}
                             className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 flex items-center gap-1"
                         >
@@ -30,7 +30,7 @@ function TaskBulkActions({ selectedTasks, onBulkComplete, onBulkDelete, onClearS
                         </button>
                     </div>
                 </div>
-                <button
+                <button type="button"
                     onClick={onClearSelection}
                     className="text-blue-600 hover:text-blue-800"
                     title={t('tasks.clear_selection')}

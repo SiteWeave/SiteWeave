@@ -161,7 +161,7 @@ function TeamView() {
           <p className="text-gray-500 text-sm">{t('team.org_directory_subtitle')}</p>
         </div>
         <PermissionGuard permission="can_manage_team">
-          <button
+          <button type="button"
             onClick={() => setShowDirectoryModal(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-semibold"
             title={t('team.manage_members_title')}

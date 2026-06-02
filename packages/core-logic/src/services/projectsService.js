@@ -8,6 +8,24 @@ import {
   groupPhasesByProjectId,
 } from '../utils/projectProgressRollup.js';
 
+/** Columns for list/card views — update when ProjectCard / ProjectListView changes. */
+export const PROJECT_LIST_COLUMNS = [
+  'id',
+  'name',
+  'status',
+  'due_date',
+  'start_date',
+  'project_type',
+  'organization_id',
+  'address',
+  'updated_at',
+  'created_at',
+  'notification_count',
+  'next_milestone',
+  'project_manager_id',
+  'created_by_user_id',
+].join(',');
+
 /**
  * Fetch all projects
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
@@ -16,7 +34,7 @@ import {
 export async function fetchProjects(supabase) {
   const { data, error } = await supabase
     .from('projects')
-    .select('*')
+    .select(PROJECT_LIST_COLUMNS)
     .order('created_at', { ascending: false });
   
   if (error) throw error;
@@ -49,7 +67,7 @@ export async function fetchProject(supabase, projectId) {
 export async function fetchUserProjects(supabase, contactId) {
   const { data, error } = await supabase
     .from('project_contacts')
-    .select('project_id, projects!fk_project_contacts_project_id(*)')
+    .select(`project_id, projects!fk_project_contacts_project_id(${PROJECT_LIST_COLUMNS})`)
     .eq('contact_id', contactId);
   
   if (error) throw error;
@@ -64,18 +82,13 @@ export async function fetchUserProjects(supabase, contactId) {
  * @returns {Promise<number>} Count of active projects
  */
 export async function fetchActiveProjectsCount(supabase, userId) {
-  // Use RLS policies - they automatically filter based on:
-  // - Admins: all projects
-  // - PMs: projects where project_manager_id = auth.uid()
-  // - Team: projects where created_by_user_id = auth.uid() OR in project_contacts
-  const { data, error } = await supabase
+  const { count, error } = await supabase
     .from('projects')
-    .select('id, status')
+    .select('*', { count: 'exact', head: true })
     .neq('status', 'completed');
   
   if (error) throw error;
-  
-  return (data || []).length;
+  return count || 0;
 }
 
 /**
@@ -84,14 +97,20 @@ export async function fetchActiveProjectsCount(supabase, userId) {
  * Two queries total: projects + batched phases (no N+1 per project).
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} userId - User ID (auth.users.id) - not used but kept for API consistency
+ * @param {{ limit?: number }} [options]
  * @returns {Promise<Array>} Array of projects with progress
  */
-export async function fetchUserProjectsWithProgress(supabase, userId) {
-  const { data: projects, error } = await supabase
+export async function fetchUserProjectsWithProgress(supabase, userId, options = {}) {
+  let query = supabase
     .from('projects')
-    .select('*')
+    .select(PROJECT_LIST_COLUMNS)
     .order('updated_at', { ascending: false });
-  
+
+  if (options.limit != null) {
+    query = query.limit(options.limit);
+  }
+
+  const { data: projects, error } = await query;
   if (error) throw error;
   
   const projectsList = projects || [];

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { fetchProjectContacts } from '@siteweave/core-logic';
 import { Ionicons } from '@expo/vector-icons';
 import PressableWithFade from './PressableWithFade';
+import ModalScrim from './ui/ModalScrim';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -12,37 +13,22 @@ export default function ProjectTeamModal({ visible, projectId, onClose }) {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
   
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
   const modalTranslateY = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (visible) {
-      Animated.timing(backdropOpacity, {
-        toValue: 0.7,
-        duration: 150,
-        useNativeDriver: true,
-      }).start();
-      
-      Animated.timing(modalTranslateY, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(backdropOpacity, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
+      modalTranslateY.setValue(1);
+      requestAnimationFrame(() => {
         Animated.timing(modalTranslateY, {
-          toValue: 1,
-          duration: 250,
+          toValue: 0,
+          duration: 300,
           useNativeDriver: true,
-        }),
-      ]).start();
+        }).start();
+      });
+    } else {
+      modalTranslateY.setValue(1);
     }
-  }, [visible]);
+  }, [visible, modalTranslateY]);
 
   useEffect(() => {
     if (visible && projectId) {
@@ -122,7 +108,7 @@ export default function ProjectTeamModal({ visible, projectId, onClose }) {
       onRequestClose={onClose}
     >
       <View style={styles.modalContainer}>
-        <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
+        <ModalScrim onPress={onClose} opacity={0.5} />
         
         <View style={styles.modalWrapper}>
           <Animated.View 

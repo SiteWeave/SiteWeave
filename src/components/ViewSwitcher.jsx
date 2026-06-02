@@ -39,7 +39,7 @@ function ViewSwitcher({ currentView, onViewChange, compact = false }) {
             {views.map((view) => {
                 const label = t(view.labelKey);
                 return (
-                <button
+                <button type="button"
                     key={view.id}
                     onClick={() => onViewChange(view.id)}
                     className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${

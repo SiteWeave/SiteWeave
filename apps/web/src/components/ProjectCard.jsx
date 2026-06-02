@@ -136,7 +136,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
                 aria-label="Project actions"
             >
                 <PermissionGuard permission="can_edit_projects">
-                    <button
+                    <button type="button"
                         onClick={handleEdit}
                         className="p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
                         aria-label={`Edit project: ${project.name}`}
@@ -145,7 +145,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
                     </button>
                 </PermissionGuard>
                 <PermissionGuard permission="can_delete_projects">
-                    <button
+                    <button type="button"
                         onClick={handleDelete}
                         className="border-l border-slate-200/80 p-1.5 text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600"
                         aria-label={`Delete project: ${project.name}`}

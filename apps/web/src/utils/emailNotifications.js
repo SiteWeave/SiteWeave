@@ -1,5 +1,29 @@
 import { supabaseClient } from '../context/AppContext';
 
+const SITEWEAVE_LOGO_URL = 'https://app.siteweave.org/logo.svg';
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function formatEmailDueDate(iso) {
+    if (!iso) return null;
+    const trimmed = String(iso).trim();
+    const ymd = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+    if (ymd) {
+        const dt = new Date(Date.UTC(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])));
+        return dt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    }
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
 /**
  * Send task assignment email to external contact
  * @param {string} contactEmail - Email address of the contact
@@ -17,70 +41,88 @@ export async function sendTaskAssignmentEmail(contactEmail, taskDetails, project
 
         // Construct email content
         const subject = `New Task Assignment: ${taskDetails.title || 'Issue Step'}`;
+        const safeAssigner = escapeHtml(assignerName);
+        const safeProject = escapeHtml(projectDetails.name);
+        const safeAddress = projectDetails.address ? escapeHtml(projectDetails.address) : '';
+        const taskLabel = taskDetails.issueTitle ? 'Step' : 'Task';
+        const taskName = escapeHtml(taskDetails.description || taskDetails.title || 'Task');
+        const safeIssue = taskDetails.issueTitle ? escapeHtml(taskDetails.issueTitle) : '';
+        const dueFormatted = formatEmailDueDate(taskDetails.dueDate);
+
         const htmlBody = `
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center; }
-        .header h1 { margin: 0; font-size: 24px; }
-        .content { background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; }
-        .task-box { background: #f9fafb; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px; }
-        .info-row { margin: 10px 0; }
-        .label { font-weight: 600; color: #6b7280; }
-        .value { color: #111827; }
-        .footer { background: #f9fafb; padding: 20px; text-align: center; font-size: 14px; color: #6b7280; border-radius: 0 0 8px 8px; }
-        .badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-        .badge-priority { background: #fef3c7; color: #92400e; }
-        .note { background: #eff6ff; border: 1px solid #dbeafe; padding: 15px; border-radius: 6px; margin-top: 20px; }
-    </style>
+    <title>New Task Assignment</title>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>New Task Assignment</h1>
-        </div>
-        <div class="content">
-            <p>Hello,</p>
-            <p><strong>${assignerName}</strong> has assigned you a new task on the <strong>${projectDetails.name}</strong> project.</p>
-            
-            <div class="task-box">
-                <h3 style="margin-top: 0; color: #111827;">Task Details</h3>
-                ${taskDetails.issueTitle ? `<div class="info-row"><span class="label">Issue:</span> <span class="value">${taskDetails.issueTitle}</span></div>` : ''}
-                <div class="info-row">
-                    <span class="label">Step:</span> 
-                    <span class="value">${taskDetails.description}</span>
-                </div>
-                ${taskDetails.priority ? `
-                <div class="info-row">
-                    <span class="label">Priority:</span> 
-                    <span class="badge badge-priority">${taskDetails.priority}</span>
-                </div>` : ''}
-                ${taskDetails.dueDate ? `
-                <div class="info-row">
-                    <span class="label">Due Date:</span> 
-                    <span class="value">${new Date(taskDetails.dueDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
-                </div>` : ''}
-            </div>
-
-            <div class="info-row">
-                <span class="label">Project:</span> <span class="value">${projectDetails.name}</span>
-            </div>
-            ${projectDetails.address ? `
-            <div class="info-row">
-                <span class="label">Location:</span> <span class="value">${projectDetails.address}</span>
-            </div>` : ''}
-
-        </div>
-        <div class="footer">
-            <p>This email was sent from SiteWeave Project Management</p>
-            <p style="margin: 5px 0 0 0; font-size: 12px;">If you have questions, please reply to this email or contact ${assignerName}.</p>
-        </div>
-    </div>
+<body style="margin:0;padding:40px 20px;background:#f6f9fc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.6;color:#1a1a1a;-webkit-font-smoothing:antialiased;">
+    <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;margin:0 auto;border-collapse:collapse;">
+        <tr>
+            <td>
+                <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #e6ebf1;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(15,23,42,0.06);">
+                    <tr>
+                        <td style="padding:36px 40px 24px;text-align:center;border-bottom:1px solid #e5e7eb;">
+                            <img src="${SITEWEAVE_LOGO_URL}" alt="SiteWeave" width="120" style="display:block;width:120px;height:auto;margin:0 auto;border:0;">
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:32px 40px 8px;">
+                            <h1 style="margin:0;font-size:22px;line-height:1.3;font-weight:600;color:#111827;letter-spacing:-0.02em;">New task assignment</h1>
+                            <p style="margin:12px 0 0;font-size:16px;line-height:1.5;color:#4b5563;">
+                                <strong style="color:#111827;">${safeAssigner}</strong> assigned you a task on <strong style="color:#111827;">${safeProject}</strong>.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:16px 40px 24px;">
+                            <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">
+                                <tr>
+                                    <td style="padding:20px 22px;">
+                                        ${taskDetails.issueTitle ? `
+                                        <p style="margin:0 0 14px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#6b7280;">Issue</p>
+                                        <p style="margin:0 0 18px;font-size:15px;line-height:1.45;color:#111827;">${safeIssue}</p>` : ''}
+                                        <p style="margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#6b7280;">${taskLabel}</p>
+                                        <p style="margin:0;font-size:18px;line-height:1.35;font-weight:600;color:#111827;letter-spacing:-0.01em;">${taskName}</p>
+                                        ${dueFormatted ? `
+                                        <p style="margin:18px 0 0;padding-top:16px;border-top:1px solid #e5e7eb;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#6b7280;">Due date</p>
+                                        <p style="margin:6px 0 0;font-size:16px;line-height:1.4;font-weight:600;color:#1e40af;">${escapeHtml(dueFormatted)}</p>` : ''}
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:0 40px 28px;">
+                            <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
+                                <tr>
+                                    <td style="padding:10px 0;border-top:1px solid #f3f4f6;">
+                                        <p style="margin:0;font-size:13px;color:#6b7280;font-weight:500;">Project</p>
+                                        <p style="margin:4px 0 0;font-size:15px;color:#111827;">${safeProject}</p>
+                                    </td>
+                                </tr>
+                                ${safeAddress ? `
+                                <tr>
+                                    <td style="padding:10px 0;border-top:1px solid #f3f4f6;">
+                                        <p style="margin:0;font-size:13px;color:#6b7280;font-weight:500;">Location</p>
+                                        <p style="margin:4px 0 0;font-size:15px;color:#111827;">${safeAddress}</p>
+                                    </td>
+                                </tr>` : ''}
+                            </table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:24px 40px;background:#f9fafb;border-top:1px solid #e5e7eb;text-align:center;">
+                            <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.5;">This email was sent from SiteWeave Project Management.</p>
+                            <p style="margin:8px 0 0;font-size:12px;color:#9ca3af;line-height:1.5;">Questions? Reply to this email or contact ${safeAssigner}.</p>
+                            <p style="margin:16px 0 0;font-size:12px;"><a href="https://siteweave.org" style="color:#3b82f6;text-decoration:none;font-weight:500;">siteweave.org</a></p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>
         `.trim();
@@ -88,18 +130,16 @@ export async function sendTaskAssignmentEmail(contactEmail, taskDetails, project
         const textBody = `
 New Task Assignment
 
-Hello,
+${assignerName} assigned you a task on the ${projectDetails.name} project.
 
-${assignerName} has assigned you a new task on the ${projectDetails.name} project.
-
-TASK DETAILS:
-${taskDetails.issueTitle ? `Issue: ${taskDetails.issueTitle}\n` : ''}Step: ${taskDetails.description}
-${taskDetails.priority ? `Priority: ${taskDetails.priority}\n` : ''}${taskDetails.dueDate ? `Due Date: ${new Date(taskDetails.dueDate).toLocaleDateString()}\n` : ''}
+${taskDetails.issueTitle ? `Issue: ${taskDetails.issueTitle}\n` : ''}${taskLabel}: ${taskDetails.description || taskDetails.title || 'Task'}
+${dueFormatted ? `Due Date: ${dueFormatted}\n` : ''}
 Project: ${projectDetails.name}
 ${projectDetails.address ? `Location: ${projectDetails.address}\n` : ''}
 
 ---
 This email was sent from SiteWeave Project Management
+Questions? Reply to this email or contact ${assignerName}.
         `.trim();
 
         // Use Supabase edge function to send email

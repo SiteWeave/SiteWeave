@@ -2,7 +2,7 @@
 // Cron job to process all active schedules that are due
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createServiceClient } from '../_shared/auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,9 +16,7 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    const supabase = createServiceClient()
 
     // Query all active schedules that are due
     const now = new Date().toISOString()
@@ -61,36 +59,33 @@ serve(async (req) => {
       )
     }
 
-    // Process each schedule
+    const settledResults = await Promise.allSettled(
+      dueSchedules.map((schedule) =>
+        supabase.functions.invoke('send-progress-report', {
+          body: { schedule_id: schedule.id, is_manual: false },
+        })
+      ),
+    )
+
     const results = []
     const errors = []
 
-    for (const schedule of dueSchedules) {
-      try {
-        // Call send-progress-report using functions.invoke() which handles
-        // the apikey + Authorization headers automatically.
-        const { data: result, error: sendError } = await supabase.functions.invoke(
-          'send-progress-report',
-          { body: { schedule_id: schedule.id, is_manual: false } }
-        )
-
-        if (sendError) {
-          errors.push({
-            schedule_id: schedule.id,
-            error: sendError.message || 'Unknown error'
-          })
-        } else {
-          results.push({
-            schedule_id: schedule.id,
-            success: true,
-            ...result
-          })
-        }
-      } catch (error) {
-        console.error(`Error processing schedule ${schedule.id}:`, error)
+    for (const [i, result] of settledResults.entries()) {
+      const schedule = dueSchedules[i]
+      if (result.status === 'fulfilled' && !result.value.error) {
+        results.push({
+          schedule_id: schedule.id,
+          success: true,
+          ...(result.value.data || {}),
+        })
+      } else {
+        const message =
+          result.status === 'rejected'
+            ? result.reason?.message || 'Unknown error'
+            : result.value.error?.message || 'Unknown error'
         errors.push({
           schedule_id: schedule.id,
-          error: error.message
+          error: message,
         })
       }
     }

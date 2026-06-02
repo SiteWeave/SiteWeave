@@ -4,6 +4,7 @@ import { formatRelativeTime } from '@siteweave/i18n';
 import { updateStreamPost, deleteStreamPost, enrichStreamPost } from '@siteweave/core-logic';
 import { useToast } from '../../context/ToastContext';
 import StreamReplyThread from './StreamReplyThread';
+import Avatar from '../Avatar';
 
 const TYPE_STYLES = {
   general: 'bg-slate-100 text-slate-700',
@@ -20,36 +21,6 @@ const POST_TYPE_I18N = {
   announcement: 'stream.post_type_announcement',
   milestone: 'stream.post_type_milestone',
 };
-
-function initials(name) {
-  if (!name) return '?';
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0].toUpperCase())
-    .join('');
-}
-
-function Avatar({ name, avatarUrl, size = 'md' }) {
-  const cls = size === 'sm' ? 'h-6 w-6 text-[10px]' : 'h-8 w-8 text-xs';
-  if (avatarUrl) {
-    return (
-      <img
-        src={avatarUrl}
-        alt={name}
-        className={`${cls} shrink-0 rounded-full object-cover`}
-      />
-    );
-  }
-  return (
-    <span
-      className={`${cls} inline-flex shrink-0 items-center justify-center rounded-full bg-slate-200 font-semibold text-slate-600`}
-    >
-      {initials(name)}
-    </span>
-  );
-}
 
 export default function StreamPostCard({
   post,
@@ -118,7 +89,12 @@ export default function StreamPostCard({
     <article className="rounded-2xl border border-slate-200/80 bg-white px-6 py-5 shadow-xs transition-shadow hover:shadow-sm">
       <header className="mb-3 flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <Avatar name={authorName} avatarUrl={post.author?.avatar_url} />
+          <Avatar
+            name={authorName}
+            avatarUrl={post.author?.avatar_url}
+            size="md"
+            className="shrink-0 bg-slate-200"
+          />
           <div className="min-w-0 space-y-0.5">
             <div className="flex flex-wrap items-center gap-2">
               <span className="truncate text-sm font-semibold text-slate-900">{authorName}</span>

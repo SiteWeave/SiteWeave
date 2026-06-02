@@ -209,7 +209,7 @@ export default function MessagesView({ embedded = false, onOpenDirectory = null 
           {channels.map((channel) => {
             const project = projectById.get(channel.project_id)
             return (
-              <button
+              <button type="button"
                 key={channel.id}
                 onClick={() => dispatch({ type: 'SET_CHANNEL', payload: channel.id })}
                 className={`w-full text-left rounded-lg px-3 py-2.5 ${channel.id === state.selectedChannelId ? 'bg-blue-100/80 text-blue-800 border border-blue-200' : 'hover:bg-slate-100 text-slate-700 border border-transparent'}`}

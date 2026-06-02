@@ -111,7 +111,7 @@ function ProgressReportApproval({ onBack, onApprove }) {
       <div className="text-center py-12">
         <p className="text-gray-500 mb-4">{t('progressReports.approval.no_pending')}</p>
         {onBack && (
-          <button
+          <button type="button"
             onClick={onBack}
             className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
           >
@@ -136,7 +136,7 @@ function ProgressReportApproval({ onBack, onApprove }) {
           </p>
         </div>
         {onBack && (
-          <button
+          <button type="button"
             onClick={onBack}
             className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
           >
@@ -152,7 +152,7 @@ function ProgressReportApproval({ onBack, onApprove }) {
             <h3 className="font-semibold text-gray-900 mb-3">{t('progressReports.approval.title')}</h3>
             <div className="space-y-2">
               {pendingReports.map((report) => (
-                <button
+                <button type="button"
                   key={report.id}
                   onClick={() => setSelectedReport(report)}
                   className={`w-full text-left p-3 rounded-lg border ${
@@ -213,7 +213,7 @@ function ProgressReportApproval({ onBack, onApprove }) {
               </div>
 
               <div className="flex gap-3">
-                <button
+                <button type="button"
                   onClick={() => handleApprove(currentReport.id)}
                   disabled={isProcessing}
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
@@ -222,7 +222,7 @@ function ProgressReportApproval({ onBack, onApprove }) {
                     ? `${t('common.loading')}...`
                     : `✓ ${t('progressReports.approval.approve')}`}
                 </button>
-                <button
+                <button type="button"
                   onClick={() => handleReject(currentReport.id)}
                   disabled={isProcessing || !rejectionReason.trim()}
                   className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"

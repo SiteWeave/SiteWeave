@@ -192,14 +192,14 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                                 autoFocus
                             />
                             <div className="flex gap-2">
-                                <button
+                                <button type="button"
                                     onClick={handleEditMessage}
                                     disabled={isUpdatingMessage || !editContent.trim()}
                                     className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50"
                                 >
                                     {isUpdatingMessage ? 'Saving...' : 'Save'}
                                 </button>
-                                <button
+                                <button type="button"
                                     onClick={() => {
                                         setIsEditing(false);
                                         setEditContent(messageWithUser.content || '');
@@ -238,7 +238,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                             {/* Message Actions */}
                             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <div className={`flex gap-1 rounded-lg p-1 ${isCurrentUser ? 'bg-black/20' : 'bg-white shadow-sm border border-gray-200'}`}>
-                                    <button
+                                    <button type="button"
                                         onClick={() => onReply && onReply(messageWithUser)}
                                         className="p-1 hover:bg-white/20 rounded"
                                         title="Reply"
@@ -246,7 +246,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                                         <Icon path="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.488.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 006 21c1.282 0 2.47-.492 3.337-1.313.379-.38.708-.796.924-1.22a4.801 4.801 0 001.923-1.22 4.705 4.705 0 00.334-1.785c0-.6-.154-1.194-.432-1.641A8.98 8.98 0 0012 20.25z" className="w-4 h-4" />
                                     </button>
                                     {!isCurrentUser && onReport && (
-                                        <button
+                                        <button type="button"
                                             onClick={() => onReport(messageWithUser)}
                                             className="p-1 hover:bg-white/20 rounded text-amber-200 hover:text-amber-100"
                                             title="Report message"
@@ -255,7 +255,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                                         </button>
                                     )}
                                     {!isCurrentUser && onBlock && (
-                                        <button
+                                        <button type="button"
                                             onClick={() => onBlock(messageWithUser)}
                                             className="p-1 hover:bg-white/20 rounded text-red-300 hover:text-red-200"
                                             title="Block user"
@@ -265,14 +265,14 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                                     )}
                                     {isCurrentUser && (
                                         <>
-                                            <button
+                                            <button type="button"
                                                 onClick={() => setIsEditing(true)}
                                                 className="p-1 hover:bg-white/20 rounded"
                                                 title="Edit message"
                                             >
                                                 <Icon path="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" className="w-4 h-4" />
                                             </button>
-                                            <button
+                                            <button type="button"
                                                 onClick={handleDeleteMessage}
                                                 disabled={isDeletingMessage}
                                                 className="p-1 hover:bg-white/20 rounded text-red-300 hover:text-red-200"
@@ -306,7 +306,7 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                 {/* Thread Reply Count Badge */}
                 {(messageWithUser.thread_reply_count > 0 || showThread) && (
                     <div className="mt-2">
-                        <button
+                        <button type="button"
                             onClick={handleLoadThread}
                             disabled={loadingThread}
                             className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 hover:underline"

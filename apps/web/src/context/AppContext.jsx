@@ -2,7 +2,7 @@
  * App context for web app. Mirrors root src/context/AppContext.jsx with web-specific behavior.
  * TODO: Refactor - Establish single source of truth (e.g. share via packages/ or document desktop vs web feature flags).
  */
-import React, { createContext, useContext, useEffect, useReducer, useState, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useState, useRef, useCallback } from 'react';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
 import { supabase as supabaseClient } from '../supabaseClient';
 import { dedupeTasksById } from '../utils/taskDedupe';
@@ -27,6 +27,8 @@ if (import.meta.env.DEV) {
 // Inject the canonical client into the Electron OAuth handler so it can do the
 // PKCE code-for-session exchange itself (no React mount required).
 supabaseElectronAuth.init(supabaseClient);
+
+const appStateRefForLazy = { current: null };
 
 export { supabaseClient };
 
@@ -328,6 +330,7 @@ function appReducer(state, action) {
 
 export const AppProvider = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  appStateRefForLazy.current = state;
   const currentActiveViewRef = useRef(state.activeView);
   const taskDupWatchSigRef = useRef('');
 
@@ -1150,4 +1153,43 @@ export const AppProvider = ({ children }) => {
 };
 
 export const useAppContext = () => useContext(AppContext);
+
+export const useLazyDataLoader = () => {
+  const { state, dispatch } = useAppContext();
+  const getState = useCallback(() => appStateRefForLazy.current, []);
+
+  const loadTasksIfNeeded = useCallback(async () => {
+    const { loadTasksIfNeeded: loadTasks } = await import('../utils/lazyDataLoader');
+    await loadTasks(supabaseClient, dispatch, getState);
+  }, [dispatch, getState]);
+
+  const loadFilesIfNeeded = useCallback(async () => {
+    if (getState()?.filesLoaded) return;
+    const { loadFilesIfNeeded: loadFiles } = await import('../utils/lazyDataLoader');
+    await loadFiles(supabaseClient, dispatch, getState);
+  }, [dispatch, getState]);
+
+  const loadCalendarEventsIfNeeded = useCallback(async (referenceDate = new Date()) => {
+    const { loadCalendarEventsIfNeeded: loadEvents } = await import('../utils/lazyDataLoader');
+    await loadEvents(supabaseClient, dispatch, getState, referenceDate);
+  }, [dispatch, getState]);
+
+  const loadProjectTasks = useCallback(
+    async (projectId) => {
+      const { loadProjectTasks: loadTasks } = await import('../utils/lazyDataLoader');
+      return await loadTasks(supabaseClient, dispatch, projectId, getState);
+    },
+    [dispatch, getState],
+  );
+
+  return {
+    loadTasksIfNeeded,
+    loadFilesIfNeeded,
+    loadCalendarEventsIfNeeded,
+    loadProjectTasks,
+    tasksLoaded: state.tasksLoaded,
+    filesLoaded: state.filesLoaded,
+    calendarEventsLoaded: state.calendarEventsLoaded,
+  };
+};
 
