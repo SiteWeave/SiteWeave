@@ -12,6 +12,7 @@ import {
     getImportWarnings,
 } from '../utils/msProjectImportMapping.js';
 import { importMsProjectXmlSchedule, fetchScheduleImportTemplates, saveScheduleImportTemplate } from '../utils/msProjectImportService.js';
+import { ensureOrganizationForWrites } from '../utils/organizationContext';
 import { translateImportMessage } from '@siteweave/i18n';
 
 /**
@@ -150,7 +151,7 @@ export default function MsProjectImportModal({ onClose, context, projectId: exis
     };
 
     const handleImport = async () => {
-        if (!orgId || !userId) { addToast(t('ms_import.missing_org_user'), 'error'); return; }
+        if (!userId) { addToast(t('ms_import.missing_org_user'), 'error'); return; }
         if (!xmlText) { addToast(t('ms_import.upload_xml_first'), 'error'); return; }
         if (context === 'newProject' && !newProjectName.trim()) { addToast(t('ms_import.enter_project_name'), 'error'); return; }
         if (blockingIssues.length > 0) { addToast(translateImportMessage(blockingIssues[0], t), 'error'); return; }
@@ -161,9 +162,19 @@ export default function MsProjectImportModal({ onClose, context, projectId: exis
 
         setBusy(true);
         try {
+            const orgContext = await ensureOrganizationForWrites(supabaseClient, {
+                userId,
+                accountIntent: state.accountIntent,
+                currentOrganization: state.currentOrganization,
+                dispatch,
+            });
+            if (!orgContext.ok) {
+                addToast(orgContext.error || t('ms_import.missing_org_user'), 'error');
+                return;
+            }
             const result = await importMsProjectXmlSchedule(supabaseClient, {
                 xmlText,
-                organizationId: orgId,
+                organizationId: orgContext.organizationId,
                 userId,
                 sourceFieldMappings: mappings,
                 rowRules,
@@ -255,7 +266,7 @@ export default function MsProjectImportModal({ onClose, context, projectId: exis
                     {/* ── Step 1: File picker ── */}
                     <div>
                         <p className="text-sm text-gray-600 mb-3">
-                            <Trans i18nKey="ms_import.intro" components={{ strong: <strong /> }} />
+                            <Trans i18nKey="ms_import.intro" components={{ strong: <strong key="ms-import-strong" /> }} />
                         </p>
                         <input
                             ref={fileInputRef}

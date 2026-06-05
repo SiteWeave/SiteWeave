@@ -1,6 +1,13 @@
-import React, { memo, useMemo, useState } from 'react';
+import React, { memo, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAppContext } from '../context/AppContext';
+import {
+    fetchCompletedTasksCount,
+    fetchCompletedTasksList,
+    fetchOverdueTasksCount,
+    fetchOverdueTasksList,
+    loadWithFallback,
+} from '@siteweave/core-logic';
+import { useAppContext, supabaseClient } from '../context/AppContext';
 
 function formatOverdueDueDate(value) {
     if (value == null || value === '') return '';
@@ -54,14 +61,84 @@ function groupTasksByProject(tasks, projects, t) {
     return Array.from(grouped.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
 }
 
+function formatStatValue(value) {
+    if (value == null) return '—';
+    return value;
+}
+
 const DashboardStats = memo(function DashboardStats() {
     const { t } = useTranslation();
     const { state } = useAppContext();
     const [showOverdueModal, setShowOverdueModal] = useState(false);
     const [showCompletedModal, setShowCompletedModal] = useState(false);
+    const [statsLoading, setStatsLoading] = useState(true);
+    const [completedCount, setCompletedCount] = useState(null);
+    const [overdueCount, setOverdueCount] = useState(null);
+    const [overdueModalTasks, setOverdueModalTasks] = useState([]);
+    const [completedModalTasks, setCompletedModalTasks] = useState([]);
+    const [modalLoading, setModalLoading] = useState(false);
+
+    useEffect(() => {
+        if (!state.user || state.authLoading) return;
+        let cancelled = false;
+        (async () => {
+            setStatsLoading(true);
+            const [completed, overdue] = await Promise.all([
+                loadWithFallback(
+                    () => fetchCompletedTasksCount(supabaseClient, state.user.id),
+                    null,
+                ),
+                loadWithFallback(
+                    () => fetchOverdueTasksCount(supabaseClient, state.user.id),
+                    null,
+                ),
+            ]);
+            if (!cancelled) {
+                setCompletedCount(completed);
+                setOverdueCount(overdue);
+                setStatsLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [state.user, state.authLoading]);
+
+    useEffect(() => {
+        if (!showOverdueModal) return;
+        let cancelled = false;
+        (async () => {
+            setModalLoading(true);
+            try {
+                const rows = await fetchOverdueTasksList(supabaseClient);
+                if (!cancelled) setOverdueModalTasks(rows);
+            } catch (e) {
+                console.error(e);
+                if (!cancelled) setOverdueModalTasks([]);
+            } finally {
+                if (!cancelled) setModalLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [showOverdueModal]);
+
+    useEffect(() => {
+        if (!showCompletedModal) return;
+        let cancelled = false;
+        (async () => {
+            setModalLoading(true);
+            try {
+                const rows = await fetchCompletedTasksList(supabaseClient);
+                if (!cancelled) setCompletedModalTasks(rows);
+            } catch (e) {
+                console.error(e);
+                if (!cancelled) setCompletedModalTasks([]);
+            } finally {
+                if (!cancelled) setModalLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [showCompletedModal]);
 
     const projects = state.projects || [];
-    const tasks = state.tasks || [];
     const contacts = state.contacts || [];
     const contactById = useMemo(() => {
         const m = new Map();
@@ -72,23 +149,14 @@ const DashboardStats = memo(function DashboardStats() {
     }, [contacts]);
 
     const activeProjects = projects.filter(p => p.status !== 'completed').length;
-    const completedTasks = tasks.filter(t => t.completed).length;
-    const overdueTasks = tasks.filter(task => {
-        if (!task.due_date || task.completed) return false;
-        return new Date(task.due_date) < new Date();
-    }).length;
-    const overdueGroups = useMemo(() => {
-        const overdueItems = tasks.filter((task) => {
-            if (!task.due_date || task.completed) return false;
-            return new Date(task.due_date) < new Date();
-        });
-        return groupTasksByProject(overdueItems, projects, t);
-    }, [tasks, projects, t]);
-
-    const completedGroups = useMemo(() => {
-        const completedItems = tasks.filter((task) => task.completed);
-        return groupTasksByProject(completedItems, projects, t);
-    }, [tasks, projects, t]);
+    const overdueGroups = useMemo(
+        () => groupTasksByProject(overdueModalTasks, projects, t),
+        [overdueModalTasks, projects, t],
+    );
+    const completedGroups = useMemo(
+        () => groupTasksByProject(completedModalTasks, projects, t),
+        [completedModalTasks, projects, t],
+    );
 
     const stats = [
         {
@@ -102,7 +170,8 @@ const DashboardStats = memo(function DashboardStats() {
         {
             id: 'tasks_completed',
             title: t('dashboard.stats_tasks_completed'),
-            value: completedTasks,
+            value: formatStatValue(completedCount),
+            numericValue: completedCount ?? 0,
             total: null,
             color: 'green',
             icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'
@@ -110,9 +179,10 @@ const DashboardStats = memo(function DashboardStats() {
         {
             id: 'overdue_tasks',
             title: t('dashboard.stats_overdue_tasks'),
-            value: overdueTasks,
+            value: formatStatValue(overdueCount),
+            numericValue: overdueCount ?? 0,
             total: null,
-            color: overdueTasks > 0 ? 'red' : 'gray',
+            color: (overdueCount ?? 0) > 0 ? 'red' : 'gray',
             icon: 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
         }
     ];
@@ -136,19 +206,20 @@ const DashboardStats = memo(function DashboardStats() {
                     key={stat.id}
                     type="button"
                     disabled={
-                        (stat.id === 'overdue_tasks' && stat.value <= 0)
-                        || (stat.id === 'tasks_completed' && stat.value <= 0)
+                        statsLoading
+                        || (stat.id === 'overdue_tasks' && stat.numericValue <= 0)
+                        || (stat.id === 'tasks_completed' && stat.numericValue <= 0)
                     }
                     onClick={() => {
-                        if (stat.id === 'overdue_tasks' && stat.value > 0) {
+                        if (stat.id === 'overdue_tasks' && stat.numericValue > 0) {
                             setShowOverdueModal(true);
                         }
-                        if (stat.id === 'tasks_completed' && stat.value > 0) {
+                        if (stat.id === 'tasks_completed' && stat.numericValue > 0) {
                             setShowCompletedModal(true);
                         }
                     }}
-                    className={`app-card-soft p-5 border text-left w-full ${
-                        (stat.id === 'overdue_tasks' || stat.id === 'tasks_completed') && stat.value > 0
+                    className={`p-5 rounded-lg border text-left w-full ${
+                        (stat.id === 'overdue_tasks' || stat.id === 'tasks_completed') && stat.numericValue > 0
                             ? 'cursor-pointer hover:shadow-md transition-shadow'
                             : 'cursor-default'
                     } ${getColorClasses(stat.color)}`}
@@ -184,7 +255,9 @@ const DashboardStats = memo(function DashboardStats() {
                         </button>
                     </div>
                     <div className="p-5 overflow-y-auto max-h-[65vh] space-y-4">
-                        {overdueGroups.length === 0 ? (
+                        {modalLoading ? (
+                            <p className="text-sm text-gray-500">{t('dashboard.loading_tasks')}</p>
+                        ) : overdueGroups.length === 0 ? (
                             <p className="text-sm text-gray-500">{t('dashboard.no_overdue_tasks')}</p>
                         ) : overdueGroups.map((group) => (
                             <div key={group.projectName} className="border border-gray-100 rounded-lg p-3">
@@ -227,7 +300,9 @@ const DashboardStats = memo(function DashboardStats() {
                         </button>
                     </div>
                     <div className="p-5 overflow-y-auto max-h-[65vh] space-y-4">
-                        {completedGroups.length === 0 ? (
+                        {modalLoading ? (
+                            <p className="text-sm text-gray-500">{t('dashboard.loading_tasks')}</p>
+                        ) : completedGroups.length === 0 ? (
                             <p className="text-sm text-gray-500">{t('dashboard.no_completed_tasks')}</p>
                         ) : completedGroups.map((group) => (
                             <div key={group.projectName} className="border border-gray-100 rounded-lg p-3">

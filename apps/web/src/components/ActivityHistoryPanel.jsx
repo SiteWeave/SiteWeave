@@ -18,17 +18,17 @@ const ENTITY_OPTIONS = [
   { value: 'organization', key: 'organization' },
 ];
 
-function formatTimeAgo(dateString) {
+function formatTimeAgo(dateString, t) {
   const now = new Date();
   const activityDate = new Date(dateString);
   const diffInMinutes = Math.floor((now - activityDate) / (1000 * 60));
   if (diffInMinutes < 60) {
-    return `${diffInMinutes}m ago`;
+    return t('activityHistory.time_ago_minutes', { count: diffInMinutes });
   }
   if (diffInMinutes < 1440) {
-    return `${Math.floor(diffInMinutes / 60)}h ago`;
+    return t('activityHistory.time_ago_hours', { count: Math.floor(diffInMinutes / 60) });
   }
-  return `${Math.floor(diffInMinutes / 1440)}d ago`;
+  return t('activityHistory.time_ago_days', { count: Math.floor(diffInMinutes / 1440) });
 }
 
 function csvEscape(s) {
@@ -238,7 +238,7 @@ function ActivityHistoryPanel({ mode, organizationId, projectId = null, title })
                     {formatActivityLine(activity, t, { projectNamesById })}
                   </p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500">
-                    <span>{formatTimeAgo(activity.created_at)}</span>
+                    <span>{formatTimeAgo(activity.created_at, t)}</span>
                     <span>
                       {new Date(activity.created_at).toLocaleString(i18n.language, {
                         dateStyle: 'medium',

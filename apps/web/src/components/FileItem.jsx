@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
 
 const ICONS = {
@@ -9,9 +10,10 @@ const ICONS = {
 };
 
 function FileItem({ file }) {
+    const { t, i18n } = useTranslation();
     const formatDate = (dateString) => {
         if (!dateString) return '';
-        return new Date(dateString).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        return new Date(dateString).toLocaleDateString(i18n.language, { month: 'long', day: 'numeric', year: 'numeric' });
     };
 
     const getIcon = (type) => {
@@ -33,7 +35,7 @@ function FileItem({ file }) {
                 {getIcon(file.type)}
                 <div>
                     <p className="font-semibold">{file.name}</p>
-                    <p className="text-sm text-gray-500">Modified {formatDate(file.modified_at)}</p>
+                    <p className="text-sm text-gray-500">{t('common.modified')} {formatDate(file.modified_at)}</p>
                 </div>
             </div>
             {file.type !== 'folder' && <span className="text-sm text-gray-500">{(file.size_kb / 1024).toFixed(1)} MB</span>}

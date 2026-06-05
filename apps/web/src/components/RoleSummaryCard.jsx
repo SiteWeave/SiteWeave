@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
+import { isEditableDefaultRole } from '../utils/roleManagementService';
 
 /**
  * RoleSummaryCard Component
@@ -35,9 +36,10 @@ function RoleSummaryCard({
   }
 
   const isOrgAdmin = role?.name === 'Org Admin';
-  const isDefaultRole = isOrgAdmin || role?.is_system_role;
-  const showEditActions = canEdit && !isDefaultRole;
-  const openRole = onView || onEdit;
+  const isEditableDefault = isEditableDefaultRole(role);
+  const isViewOnlyDefault = isOrgAdmin || (role?.is_system_role && !isEditableDefault);
+  const showEditActions = canEdit && (isEditableDefault || !isViewOnlyDefault);
+  const openRole = showEditActions && onEdit ? onEdit : onView;
 
   return (
     <div
@@ -51,8 +53,14 @@ function RoleSummaryCard({
       <div className="flex items-start justify-between mb-1.5">
         <div className="flex-1 min-w-0">
           <h3 className="text-base font-semibold text-gray-900 truncate">{role.name}</h3>
-          {isDefaultRole && (
+          {isOrgAdmin && (
             <p className="text-xs text-gray-500 mt-0.5">{t('team.default_role_view_only')}</p>
+          )}
+          {isEditableDefault && (
+            <p className="text-xs text-gray-500 mt-0.5">{t('team.default_role_editable')}</p>
+          )}
+          {!isOrgAdmin && !isEditableDefault && !role?.is_system_role && (
+            <p className="text-xs text-gray-500 mt-0.5">{t('team.custom_role')}</p>
           )}
         </div>
         {openRole && (

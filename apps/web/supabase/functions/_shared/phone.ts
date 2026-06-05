@@ -3,6 +3,10 @@ export interface NormalizedPhoneResult {
   isValid: boolean
 }
 
+/**
+ * Normalize a free-text phone number to E.164 when possible.
+ * Mirrors the project client logic for consistent behavior.
+ */
 export function normalizeAssigneePhone(raw: string, defaultRegion = 'US'): NormalizedPhoneResult {
   const trimmed = String(raw ?? '').trim()
   if (!trimmed) return { e164: null, isValid: false }

@@ -1,5 +1,4 @@
-// Helper functions for project calculations
-
+import i18n from '../i18n/config';
 import {
     computeWeightedProjectProgressPercent,
     groupPhasesByProjectId,
@@ -59,13 +58,13 @@ export const calculateProjectsProgressMap = async (projects, supabaseClient) => 
 export const formatDate = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    return date.toLocaleDateString(i18n.language || 'en', { month: 'long', day: 'numeric', year: 'numeric' });
 };
 
 export const formatDateShort = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return date.toLocaleDateString(i18n.language || 'en', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 export { normalizeStatusDisplay, getLocalizedProjectStatus } from '@siteweave/i18n';

@@ -26,6 +26,9 @@ function formatRangeLabel(startIso, endIso, locale) {
   return '';
 }
 
+/**
+ * Single trigger + popover calendar for selecting a start/end range (YYYY-MM-DD).
+ */
 function DateRangePicker({
   startValue,
   endValue,
@@ -35,7 +38,6 @@ function DateRangePicker({
   presets = null,
   className = '',
   compact = false,
-  /** Smaller trigger, padding, and scaled calendar (inline task row / popovers). */
   size = 'default',
 }) {
   const [open, setOpen] = useState(false);

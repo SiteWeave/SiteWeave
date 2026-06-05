@@ -1,4 +1,5 @@
 import { supabaseClient } from '../context/AppContext';
+import i18n from '../i18n/config';
 
 const SITEWEAVE_LOGO_URL = 'https://app.siteweave.org/logo.svg';
 
@@ -11,17 +12,17 @@ function escapeHtml(value) {
         .replace(/'/g, '&#039;');
 }
 
-function formatEmailDueDate(iso) {
+function formatEmailDueDate(iso, locale = 'en') {
     if (!iso) return null;
     const trimmed = String(iso).trim();
     const ymd = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
     if (ymd) {
         const dt = new Date(Date.UTC(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])));
-        return dt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+        return dt.toLocaleDateString(locale, { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
     }
     const parsed = new Date(trimmed);
     if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    return parsed.toLocaleDateString(locale, { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
 /**
@@ -41,13 +42,14 @@ export async function sendTaskAssignmentEmail(contactEmail, taskDetails, project
 
         // Construct email content
         const subject = `New Task Assignment: ${taskDetails.title || 'Issue Step'}`;
+        const locale = i18n.language || 'en';
         const safeAssigner = escapeHtml(assignerName);
         const safeProject = escapeHtml(projectDetails.name);
         const safeAddress = projectDetails.address ? escapeHtml(projectDetails.address) : '';
         const taskLabel = taskDetails.issueTitle ? 'Step' : 'Task';
         const taskName = escapeHtml(taskDetails.description || taskDetails.title || 'Task');
         const safeIssue = taskDetails.issueTitle ? escapeHtml(taskDetails.issueTitle) : '';
-        const dueFormatted = formatEmailDueDate(taskDetails.dueDate);
+        const dueFormatted = formatEmailDueDate(taskDetails.dueDate, locale);
 
         const htmlBody = `
 <!DOCTYPE html>
@@ -297,7 +299,7 @@ export async function sendCalendarInvitationEmail(attendeeEmail, eventDetails, o
         const formatDate = (dateTimeString) => {
             if (!dateTimeString) return 'TBD';
             const date = new Date(dateTimeString);
-            return date.toLocaleDateString('en-US', { 
+            return date.toLocaleDateString(i18n.language || 'en', { 
                 weekday: 'long', 
                 year: 'numeric', 
                 month: 'short', 
@@ -308,7 +310,7 @@ export async function sendCalendarInvitationEmail(attendeeEmail, eventDetails, o
         const formatTime = (dateTimeString) => {
             if (!dateTimeString) return 'TBD';
             const date = new Date(dateTimeString);
-            return date.toLocaleTimeString('en-US', { 
+            return date.toLocaleTimeString(i18n.language || 'en', { 
                 hour: 'numeric',
                 minute: '2-digit',
                 hour12: true

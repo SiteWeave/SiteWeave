@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { supabaseClient } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
+
+const supabase = supabaseClient;
 
 /**
  * Invitation Acceptance Page
@@ -145,7 +147,7 @@ function InviteAcceptPage() {
     setAccepting(true);
     try {
       // Step 1: Sign up the user
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      const { data: authData, error: signUpError } = await supabaseClient.auth.signUp({
         email: invitation.email,
         password: password,
         options: {
@@ -173,7 +175,7 @@ function InviteAcceptPage() {
       // For invitation flows, auto-confirm the user so they can sign in immediately
       // This bypasses email confirmation requirements
       try {
-        const { data: confirmResult, error: confirmError } = await supabase.functions.invoke('auto-confirm-user', {
+        const { data: confirmResult, error: confirmError } = await supabaseClient.functions.invoke('auto-confirm-user', {
           body: { userId: authData.user.id }
         });
 
@@ -220,7 +222,7 @@ function InviteAcceptPage() {
           console.log('Creating new contact via edge function...');
           // Priority: invitation metadata name > user metadata > email prefix
           const invitedName = invitation.metadata?.first_name || invitation.metadata?.name || authData.user.user_metadata?.full_name || invitation.email.split('@')[0] || 'User';
-          const { data: contactResult, error: contactError } = await supabase.functions.invoke('create-contact-for-invitation', {
+          const { data: contactResult, error: contactError } = await supabaseClient.functions.invoke('create-contact-for-invitation', {
             body: {
               userId: authData.user.id,
               email: invitation.email,
@@ -303,7 +305,7 @@ function InviteAcceptPage() {
       
       // Try to get session if available
       if (!session) {
-        const { data: sessionData } = await supabase.auth.getSession();
+        const { data: sessionData } = await supabaseClient.auth.getSession();
         session = sessionData?.session;
       }
 
@@ -317,7 +319,7 @@ function InviteAcceptPage() {
           contactId: contactId
         });
         
-        const { data: updateResult, error: updateError } = await supabase.functions.invoke('update-profile-organization', {
+        const { data: updateResult, error: updateError } = await supabaseClient.functions.invoke('update-profile-organization', {
           body: {
             userId: authData.user.id,
             organizationId: invitation.organization_id,
@@ -385,7 +387,7 @@ function InviteAcceptPage() {
 
       // Step 4: Try to sign in the user to establish a session
       if (!session) {
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        const { data: signInData, error: signInError } = await supabaseClient.auth.signInWithPassword({
           email: invitation.email,
           password: password
         });
@@ -394,7 +396,7 @@ function InviteAcceptPage() {
           // Organization assignment might have failed if no session
           // Store invitation data in user metadata so we can complete it on login
           try {
-            await supabase.auth.updateUser({
+            await supabaseClient.auth.updateUser({
               data: {
                 pending_invitation_id: invitation.id,
                 pending_organization_id: invitation.organization_id,
@@ -433,7 +435,7 @@ function InviteAcceptPage() {
             console.log('Found contact on retry:', contactId);
           } else {
             console.error('Contact still not found, creating via edge function...');
-            const { data: contactResult } = await supabase.functions.invoke('create-contact-for-invitation', {
+            const { data: contactResult } = await supabaseClient.functions.invoke('create-contact-for-invitation', {
               body: {
                 userId: authData.user.id,
                 email: invitation.email,
@@ -450,7 +452,7 @@ function InviteAcceptPage() {
 
         // Always use edge function for final profile update (most reliable)
         console.log('Final profile update via edge function...');
-        const { data: finalUpdateResult, error: finalUpdateError } = await supabase.functions.invoke('update-profile-organization', {
+        const { data: finalUpdateResult, error: finalUpdateError } = await supabaseClient.functions.invoke('update-profile-organization', {
           body: {
             userId: authData.user.id,
             organizationId: invitation.organization_id,
@@ -538,7 +540,7 @@ function InviteAcceptPage() {
           if (contactId) {
             try {
               console.log('Last resort: Setting contact_id via edge function...');
-              const { data: lastResort } = await supabase.functions.invoke('update-profile-organization', {
+              const { data: lastResort } = await supabaseClient.functions.invoke('update-profile-organization', {
                 body: {
                   userId: authData.user.id,
                   organizationId: invitation.organization_id,

@@ -1,6 +1,59 @@
 import { supabaseClient } from '../context/AppContext';
 
 /**
+ * Resolve org role id for invitation accept (invitation role or Member default).
+ */
+async function resolveInvitationRoleId(organizationId, preferredRoleId) {
+    if (preferredRoleId) {
+        const { data: role } = await supabaseClient
+            .from('roles')
+            .select('id')
+            .eq('id', preferredRoleId)
+            .eq('organization_id', organizationId)
+            .maybeSingle();
+        if (role?.id) return role.id;
+    }
+
+    const { data: memberRole } = await supabaseClient
+        .from('roles')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .ilike('name', 'Member')
+        .maybeSingle();
+
+    if (memberRole?.id) return memberRole.id;
+
+    return preferredRoleId || null;
+}
+
+/**
+ * Assign organization + role via service-role edge function (bypasses RLS for new users).
+ */
+async function assignProfileOrganization(userId, organizationId, roleId, contactId) {
+    const { data, error } = await supabaseClient.functions.invoke('update-profile-organization', {
+        body: { userId, organizationId, roleId, contactId },
+    });
+
+    if (error) {
+        console.warn('update-profile-organization failed, trying direct update:', error);
+        const { error: directError } = await supabaseClient
+            .from('profiles')
+            .update({
+                organization_id: organizationId,
+                role_id: roleId,
+                ...(contactId ? { contact_id: contactId } : {}),
+            })
+            .eq('id', userId);
+
+        if (directError) throw directError;
+        return { success: true };
+    }
+
+    if (data?.error) throw new Error(data.error);
+    return data;
+}
+
+/**
  * Generate a unique invitation token
  * @returns {string}
  */
@@ -72,7 +125,9 @@ export async function sendInvitation(email, organizationId, roleId = null, invit
                 step_id: stepId,
                 invited_by_user_id: invitedByUserId,
                 invitation_token: invitationToken,
-                status: 'pending'
+                role_id: roleId || null,
+                status: 'pending',
+                expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
             })
             .select()
             .single();
@@ -219,11 +274,16 @@ export async function acceptInvitation(invitationToken, userId) {
         // Create or update contact record for this user
         let contactId;
         
-        const { data: existingProfile } = await supabaseClient
+        const { data: existingProfile, error: profileLookupError } = await supabaseClient
             .from('profiles')
             .select('contact_id, organization_id')
             .eq('id', userId)
-            .single();
+            .maybeSingle();
+
+        if (profileLookupError) {
+            console.error('Error loading profile for invitation accept:', profileLookupError);
+            return { success: false, error: 'Failed to load user profile' };
+        }
 
         // Check if user already belongs to an organization
         if (existingProfile?.organization_id && existingProfile.organization_id !== invitation.organization_id) {
@@ -277,16 +337,19 @@ export async function acceptInvitation(invitationToken, userId) {
                 .eq('id', userId);
         }
 
-        // Assign user to organization and role
-        const { error: profileError } = await supabaseClient
-            .from('profiles')
-            .update({
-                organization_id: invitation.organization_id,
-                // role_id will be set by Organization Admin or use default
-            })
-            .eq('id', userId);
+        const resolvedRoleId = await resolveInvitationRoleId(
+            invitation.organization_id,
+            invitation.role_id,
+        );
 
-        if (profileError) {
+        try {
+            await assignProfileOrganization(
+                userId,
+                invitation.organization_id,
+                resolvedRoleId,
+                contactId,
+            );
+        } catch (profileError) {
             console.error('Error updating profile:', profileError);
             return { success: false, error: 'Failed to assign user to organization' };
         }

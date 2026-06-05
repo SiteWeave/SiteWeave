@@ -5,6 +5,23 @@
 
 import { canUseCustomRoles, CUSTOM_ROLES_LOCKED_ERROR } from '@siteweave/core-logic';
 
+/** System roles whose permission matrix can be edited on any plan (name is fixed). */
+export const EDITABLE_DEFAULT_ROLE_NAMES = ['Member', 'Project Manager'];
+
+export function isEditableDefaultRole(role) {
+  return EDITABLE_DEFAULT_ROLE_NAMES.includes(role?.name);
+}
+
+export function canEditRolePermissions(role, { canManageRoles, canCustomRoles, userRoleName }) {
+  if (!role) return false;
+  if (role.name === 'Org Admin') return false;
+  const canManage =
+    canManageRoles === true || userRoleName === 'Org Admin';
+  if (!canManage) return false;
+  if (isEditableDefaultRole(role)) return true;
+  return canCustomRoles && !role.is_system_role;
+}
+
 async function assertCustomRolesAllowed(supabase, organizationId) {
   const { data: org, error } = await supabase
     .from('organizations')
@@ -38,6 +55,41 @@ export async function getRoles(supabase, organizationId) {
     console.error('Error fetching roles:', error);
     throw error;
   }
+}
+
+/** Ensures Member + Project Manager exist, then returns all org roles. */
+export async function getOrganizationRoles(supabase, organizationId) {
+  try {
+    await supabase.functions.invoke('ensure-org-default-roles', {
+      body: { organizationId },
+    });
+  } catch (e) {
+    console.warn('ensure-org-default-roles:', e);
+  }
+  return getRoles(supabase, organizationId);
+}
+
+function roleSortOrder(name) {
+  const n = (name || '').toLowerCase();
+  if (n === 'member') return 0;
+  if (n === 'project manager') return 1;
+  if (n === 'org admin') return 99;
+  return 50;
+}
+
+/**
+ * Roles available when inviting or editing org members (Member + PM + custom; Org Admin excluded).
+ */
+export async function getAssignableOrgRoles(supabase, organizationId) {
+  const roles = await getOrganizationRoles(supabase, organizationId);
+  return roles
+    .filter((r) => (r.name || '').toLowerCase() !== 'org admin')
+    .sort((a, b) => {
+      const oa = roleSortOrder(a.name);
+      const ob = roleSortOrder(b.name);
+      if (oa !== ob) return oa - ob;
+      return (a.name || '').localeCompare(b.name || '');
+    });
 }
 
 /**
@@ -110,12 +162,20 @@ export async function updateRole(supabase, roleId, updates) {
     if (!existing?.organization_id) {
       return { success: false, error: 'Role not found' };
     }
-    await assertCustomRolesAllowed(supabase, existing.organization_id);
+    if (existing.name === 'Org Admin') {
+      return { success: false, error: 'Organization Admin role cannot be modified.' };
+    }
+    if (!isEditableDefaultRole(existing)) {
+      await assertCustomRolesAllowed(supabase, existing.organization_id);
+    }
 
     const updateData = {
       ...updates,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     };
+    if (isEditableDefaultRole(existing)) {
+      delete updateData.name;
+    }
 
     const { data, error } = await supabase
       .from('roles')

@@ -4,6 +4,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { resolveMemberRoleId } from '../_shared/ensureDefaultRoles.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -59,13 +60,11 @@ serve(async (req) => {
       )
     }
 
-    // Update profile with organization and role
-    const updateData: any = {
-      organization_id: organizationId
-    }
-    
-    if (roleId) {
-      updateData.role_id = roleId
+    const resolvedRoleId = await resolveMemberRoleId(supabaseAdmin, organizationId, roleId)
+
+    const updateData: Record<string, unknown> = {
+      organization_id: organizationId,
+      role_id: resolvedRoleId,
     }
     
     if (contactId) {

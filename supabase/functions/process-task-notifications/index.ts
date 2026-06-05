@@ -6,6 +6,7 @@ import { sendTwilioSms } from '../_shared/twilioSms.ts'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { createGuestShare } from '../_shared/guestShare.ts'
 import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
+import { withTransactionalSmsFooter } from '../_shared/smsCompliance.ts'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const RESEND_FROM =
@@ -317,9 +318,11 @@ serve(async (req) => {
               : `SMS: blocked (${gate.reason || 'consent'})`
           }
         } else {
-          const smsBody = batchSize > 1
-            ? `${batchSize} tasks for ${bucket.projectName} start ${dueLabel.toLowerCase()}. Open: ${guestUrl}`
-            : `${bucket.tasks[0]?.text || 'Task'} in ${bucket.projectName} starts ${dueLabel.toLowerCase()}. Open: ${guestUrl}`
+          const smsBody = withTransactionalSmsFooter(
+            batchSize > 1
+              ? `${batchSize} tasks for ${bucket.projectName} start ${dueLabel.toLowerCase()}. Open: ${guestUrl}`
+              : `${bucket.tasks[0]?.text || 'Task'} in ${bucket.projectName} starts ${dueLabel.toLowerCase()}. Open: ${guestUrl}`,
+          )
           const smsResult = await sendTwilioSms({
             to: bucket.recipientPhone,
             body: smsBody,

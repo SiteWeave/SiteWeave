@@ -39,7 +39,7 @@ function Resize-Png {
       $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
       $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
       $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-      $g.Clear([System.Drawing.Color]::Black)
+      $g.Clear([System.Drawing.Color]::Transparent)
       $g.DrawImage($srcImg, 0, 0, $W, $H)
     } finally { $g.Dispose() }
     $bmp.Save($Dest, [System.Drawing.Imaging.ImageFormat]::Png)
@@ -71,7 +71,7 @@ try {
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   try {
     $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $g.Clear([System.Drawing.Color]::Black)
+    $g.Clear([System.Drawing.Color]::Transparent)
     $pad = 12
     $availW = 310 - 2 * $pad
     $availH = 150 - 2 * $pad

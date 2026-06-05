@@ -165,8 +165,8 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
 
     if (activeProjects.length === 0) {
         return (
-            <div className="app-card p-12 text-center">
-                <p className="text-slate-500">{t('dashboard.no_active_projects')}</p>
+            <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-12 text-center">
+                <p className="text-gray-500">{t('dashboard.no_active_projects')}</p>
             </div>
         );
     }
@@ -184,7 +184,7 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
                     return (
                         <div
                             key={status}
-                            className={`shrink-0 w-72 rounded-lg p-4 transition-all duration-200 ${
+                            className={`flex-shrink-0 w-72 rounded-lg p-4 transition-all duration-200 ${
                                 isBeingDraggedOver 
                                     ? 'bg-blue-50 border-2 border-blue-400 border-dashed shadow-lg scale-105' 
                                     : 'bg-gray-50 border-2 border-transparent'
@@ -193,8 +193,8 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
                             onDragLeave={handleDragLeave}
                             onDrop={(e) => handleDrop(e, status)}
                         >
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-between mb-4 min-w-0 gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
                                     <span 
                                         className={`inline-block px-3 py-1.5 text-xs font-bold rounded-full ${statusColorClasses}`}
                                         style={{ 
@@ -205,7 +205,7 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
                                     >
                                         {displayStatus}
                                     </span>
-                                    <span className="text-gray-600 font-medium text-sm">({statusProjects.length})</span>
+                                    <span className="text-gray-600 font-medium text-sm shrink-0">({statusProjects.length})</span>
                                 </div>
                             </div>
                             <div className="space-y-3 min-h-[100px]">
@@ -219,12 +219,12 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
                                             onDragStart={(e) => handleDragStart(e, project)}
                                             onDragEnd={handleDragEnd}
                                             onClick={() => onProjectClick && onProjectClick(project)}
-                                            className={`app-card rounded-xl p-3 cursor-move hover:shadow-md transition-all duration-200 ${
+                                            className={`bg-white rounded-lg p-3 shadow-xs border border-gray-200 cursor-move hover:shadow-md transition-all duration-200 ${
                                                 isBeingDragged ? 'opacity-40 scale-95' : 'opacity-100'
                                             }`}
                                         >
                                             <div className="mb-2">
-                                                <h4 className="font-semibold text-sm text-gray-900 mb-1">{project.name}</h4>
+                                                <h4 className="font-semibold text-sm text-gray-900 mb-1 ui-clamp-2" title={project.name}>{project.name}</h4>
                                                 {project.due_date && (
                                                     <p className="text-xs text-gray-500">
                                                         Due: {formatDateShort(project.due_date)}

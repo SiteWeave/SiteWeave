@@ -44,7 +44,14 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [assignContact, setAssignContact] = useState(null);
     const [selectedAssignProject, setSelectedAssignProject] = useState('');
+    const [assignProjectRole, setAssignProjectRole] = useState('Team');
     const [isAssigningContact, setIsAssigningContact] = useState(false);
+    const assignProjectRoleOptions = useMemo(() => [
+        { value: 'Team', label: t('share.project_role_team') },
+        { value: 'PM', label: t('share.project_role_pm') },
+        { value: 'Subcontractor', label: t('share.project_role_sub') },
+        { value: 'Client', label: t('share.project_role_client') },
+    ], [t]);
 
     // Listen for tour navigation to switch to Subcontractors tab
     useEffect(() => {
@@ -301,6 +308,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
         setShowAssignModal(false);
         setAssignContact(null);
         setSelectedAssignProject('');
+        setAssignProjectRole('Team');
         setIsAssigningContact(false);
     };
 
@@ -316,13 +324,34 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
 
         setIsAssigningContact(true);
         try {
-            // project_id is a UUID, not an integer, so use it directly as a string
+            let linkedProfile = null;
+            const { data: profileByContact } = await supabaseClient
+                .from('profiles')
+                .select('id, role_id')
+                .eq('contact_id', assignContact.id)
+                .eq('organization_id', state.currentOrganization?.id)
+                .maybeSingle();
+            linkedProfile = profileByContact;
+            if (!linkedProfile?.id && assignContact.email && state.currentOrganization?.id) {
+                const { data: profileByEmail } = await supabaseClient
+                    .from('profiles')
+                    .select('id, role_id, contacts!inner(email)')
+                    .eq('organization_id', state.currentOrganization.id)
+                    .ilike('contacts.email', assignContact.email.trim())
+                    .maybeSingle();
+                linkedProfile = profileByEmail;
+            }
+            if (linkedProfile && !linkedProfile.role_id) {
+                addToast(t('contacts.assign_no_app_permissions'), 'warning');
+            }
+
             const { error } = await supabaseClient
                 .from('project_contacts')
                 .upsert({
                     project_id: selectedAssignProject,
                     contact_id: assignContact.id,
-                    organization_id: state.currentOrganization?.id
+                    organization_id: state.currentOrganization?.id,
+                    role: assignProjectRole,
                 }, {
                     onConflict: 'project_id,contact_id',
                     ignoreDuplicates: true
@@ -343,37 +372,6 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
         } finally {
             setIsAssigningContact(false);
         }
-    };
-
-    const handleDeactivateContact = async (contact) => {
-        try {
-            const { data, error } = await supabaseClient
-                .from('contacts')
-                .update({ status: 'Inactive' })
-                .eq('id', contact.id)
-                .select()
-                .single();
-
-            if (error) {
-                addToast(t('contacts.deactivate_error', { message: error.message }), 'error');
-            } else if (data) {
-                dispatch({ type: 'UPDATE_CONTACT', payload: data });
-                addToast(t('contacts.deactivated', { name: contact.name }), 'success');
-            }
-        } catch (error) {
-            addToast(t('contacts.deactivate_error', { message: error.message }), 'error');
-        }
-    };
-
-    const handleMessageContact = (contact) => {
-        if (!contact) return;
-        const firstProjectId = contact.project_contacts?.[0]?.project_id;
-        if (firstProjectId) {
-            dispatch({ type: 'SET_PROJECT', payload: firstProjectId });
-            dispatch({ type: 'SET_VIEW', payload: 'Projects' });
-            return;
-        }
-        addToast(t('contacts.message_assign_first'), 'info');
     };
 
     return (
@@ -504,8 +502,6 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                                 onDelete={handleDeleteContact}
                                 showActions={true}
                                 onAssignToProject={handleAssignToProject}
-                                onDeactivate={handleDeactivateContact}
-                                onMessage={handleMessageContact}
                             />
                         ))}
                     </ul>
@@ -532,8 +528,6 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                                 onDelete={handleDeleteContact}
                                 showActions={true}
                                 onAssignToProject={handleAssignToProject}
-                                onDeactivate={handleDeactivateContact}
-                                onMessage={handleMessageContact}
                             />
                         ))}
                     </ul>
@@ -557,7 +551,8 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     }} 
                     onSave={handleSaveContact} 
                     contact={editingContact}
-                    isLoading={isCreatingContact || isUpdatingContact} 
+                    isLoading={isCreatingContact || isUpdatingContact}
+                    currentOrganization={state.currentOrganization}
                 />
             )}
 
@@ -696,6 +691,24 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                                     <p className="text-sm text-amber-600 mt-2">{t('contacts.create_project_hint')}</p>
                                 )}
                             </div>
+
+                            {unassignedProjects.length > 0 && (
+                                <div className="mb-6">
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                        {t('contacts.project_role_label')}
+                                    </label>
+                                    <select
+                                        value={assignProjectRole}
+                                        onChange={e => setAssignProjectRole(e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                                    >
+                                        {assignProjectRoleOptions.map(opt => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))}
+                                    </select>
+                                    <p className="mt-1 text-xs text-gray-500">{t('contacts.project_role_helper')}</p>
+                                </div>
+                            )}
                             
                             <div className="flex justify-end gap-3">
                                 <button type="button"

@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AppContext } from '../context/AppContext';
 import { supabaseClient } from '../context/AppContext';
-import { getRoles, createRole, updateRole } from '../utils/roleManagementService';
+import {
+  getOrganizationRoles,
+  createRole,
+  updateRole,
+  canEditRolePermissions,
+} from '../utils/roleManagementService';
 import { useToast } from '../context/ToastContext';
 import PermissionGuard from './PermissionGuard';
 import LoadingSpinner from './LoadingSpinner';
@@ -10,7 +15,7 @@ import DeleteRoleModal from './DeleteRoleModal';
 import Icon from './Icon';
 import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import UpgradeRequiredModal from './UpgradeRequiredModal';
-import { isCustomRolesLockedError } from '@siteweave/core-logic';
+import { getRolePermissionsForDisplay, isCustomRolesLockedError } from '@siteweave/core-logic';
 
 // Default permission structure
 const DEFAULT_PERMISSIONS = {
@@ -36,6 +41,7 @@ const PERMISSION_LABELS = {
   can_manage_roles: 'Manage Roles',
   can_manage_contacts: 'Manage Contacts',
   can_manage_users: 'Manage Users',
+  can_send_messages: 'Send Messages',
   can_view_activity_history: 'View Activity History',
   can_manage_progress_reports: 'Project Progress Reports',
   can_manage_org_progress_reports: 'Organization Progress Reports',
@@ -58,6 +64,7 @@ function RoleManagement() {
   const [roleModalReadOnly, setRoleModalReadOnly] = useState(false);
 
   const organizationId = state.currentOrganization?.id;
+  const canManageRoles = state.userRole?.permissions?.can_manage_roles === true;
   const { canCustomRoles } = useWorkspaceTier();
   const [showRolesUpgrade, setShowRolesUpgrade] = useState(false);
 
@@ -72,7 +79,7 @@ function RoleManagement() {
 
     setLoading(true);
     try {
-      const rolesData = await getRoles(supabaseClient, organizationId);
+      const rolesData = await getOrganizationRoles(supabaseClient, organizationId);
       setRoles(rolesData);
     } catch (error) {
       console.error('Error loading roles:', error);
@@ -165,7 +172,11 @@ function RoleManagement() {
   };
 
   const handleEditRole = (role) => {
-    if (role.name === 'Org Admin' || role.is_system_role || !canCustomRoles) {
+    if (!canEditRolePermissions(role, {
+      canManageRoles,
+      canCustomRoles,
+      userRoleName: state.userRole?.name,
+    })) {
       handleViewRole(role);
       return;
     }
@@ -184,8 +195,10 @@ function RoleManagement() {
         <h2 className="text-2xl font-bold text-gray-900">Role Management</h2>
         <p className="text-gray-600 mt-1">
           {canCustomRoles
-            ? 'Create and manage custom roles for your organization'
-            : 'View default role permissions below. Upgrade to create custom roles and change permissions.'}
+            ? 'Create and manage roles for your organization'
+            : canManageRoles
+              ? 'Customize Member and Project Manager permissions. Upgrade to add custom roles.'
+              : 'View role permissions for your organization.'}
         </p>
       </div>
 
@@ -220,14 +233,22 @@ function RoleManagement() {
                 return a.name.localeCompare(b.name);
               })
               .map((role) => {
-              const canEditRole = canCustomRoles && !role.is_system_role && role.name !== 'Org Admin';
+              const canEditRole = canEditRolePermissions(role, {
+                canManageRoles,
+                canCustomRoles,
+                userRoleName: state.userRole?.name,
+              });
+              const isOrgAdminRole = role.name === 'Org Admin';
               return (
               <div key={role.id} className="p-6">
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <h4 className="font-medium">{role.name}</h4>
-                    {role.is_system_role && (
+                    {isOrgAdminRole && (
                       <span className="text-xs text-gray-500">Default role — view only</span>
+                    )}
+                    {role.is_system_role && !isOrgAdminRole && (
+                      <span className="text-xs text-gray-500">Default role — customizable</span>
                     )}
                   </div>
                   <div className="flex items-center space-x-2">
@@ -270,7 +291,7 @@ function RoleManagement() {
                 </div>
                 <div className="mt-2 text-sm text-gray-600">
                   <div className="flex flex-wrap gap-2">
-                    {Object.entries(role.permissions || {})
+                    {Object.entries(getRolePermissionsForDisplay(role))
                       .filter(([_, value]) => value === true)
                       .map(([key, _]) => (
                         <span key={key} className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">

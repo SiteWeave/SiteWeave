@@ -3,6 +3,52 @@
  * Handles accepting invitations on mobile
  */
 
+async function resolveInvitationRoleId(supabase, organizationId, preferredRoleId) {
+  if (preferredRoleId) {
+    const { data: role } = await supabase
+      .from('roles')
+      .select('id')
+      .eq('id', preferredRoleId)
+      .eq('organization_id', organizationId)
+      .maybeSingle();
+    if (role?.id) return role.id;
+  }
+
+  const { data: memberRole } = await supabase
+    .from('roles')
+    .select('id')
+    .eq('organization_id', organizationId)
+    .ilike('name', 'Member')
+    .maybeSingle();
+
+  if (memberRole?.id) return memberRole.id;
+
+  return preferredRoleId || null;
+}
+
+async function assignProfileOrganization(supabase, userId, organizationId, roleId, contactId) {
+  const { data, error } = await supabase.functions.invoke('update-profile-organization', {
+    body: { userId, organizationId, roleId, contactId },
+  });
+
+  if (error) {
+    const { error: directError } = await supabase
+      .from('profiles')
+      .update({
+        organization_id: organizationId,
+        role_id: roleId,
+        ...(contactId ? { contact_id: contactId } : {}),
+      })
+      .eq('id', userId);
+
+    if (directError) throw directError;
+    return { success: true };
+  }
+
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
 /**
  * Accept an invitation and link user to organization
  * @param {Object} supabase - Supabase client
@@ -59,11 +105,16 @@ export async function acceptInvitation(supabase, invitationToken, userId) {
     // Create or update contact record for this user
     let contactId;
     
-    const { data: existingProfile } = await supabase
+    const { data: existingProfile, error: profileLookupError } = await supabase
       .from('profiles')
       .select('contact_id, organization_id')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
+
+    if (profileLookupError) {
+      console.error('Error loading profile for invitation accept:', profileLookupError);
+      return { success: false, error: 'Failed to load user profile' };
+    }
 
     // Check if user already belongs to an organization
     if (existingProfile?.organization_id && existingProfile.organization_id !== invitation.organization_id) {
@@ -117,15 +168,21 @@ export async function acceptInvitation(supabase, invitationToken, userId) {
         .eq('id', userId);
     }
 
-    // Assign user to organization
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({
-        organization_id: invitation.organization_id,
-      })
-      .eq('id', userId);
+    const resolvedRoleId = await resolveInvitationRoleId(
+      supabase,
+      invitation.organization_id,
+      invitation.role_id,
+    );
 
-    if (profileError) {
+    try {
+      await assignProfileOrganization(
+        supabase,
+        userId,
+        invitation.organization_id,
+        resolvedRoleId,
+        contactId,
+      );
+    } catch (profileError) {
       console.error('Error updating profile:', profileError);
       return { success: false, error: 'Failed to assign user to organization' };
     }

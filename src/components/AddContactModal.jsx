@@ -1,23 +1,73 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { supabaseClient } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
 
-function AddContactModal({ onClose, onSave, contact = null, isLoading = false }) {
+function AddContactModal({ onClose, onSave, contact = null, isLoading = false, currentOrganization = null }) {
     const { t } = useTranslation();
     const isEditMode = !!contact;
     
     const [name, setName] = useState(contact?.name || '');
-    const [role, setRole] = useState(contact?.role || '');
+    const JOB_TITLE_PRESETS = ['Estimator', 'Foreman', 'Technician', 'Project Manager', 'Superintendent', 'Other'];
+    const [rolePreset, setRolePreset] = useState(() => {
+        const r = contact?.role || '';
+        return JOB_TITLE_PRESETS.includes(r) ? r : (r ? 'Other' : '');
+    });
+    const [roleOther, setRoleOther] = useState(() => {
+        const r = contact?.role || '';
+        return JOB_TITLE_PRESETS.includes(r) ? '' : r;
+    });
+    const role = rolePreset === 'Other' ? roleOther : rolePreset;
     const [type, setType] = useState(contact?.type || 'Team');
     const [company, setCompany] = useState(contact?.company || '');
     const [trade, setTrade] = useState(contact?.trade || '');
     const [email, setEmail] = useState(contact?.email || '');
     const [phone, setPhone] = useState(contact?.phone || '');
+    const [linkedAppRoleName, setLinkedAppRoleName] = useState(null);
+
+    useEffect(() => {
+        const orgId = currentOrganization?.id;
+        const normalizedEmail = email?.trim()?.toLowerCase();
+        if (!orgId || !normalizedEmail) {
+            setLinkedAppRoleName(null);
+            return undefined;
+        }
+
+        let cancelled = false;
+        (async () => {
+            const { data: contactRow } = await supabaseClient
+                .from('contacts')
+                .select('id')
+                .eq('organization_id', orgId)
+                .ilike('email', normalizedEmail)
+                .maybeSingle();
+
+            if (!contactRow?.id) {
+                if (!cancelled) setLinkedAppRoleName(null);
+                return;
+            }
+
+            const { data: profileRow } = await supabaseClient
+                .from('profiles')
+                .select('roles(name)')
+                .eq('contact_id', contactRow.id)
+                .eq('organization_id', orgId)
+                .maybeSingle();
+
+            if (!cancelled) {
+                setLinkedAppRoleName(profileRow?.roles?.name ?? null);
+            }
+        })();
+
+        return () => { cancelled = true; };
+    }, [email, currentOrganization?.id]);
 
     useEffect(() => {
         if (contact) {
             setName(contact.name || '');
-            setRole(contact.role || '');
+            const r = contact.role || '';
+            setRolePreset(JOB_TITLE_PRESETS.includes(r) ? r : (r ? 'Other' : ''));
+            setRoleOther(JOB_TITLE_PRESETS.includes(r) ? '' : r);
             setType(contact.type || 'Team');
             setCompany(contact.company || '');
             setTrade(contact.trade || '');
@@ -28,6 +78,7 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        if (!role || !String(role).trim()) return;
         const contactData = {
             name,
             role,
@@ -69,14 +120,31 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                         </div>
                         
                         <div>
-                            <label className="block text-sm font-semibold mb-1">{t('contacts.role_label')}</label>
-                            <input 
-                                type="text" 
-                                value={role} 
-                                onChange={e => setRole(e.target.value)} 
-                                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
-                                required 
-                            />
+                            <label className="block text-sm font-semibold mb-1">{t('contacts.job_title_label')}</label>
+                            <select
+                                value={rolePreset}
+                                onChange={e => setRolePreset(e.target.value)}
+                                className="w-full p-3 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                required
+                            >
+                                <option value="" disabled>{t('contacts.select_job_title')}</option>
+                                {JOB_TITLE_PRESETS.map((preset) => (
+                                    <option key={preset} value={preset}>
+                                        {preset === 'Other' ? t('contacts.job_title_other') : preset}
+                                    </option>
+                                ))}
+                            </select>
+                            <p className="mt-1 text-xs text-gray-500">{t('contacts.job_title_helper')}</p>
+                            {rolePreset === 'Other' && (
+                                <input
+                                    type="text"
+                                    value={roleOther}
+                                    onChange={e => setRoleOther(e.target.value)}
+                                    placeholder={t('contacts.job_title_custom_placeholder')}
+                                    className="w-full mt-2 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    required
+                                />
+                            )}
                         </div>
                     </div>
 
@@ -140,6 +208,16 @@ function AddContactModal({ onClose, onSave, contact = null, isLoading = false })
                             />
                             {type === 'Subcontractor' && (
                                 <p className="mt-1 text-xs text-gray-500">{t('contacts.email_for_reminders')}</p>
+                            )}
+                            {linkedAppRoleName && (
+                                <p className="mt-1 text-xs text-blue-800">
+                                    {t('share.org_app_role', { role: linkedAppRoleName })}
+                                </p>
+                            )}
+                            {email?.trim() && currentOrganization?.id && (
+                                <p className="mt-1 text-xs text-gray-500">
+                                    {t('team.app_permissions_role_hint')} {t('team.manage_members')}
+                                </p>
                             )}
                         </div>
                         

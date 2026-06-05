@@ -1,5 +1,12 @@
 import React, { createContext, useContext, useEffect, useReducer, useState, useRef, useCallback } from 'react';
-import { createSupabaseClient, clearMemoryCache, PROJECT_LIST_COLUMNS, loadWithFallback } from '@siteweave/core-logic';
+import {
+  clearMemoryCache,
+  PROJECT_LIST_COLUMNS,
+  loadWithFallback,
+  clearStaleSupabaseSession,
+  isStaleRefreshTokenError,
+  sortProjectsByRecency,
+} from '@siteweave/core-logic';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
 import { dedupeTasksById } from '../utils/taskDedupe';
 import {
@@ -9,16 +16,8 @@ import {
   logTaskDuplicateReport,
 } from '../utils/taskDuplicateDiagnostics';
 
-// --- SUPABASE CLIENT ---
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-console.log('Environment variables loaded:');
-console.log('SUPABASE_URL:', SUPABASE_URL ? 'Present' : 'Missing');
-console.log('SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? 'Present' : 'Missing');
-
-// Use shared Supabase client creation
-const supabaseClient = createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// --- SUPABASE CLIENT (single instance — must match useSession / LoginForm) ---
+import { supabase as supabaseClient } from '../supabaseClient';
 
 // Inject the canonical client into the Electron OAuth handler so it can do the
 // PKCE code-for-session exchange itself (no React mount required).
@@ -43,7 +42,7 @@ function normalizeProjectRecord(p) {
 
 function normalizeProjectsArray(list) {
   if (!Array.isArray(list)) return list;
-  return list.map(normalizeProjectRecord);
+  return sortProjectsByRecency(list.map(normalizeProjectRecord));
 }
 
 const saveStateToStorage = (state) => {
@@ -112,6 +111,7 @@ const getInitialState = () => {
     projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], activityLog: [],
     user: null, // Changed from hardcoded user to null for proper auth
     userContactId: null, // The user's linked contact_id (from profiles table) — used for matching assignee_id on tasks
+    profileAvatarUrl: null, // Canonical contacts.avatar_url for the signed-in user
     userPreferences: null, // Add user preferences for onboarding
     currentOrganization: null, // Current organization context
     userRole: null, // User's role with permissions
@@ -163,22 +163,30 @@ function appReducer(state, action) {
     case 'SET_PROJECT': return { ...state, selectedProjectId: action.payload };
     case 'SET_USER': 
       // When user is cleared (logout), also clear userContactId to prevent stale data
-      return { ...state, user: action.payload, userContactId: action.payload ? state.userContactId : null };
-    case 'SET_USER_CONTACT_ID': return { ...state, userContactId: action.payload };
-    case 'SET_AUTH_LOADING': return { ...state, authLoading: action.payload };
-    case 'ADD_PROJECT': 
-      newState = { ...state, projects: [...state.projects, normalizeProjectRecord(action.payload)] };
-      saveStateToStorage(newState);
-      return newState;
-    case 'UPDATE_PROJECT': 
-      newState = {
+      return {
         ...state,
-        projects: state.projects.map((p) =>
-          p.id === action.payload.id ? normalizeProjectRecord({ ...p, ...action.payload }) : p,
-        ),
+        user: action.payload,
+        userContactId: action.payload ? state.userContactId : null,
+        profileAvatarUrl: action.payload ? state.profileAvatarUrl : null,
       };
+    case 'SET_USER_CONTACT_ID': return { ...state, userContactId: action.payload };
+    case 'SET_PROFILE_AVATAR_URL': return { ...state, profileAvatarUrl: action.payload };
+    case 'SET_AUTH_LOADING': return { ...state, authLoading: action.payload };
+    case 'ADD_PROJECT': {
+      const project = normalizeProjectRecord(action.payload);
+      const withoutDup = state.projects.filter((p) => p.id !== project.id);
+      newState = { ...state, projects: [project, ...withoutDup] };
       saveStateToStorage(newState);
       return newState;
+    }
+    case 'UPDATE_PROJECT': {
+      const existing = state.projects.find((p) => p.id === action.payload.id);
+      const updated = normalizeProjectRecord({ ...existing, ...action.payload });
+      const rest = state.projects.filter((p) => p.id !== updated.id);
+      newState = { ...state, projects: [updated, ...rest] };
+      saveStateToStorage(newState);
+      return newState;
+    }
     case 'DELETE_PROJECT': 
       newState = { ...state, projects: state.projects.filter(p => p.id !== action.payload) };
       saveStateToStorage(newState);
@@ -416,10 +424,9 @@ export const AppProvider = ({ children }) => {
       try {
         const { data: { session }, error } = await supabaseClient.auth.getSession();
         if (error) {
-          // Handle invalid refresh token error
-          if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
-            console.warn('Invalid refresh token detected, clearing session');
-            await supabaseClient.auth.signOut();
+          if (isStaleRefreshTokenError(error)) {
+            console.warn('Stale session cleared; sign in again.');
+            await clearStaleSupabaseSession(supabaseClient);
             dispatch({ type: 'SET_USER', payload: null });
           } else {
             console.error('Error getting session:', error);
@@ -443,12 +450,10 @@ export const AppProvider = ({ children }) => {
           }
         }
       } catch (error) {
-          // Handle invalid refresh token error in catch block
-          if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
-            console.warn('Invalid refresh token detected, clearing session');
-            await supabaseClient.auth.signOut();
+          if (isStaleRefreshTokenError(error)) {
+            console.warn('Stale session cleared; sign in again.');
+            await clearStaleSupabaseSession(supabaseClient);
             dispatch({ type: 'SET_USER', payload: null });
-            // Clear cached data on logout
             sessionStorage.removeItem(STORAGE_KEY);
             sessionStorage.removeItem(STORAGE_USER_KEY);
           } else {
@@ -467,10 +472,9 @@ export const AppProvider = ({ children }) => {
         try {
           // Handle token refresh errors
           if (event === 'TOKEN_REFRESHED' && !session) {
-            console.warn('Token refresh failed, signing out');
-            await supabaseClient.auth.signOut();
+            console.warn('Token refresh failed; clearing local session.');
+            await clearStaleSupabaseSession(supabaseClient);
             dispatch({ type: 'SET_USER', payload: null });
-            // Clear cached data on logout
             sessionStorage.removeItem(STORAGE_KEY);
             sessionStorage.removeItem(STORAGE_USER_KEY);
           } else if (session?.user) {
@@ -483,12 +487,10 @@ export const AppProvider = ({ children }) => {
             sessionStorage.removeItem(STORAGE_USER_KEY);
           }
         } catch (error) {
-          // Handle invalid refresh token errors
-          if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
-            console.warn('Invalid refresh token detected, clearing session');
-            await supabaseClient.auth.signOut();
+          if (isStaleRefreshTokenError(error)) {
+            console.warn('Stale session cleared; sign in again.');
+            await clearStaleSupabaseSession(supabaseClient);
             dispatch({ type: 'SET_USER', payload: null });
-            // Clear cached data on logout
             sessionStorage.removeItem(STORAGE_KEY);
             sessionStorage.removeItem(STORAGE_USER_KEY);
           } else {
@@ -566,21 +568,10 @@ export const AppProvider = ({ children }) => {
       const error = event.reason || event.error;
       if (!error) return;
       
-      // Check if it's a Supabase auth error about invalid refresh token
-      const errorMessage = error.message || error.toString() || '';
-      const isInvalidTokenError = 
-        errorMessage.includes('Invalid Refresh Token') || 
-        errorMessage.includes('Refresh Token Not Found') ||
-        (error.name === 'AuthApiError' && errorMessage.includes('refresh'));
-      
-      if (isInvalidTokenError) {
-        console.warn('Caught invalid refresh token error, clearing session');
-        // Prevent the error from showing in console as an unhandled error
+      if (isStaleRefreshTokenError(error)) {
+        console.warn('Stale session cleared; sign in again.');
         event.preventDefault();
-        // Clear the invalid session silently
-        supabaseClient.auth.signOut().catch(() => {
-          // Ignore errors during sign out
-        });
+        void clearStaleSupabaseSession(supabaseClient);
         dispatch({ type: 'SET_USER', payload: null });
       }
     };
@@ -757,6 +748,16 @@ export const AppProvider = ({ children }) => {
             dispatch({ type: 'SET_USER_CONTACT_ID', payload: contactId });
           }
 
+          if (state.user?.id) {
+            try {
+              const { resolveUserAvatarUrl } = await import('@siteweave/core-logic');
+              const avatarUrl = await resolveUserAvatarUrl(supabaseClient, state.user.id);
+              dispatch({ type: 'SET_PROFILE_AVATAR_URL', payload: avatarUrl });
+            } catch (avatarErr) {
+              console.warn('Could not load profile avatar:', avatarErr);
+            }
+          }
+
           try {
             const workspaceClient = await import('../utils/workspaceClient');
             const pendingIntent = sessionStorage.getItem('pendingAccountIntent');
@@ -768,13 +769,48 @@ export const AppProvider = ({ children }) => {
                 role: 'Team',
               }, { onConflict: 'id' });
             }
-            const pendingInviteToken = workspaceClient.consumePendingProjectInviteToken();
-            if (pendingInviteToken) {
-              await workspaceClient.redeemProjectInvite(supabaseClient, { token: pendingInviteToken });
-            }
-            await workspaceClient.autoRedeemProjectInvites(supabaseClient);
+            await workspaceClient.runInviteBootstrap(supabaseClient);
           } catch (bootstrapErr) {
             console.warn('Account bootstrap (invites/provision):', bootstrapErr);
+          }
+
+          try {
+            const meta = state.user?.user_metadata || {};
+            if (meta.pending_organization_id) {
+              const { data: pendingResult, error: pendingErr } = await supabaseClient.functions.invoke(
+                'update-profile-organization',
+                {
+                  body: {
+                    userId: state.user.id,
+                    organizationId: meta.pending_organization_id,
+                    roleId: meta.pending_role_id ?? null,
+                    contactId: meta.pending_contact_id ?? null,
+                  },
+                },
+              );
+              if (!pendingErr && pendingResult?.success) {
+                if (meta.pending_invitation_id) {
+                  const { error: inviteAcceptError } = await supabaseClient
+                    .from('invitations')
+                    .update({
+                      status: 'accepted',
+                      accepted_at: new Date().toISOString(),
+                    })
+                    .eq('id', meta.pending_invitation_id);
+                  if (inviteAcceptError) {
+                    console.warn('Could not mark pending invitation accepted:', inviteAcceptError);
+                  }
+                }
+                const nextMeta = { ...meta };
+                delete nextMeta.pending_organization_id;
+                delete nextMeta.pending_role_id;
+                delete nextMeta.pending_contact_id;
+                delete nextMeta.pending_invitation_id;
+                await supabaseClient.auth.updateUser({ data: nextMeta });
+              }
+            }
+          } catch (pendingOrgErr) {
+            console.warn('Pending org invite completion:', pendingOrgErr);
           }
           
           // Load organization and user role
@@ -888,6 +924,24 @@ export const AppProvider = ({ children }) => {
           // Check if user must change password
           if (mustChangePassword) {
             dispatch({ type: 'SET_MUST_CHANGE_PASSWORD', payload: true });
+          }
+
+          // Legacy accounts: align profiles.organization_id with RLS before any writes
+          if (state.user?.id && (profileWithOrg?.account_intent || 'workspace_owner') === 'workspace_owner') {
+            try {
+              const { ensureOrganizationForWrites } = await import('../utils/organizationContext');
+              const repaired = await ensureOrganizationForWrites(supabaseClient, {
+                userId: state.user.id,
+                accountIntent: profileWithOrg?.account_intent || state.accountIntent,
+                currentOrganization: organization,
+                dispatch,
+              });
+              if (repaired.ok && repaired.organization) {
+                organization = repaired.organization;
+              }
+            } catch (repairErr) {
+              console.warn('ensureOrganizationForWrites on boot:', repairErr);
+            }
           }
 
           const orgIdForLazy = organization?.id ?? null;

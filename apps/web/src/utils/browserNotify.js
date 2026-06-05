@@ -14,7 +14,7 @@ export function maybeNotifyStreamUpdate({ title, body, projectId }) {
   const n = new Notification(title, {
     body,
     tag: `stream-${projectId}`,
-    icon: '/favicon.ico',
+    icon: '/logo.svg',
   });
   n.onclick = () => {
     window.focus();

@@ -46,3 +46,12 @@ export function extractProjectInviteTokenFromUrl(urlOrPath) {
   const match = str.match(/\/project-invite\/([^/?#]+)/i);
   return match ? decodeURIComponent(match[1]) : null;
 }
+
+/** Redeem pending invite tokens and auto-redeem email invites (call after sign-in). */
+export async function runInviteBootstrap(supabase) {
+  const pending = consumePendingProjectInviteToken();
+  if (pending) {
+    await redeemProjectInvite(supabase, { token: pending });
+  }
+  await autoRedeemProjectInvites(supabase);
+}

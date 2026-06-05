@@ -1,6 +1,10 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
-function ConfirmDialog({ isOpen, onClose, onConfirm, title, message, confirmText = 'Delete', cancelText = 'Cancel' }) {
+function ConfirmDialog({ isOpen, onClose, onConfirm, title, message, confirmText, cancelText }) {
+    const { t } = useTranslation();
+    const resolvedConfirmText = confirmText ?? t('common.delete');
+    const resolvedCancelText = cancelText ?? t('common.cancel');
     if (!isOpen) return null;
 
     return (
@@ -13,13 +17,13 @@ function ConfirmDialog({ isOpen, onClose, onConfirm, title, message, confirmText
                         onClick={onClose}
                         className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
                     >
-                        {cancelText}
+                        {resolvedCancelText}
                     </button>
                     <button type="button"
                         onClick={onConfirm}
                         className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                     >
-                        {confirmText}
+                        {resolvedConfirmText}
                     </button>
                 </div>
             </div>

@@ -24,7 +24,16 @@ function formatUsPhoneInput(value) {
     return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
 
-function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = false, allTasks = [] }) {
+function TaskModal({
+    project,
+    projectPhases = [],
+    defaultPhaseId = '',
+    onSetupPhases,
+    onClose,
+    onSave,
+    isLoading = false,
+    allTasks = [],
+}) {
     const { t } = useTranslation();
     const { state } = useAppContext();
     const [text, setText] = useState('');
@@ -32,7 +41,11 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
     const [dueDate, setDueDate] = useState('');
     const [priority, setPriority] = useState('Medium');
     const [percentComplete, setPercentComplete] = useState(0);
-    const [phaseId, setPhaseId] = useState('');
+    const [phaseId, setPhaseId] = useState(defaultPhaseId || '');
+
+    useEffect(() => {
+        setPhaseId(defaultPhaseId || '');
+    }, [defaultPhaseId]);
     const [assigneeId, setAssigneeId] = useState('');
     const [assigneeEmail, setAssigneeEmail] = useState('');
     const [assigneePhone, setAssigneePhone] = useState('');
@@ -332,9 +345,9 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                             </PermissionGuard>
 
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3">
-                                {projectPhases.length > 0 && (
-                                    <div className="min-w-0">
-                                        <label className={labelClass} htmlFor="task-modal-phase">{t('taskModal.phase')}</label>
+                                <div className="min-w-0">
+                                    <label className={labelClass} htmlFor="task-modal-phase">{t('taskModal.phase')}</label>
+                                    {projectPhases.length > 0 ? (
                                         <select
                                             id="task-modal-phase"
                                             value={phaseId}
@@ -348,9 +361,28 @@ function TaskModal({ project, projectPhases = [], onClose, onSave, isLoading = f
                                                 </option>
                                             ))}
                                         </select>
-                                    </div>
-                                )}
-                                <div className={`min-w-0 ${projectPhases.length === 0 ? 'sm:col-span-2' : ''}`}>
+                                    ) : (
+                                        <p className="text-sm text-gray-600">
+                                            {t('tasks.unassigned')}
+                                            {onSetupPhases && (
+                                                <>
+                                                    {' · '}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            onClose();
+                                                            onSetupPhases();
+                                                        }}
+                                                        className="text-blue-600 font-medium hover:underline"
+                                                    >
+                                                        {t('projectDetail.setup_phases_link')}
+                                                    </button>
+                                                </>
+                                            )}
+                                        </p>
+                                    )}
+                                </div>
+                                <div className="min-w-0">
                                     <label className={labelClass} htmlFor="task-modal-priority">{t('taskModal.priority')}</label>
                                     <select
                                         id="task-modal-priority"

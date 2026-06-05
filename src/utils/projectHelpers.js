@@ -2,7 +2,7 @@ import i18n from '../i18n/config';
 import {
     computeWeightedProjectProgressPercent,
     groupPhasesByProjectId,
-} from './projectProgressRollup.js';
+} from '@siteweave/core-logic';
 
 export const calculateProjectProgress = async (projectId, supabaseClient) => {
     try {

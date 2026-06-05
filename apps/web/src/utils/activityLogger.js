@@ -1,5 +1,18 @@
 import { supabaseClient } from '../context/AppContext';
 
+async function resolveUserAvatarForLog(user) {
+    if (!user?.id) return null;
+    const { data, error } = await supabaseClient
+        .from('profiles')
+        .select('contacts(avatar_url)')
+        .eq('id', user.id)
+        .maybeSingle();
+    if (!error && data?.contacts?.avatar_url) {
+        return data.contacts.avatar_url;
+    }
+    return user.user_metadata?.avatar_url || null;
+}
+
 /**
  * Log an activity to the activity_log table
  * @param {Object} params - Activity parameters
@@ -42,11 +55,13 @@ export async function logActivity({
             return;
         }
 
+        const userAvatar = await resolveUserAvatarForLog(user);
+
         const activityData = {
             user_id: user.id,
             organization_id: orgId,
             user_name: user.user_metadata?.full_name || user.email || 'Unknown User',
-            user_avatar: user.user_metadata?.avatar_url || null,
+            user_avatar: userAvatar,
             action,
             entity_type: entityType,
             entity_id: entityId,
@@ -86,7 +101,7 @@ export function logTaskCreated(task, user, projectId) {
     });
 }
 
-export function logTaskCompleted(task, user, projectId) {
+export function logTaskCompleted(task, user, projectId, details = null) {
     return logActivity({
         action: 'completed',
         entityType: 'task',
@@ -94,7 +109,8 @@ export function logTaskCompleted(task, user, projectId) {
         entityName: task.text,
         projectId: projectId,
         organizationId: task.organization_id,
-        user
+        user,
+        details
     });
 }
 
@@ -219,6 +235,49 @@ export function logContactUpdated(contact, user, changes) {
         user,
         details: changes && typeof changes === 'object' ? changes : {}
     });
+}
+
+/**
+ * Log phase progress change
+ * @param {Object} phase - Phase object with id, name, progress
+ * @param {Object} user - User object
+ * @param {string} projectId - Project ID
+ * @param {string} projectName - Project name
+ * @param {number} oldProgress - Previous progress value
+ * @param {number} newProgress - New progress value
+ * @param {string} organizationId - Organization ID
+ */
+export async function logPhaseProgressChange(phase, user, projectId, projectName, oldProgress, newProgress, organizationId) {
+    if (!user || !user.id) {
+        console.warn('Cannot log phase progress change: user not provided');
+        return;
+    }    try {
+        const userAvatar = await resolveUserAvatarForLog(user);
+        const activityData = {
+            user_id: user.id,
+            user_name: user.user_metadata?.full_name || user.email || 'Unknown User',
+            user_avatar: userAvatar,
+            action: 'updated',
+            entity_type: 'project_phase',
+            entity_id: phase.id,
+            entity_name: `${projectName} - ${phase.name}`,
+            project_id: projectId,
+            organization_id: organizationId,
+            details: {
+                phase_name: phase.name,
+                old_progress: oldProgress,
+                new_progress: newProgress
+            }
+        };        const { error } = await supabaseClient
+            .from('activity_log')
+            .insert(activityData);        if (error) {
+            console.error('Error logging phase progress change:', error);
+        } else {
+            console.log('Phase progress change logged:', phase.name, `${oldProgress}% → ${newProgress}%`);
+        }
+    } catch (error) {
+        console.error('Error in logPhaseProgressChange:', error);
+    }
 }
 
 /**

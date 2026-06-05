@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useToast } from '../context/ToastContext';
 import { getProjectInvitations, cancelInvitation, resendInvitation } from '../utils/invitationService';
 import Icon from './Icon';
 import LoadingSpinner from './LoadingSpinner';
 
 function InvitationManager({ projectId }) {
+    const { i18n } = useTranslation();
     const { addToast } = useToast();
     const [invitations, setInvitations] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -72,7 +74,7 @@ function InvitationManager({ projectId }) {
 
     const formatDate = (dateString) => {
         if (!dateString) return '';
-        return new Date(dateString).toLocaleDateString('en-US', { 
+        return new Date(dateString).toLocaleDateString(i18n.language, { 
             month: 'short', 
             day: 'numeric', 
             year: 'numeric' 

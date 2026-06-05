@@ -1,20 +1,13 @@
 import { test, expect } from '@playwright/test';
-
-const email = process.env.E2E_TEST_EMAIL;
-const password = process.env.E2E_TEST_PASSWORD;
+import { getE2ECredentials, loginAsTestUser } from './helpers/auth.js';
 
 test.describe('auth smoke', () => {
   test('email login reaches workspace shell', async ({ page }) => {
-    test.skip(!email || !password, 'Set E2E_TEST_EMAIL and E2E_TEST_PASSWORD to run login e2e');
+    const { configured } = getE2ECredentials();
+    test.skip(!configured, 'Set E2E_TEST_EMAIL and E2E_TEST_PASSWORD in apps/web/.env.local');
 
-    await page.goto('/login');
-    await expect(page.getByTestId('login-form')).toBeVisible();
-
-    await page.getByTestId('login-email').fill(email);
-    await page.getByTestId('login-password').fill(password);
-    await page.getByTestId('login-submit').click();
-
-    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 60_000 });
+    await loginAsTestUser(page);
+    await expect(page.getByTestId('app-shell')).toBeVisible();
   });
 
   test('shows error on invalid credentials', async ({ page }) => {

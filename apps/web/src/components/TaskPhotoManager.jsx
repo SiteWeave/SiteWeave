@@ -4,6 +4,7 @@ function TaskPhotoManager({
   photos = [],
   editable = true,
   isBusy = false,
+  /** `{ current, total }` while uploading multiple files (sequential uploads). */
   uploadProgress = null,
   onAddFiles,
   onUpdatePhoto,

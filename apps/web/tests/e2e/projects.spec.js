@@ -1,17 +1,11 @@
 import { test, expect } from '@playwright/test';
-
-const email = process.env.E2E_TEST_EMAIL;
-const password = process.env.E2E_TEST_PASSWORD;
+import { getE2ECredentials, loginAsTestUser } from './helpers/auth.js';
 
 test.describe('projects smoke', () => {
   test.beforeEach(async ({ page }) => {
-    test.skip(!email || !password, 'Set E2E_TEST_EMAIL and E2E_TEST_PASSWORD to run projects e2e');
-
-    await page.goto('/login');
-    await page.getByTestId('login-email').fill(email);
-    await page.getByTestId('login-password').fill(password);
-    await page.getByTestId('login-submit').click();
-    await expect(page.getByTestId('app-shell')).toBeVisible({ timeout: 60_000 });
+    const { configured } = getE2ECredentials();
+    test.skip(!configured, 'Set E2E_TEST_EMAIL and E2E_TEST_PASSWORD in apps/web/.env.local');
+    await loginAsTestUser(page);
   });
 
   test('navigates to projects list from sidebar', async ({ page }) => {

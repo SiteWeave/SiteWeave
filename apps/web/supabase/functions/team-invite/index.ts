@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+import { resolveMemberRoleId } from '../_shared/ensureDefaultRoles.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -88,6 +89,13 @@ serve(async (req) => {
       throw new Error('Not authorized - can_manage_team permission required. Please ensure your role has the can_manage_team permission enabled.')
     }
 
+    const resolvedRoleId = await resolveMemberRoleId(supabaseAdmin, organizationId, roleId)
+    if (!resolvedRoleId) {
+      throw new Error(
+        'No assignable role found for this organization. Ensure default roles exist or specify a valid role.',
+      )
+    }
+
     // Generate invitation token
     const invitationToken = crypto.randomUUID().replace(/-/g, '')
 
@@ -95,7 +103,7 @@ serve(async (req) => {
     const invitationData: any = {
       email: email.toLowerCase(),
       organization_id: organizationId,
-      role_id: roleId || null,
+      role_id: resolvedRoleId,
       invited_by_user_id: user.id,
       invitation_token: invitationToken,
       status: 'pending',
@@ -193,7 +201,7 @@ serve(async (req) => {
             border-bottom: 1px solid #e5e7eb;
         }
         .logo-img {
-            height: 40px;
+            height: 120px;
             width: auto;
             margin: 0 auto 32px auto;
             display: block;

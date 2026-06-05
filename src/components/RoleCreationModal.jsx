@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getRolePermissionsForDisplay } from '@siteweave/core-logic';
 import Modal from './Modal';
 import Icon from './Icon';
 
@@ -67,18 +68,26 @@ function RoleCreationModal({
   const [permissions, setPermissions] = useState(existingRole?.permissions || { ...DEFAULT_PERMISSIONS });
 
   const isOrgAdmin = existingRole?.name === 'Org Admin';
-  const isLocked = readOnly || isOrgAdmin || existingRole?.is_system_role;
+  const isMemberOrPm =
+    existingRole?.name === 'Member' || existingRole?.name === 'Project Manager';
+  const nameLocked = readOnly || isOrgAdmin || !!existingRole?.is_system_role;
+  const permissionsLocked = readOnly || isOrgAdmin || (!!existingRole?.is_system_role && !isMemberOrPm);
+  const isLocked = nameLocked && permissionsLocked;
 
   // Reset form when modal opens/closes or existingRole changes
   React.useEffect(() => {
     if (show) {
       setRoleName(existingRole?.name || '');
-      setPermissions(existingRole?.permissions || { ...DEFAULT_PERMISSIONS });
+      setPermissions(
+        existingRole
+          ? { ...DEFAULT_PERMISSIONS, ...getRolePermissionsForDisplay(existingRole) }
+          : { ...DEFAULT_PERMISSIONS },
+      );
     }
   }, [show, existingRole]);
 
   const handlePermissionToggle = (permissionKey) => {
-    if (isLocked) return;
+    if (permissionsLocked) return;
     
     setPermissions(prev => ({
       ...prev,
@@ -91,12 +100,12 @@ function RoleCreationModal({
     if (!roleName.trim()) {
       return;
     }
-    if (isLocked) {
+    if (permissionsLocked) {
       return;
     }
     onSave({
       name: roleName.trim(),
-      permissions
+      permissions,
     });
   };
 
@@ -130,10 +139,10 @@ function RoleCreationModal({
             className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
             required
             autoFocus
-            disabled={isLocked}
-            readOnly={readOnly}
+            disabled={nameLocked}
+            readOnly={readOnly || nameLocked}
           />
-          {readOnly && (
+          {readOnly && !isMemberOrPm && (
             <p className="mt-2 text-sm text-gray-500">
               Default roles are read-only on your plan. Upgrade to create or edit custom roles.
             </p>
@@ -143,8 +152,10 @@ function RoleCreationModal({
               Organization Admin role cannot be modified. This role has all permissions by default.
             </p>
           )}
-          {existingRole?.is_system_role && !readOnly && !isOrgAdmin && (
-            <p className="mt-2 text-sm text-gray-500">System role — permissions cannot be changed.</p>
+          {isMemberOrPm && !readOnly && (
+            <p className="mt-2 text-sm text-gray-500">
+              Role name is fixed. You can change which permissions Member and Project Manager have.
+            </p>
           )}
         </div>
 
@@ -161,7 +172,7 @@ function RoleCreationModal({
                   <label
                     key={perm.key}
                     className={`flex items-start space-x-3 p-3 rounded-lg transition-colors ${
-                      isLocked
+                      permissionsLocked
                         ? 'cursor-default'
                         : 'hover:bg-white cursor-pointer'
                     }`}
@@ -170,7 +181,7 @@ function RoleCreationModal({
                       type="checkbox"
                       checked={permissions[perm.key] || false}
                       onChange={() => handlePermissionToggle(perm.key)}
-                      disabled={isLocked}
+                      disabled={permissionsLocked}
                       readOnly={readOnly}
                       className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
@@ -199,7 +210,7 @@ function RoleCreationModal({
             <button
               type="submit"
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
-              disabled={isLoading || !roleName.trim() || isOrgAdmin}
+              disabled={isLoading || !roleName.trim() || permissionsLocked}
             >
               {isLoading ? 'Saving...' : existingRole ? 'Update Role' : 'Create Role'}
             </button>

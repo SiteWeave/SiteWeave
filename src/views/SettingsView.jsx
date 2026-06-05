@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from '../components/LoadingSpinner';
-import Avatar from '../components/Avatar';
+import EditableProfileAvatar from '../components/EditableProfileAvatar';
 import PermissionGuard from '../components/PermissionGuard';
 import DirectoryManagementModal from '../components/DirectoryManagementModal';
 import RoleManagement from '../components/RoleManagement';
@@ -21,12 +21,8 @@ import {
   SettingsSecondaryButton,
   SettingsDangerButton,
 } from '../components/settings/SettingsSection';
-import {
-  prepareWebAvatarFile,
-  uploadProfilePhoto,
-  removeProfilePhoto,
-  validateProfilePhotoFile,
-} from '@siteweave/core-logic';
+import { deleteAccount } from '../utils/deleteAccountService';
+import { FieldError, fieldInputClassName } from '../components/FormAlert';
 
 function SettingsView() {
   const { t, i18n } = useTranslation();
@@ -42,19 +38,18 @@ function SettingsView() {
   const [googleCalendarSynced, setGoogleCalendarSynced] = useState(false);
   const [outlookCalendarSynced, setOutlookCalendarSynced] = useState(false);
   const [isSavingOrgAssignmentEmail, setIsSavingOrgAssignmentEmail] = useState(false);
-  const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState(null);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [profileError, setProfileError] = useState(null);
+  const [passwordError, setPasswordError] = useState(null);
+  const [deleteAccountError, setDeleteAccountError] = useState(null);
+  const [orgSettingError, setOrgSettingError] = useState(null);
+  const [signOutError, setSignOutError] = useState(null);
 
   // Form states
   const [fullName, setFullName] = useState(state.user?.user_metadata?.full_name || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-
-  useEffect(() => {
-    const contactAvatar = state.contacts?.find((contact) => contact.id === state.userContactId)?.avatar_url || null;
-    setAvatarUrl(contactAvatar || state.user?.user_metadata?.avatar_url || null);
-  }, [state.contacts, state.userContactId, state.user?.user_metadata?.avatar_url]);
 
   // Get app version dynamically
   useEffect(() => {
@@ -95,6 +90,7 @@ function SettingsView() {
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
+    setProfileError(null);
     setIsUpdating(true);
 
     try {
@@ -105,7 +101,7 @@ function SettingsView() {
       });
 
       if (error) {
-        addToast(t('toast.error_updating_profile', { message: error.message }), 'error');
+        setProfileError(t('toast.error_updating_profile', { message: error.message }));
       } else {
         addToast(t('toast.profile_updated_successfully'), 'success');
         // Update the user in context
@@ -121,7 +117,7 @@ function SettingsView() {
         });
       }
     } catch (error) {
-      addToast(t('toast.error_updating_profile', { message: error.message }), 'error');
+      setProfileError(t('toast.error_updating_profile', { message: error.message }));
     } finally {
       setIsUpdating(false);
     }
@@ -129,14 +125,15 @@ function SettingsView() {
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
-    
+    setPasswordError(null);
+
     if (newPassword !== confirmPassword) {
-      addToast(t('toast.new_passwords_do_not_match'), 'error');
+      setPasswordError(t('toast.new_passwords_do_not_match'));
       return;
     }
 
     if (newPassword.length < 6) {
-      addToast(t('toast.password_min_length'), 'error');
+      setPasswordError(t('toast.password_min_length'));
       return;
     }
 
@@ -148,7 +145,7 @@ function SettingsView() {
       });
 
       if (error) {
-        addToast(t('toast.error_changing_password', { message: error.message }), 'error');
+        setPasswordError(t('toast.error_changing_password', { message: error.message }));
       } else {
         addToast(t('toast.password_changed_successfully'), 'success');
         setCurrentPassword('');
@@ -156,104 +153,37 @@ function SettingsView() {
         setConfirmPassword('');
       }
     } catch (error) {
-      addToast(t('toast.error_changing_password', { message: error.message }), 'error');
+      setPasswordError(t('toast.error_changing_password', { message: error.message }));
     } finally {
       setIsChangingPassword(false);
     }
   };
 
   const handleSignOut = async () => {
+    setSignOutError(null);
     const { error } = await supabaseClient.auth.signOut();
     if (error) {
-      addToast(t('toast.error_signing_out', { message: error.message }), 'error');
+      setSignOutError(t('toast.error_signing_out', { message: error.message }));
     } else {
+      dispatch({ type: 'SET_USER', payload: null });
       addToast(t('toast.signed_out_successfully'), 'success');
     }
   };
 
-  const refreshAvatarInState = async () => {
-    if (!state.user?.id) return;
-
-    let contactId = state.userContactId;
-    let avatar_url = null;
-
-    if (contactId) {
-      const { data: contact } = await supabaseClient
-        .from('contacts')
-        .select('id, avatar_url')
-        .eq('id', contactId)
-        .maybeSingle();
-      if (contact?.id) {
-        contactId = contact.id;
-        avatar_url = contact.avatar_url;
-      }
-    } else {
-      const { data: profile } = await supabaseClient
-        .from('profiles')
-        .select('contact_id, contacts(avatar_url)')
-        .eq('id', state.user.id)
-        .maybeSingle();
-      contactId = profile?.contact_id || null;
-      avatar_url = profile?.contacts?.avatar_url || null;
-      if (contactId && !state.userContactId) {
-        dispatch({ type: 'SET_USER_CONTACT_ID', payload: contactId });
-      }
+  const handleDeleteAccount = async () => {
+    if (!window.confirm(t('settings.delete_account_confirm'))) {
+      return;
     }
-
-    if (contactId) {
-      dispatch({
-        type: 'UPDATE_CONTACT',
-        payload: {
-          ...(state.contacts?.find((entry) => entry.id === contactId) || {}),
-          id: contactId,
-          avatar_url,
-        },
-      });
-    }
-
-    setAvatarUrl(avatar_url || state.user?.user_metadata?.avatar_url || null);
-  };
-
-  const handleAvatarFileSelected = async (event) => {
-    const rawFile = event?.target?.files?.[0];
-    event.target.value = '';
-    if (!rawFile || !state.user?.id) return;
-
+    setDeleteAccountError(null);
+    setIsDeletingAccount(true);
     try {
-      setIsUpdatingAvatar(true);
-      validateProfilePhotoFile(rawFile);
-      const prepared = await prepareWebAvatarFile(rawFile);
-      validateProfilePhotoFile(prepared);
-      const publicUrl = await uploadProfilePhoto(supabaseClient, {
-        userId: state.user.id,
-        file: prepared,
-      });
-      setAvatarUrl(publicUrl);
-      await refreshAvatarInState();
-      const { data: { user } } = await supabaseClient.auth.getUser();
-      dispatch({ type: 'SET_USER', payload: user });
-      addToast(t('toast.profile_updated_successfully'), 'success');
-    } catch (error) {
-      addToast(error?.message || t('toast.error_updating_profile', { message: 'Failed to update avatar' }), 'error');
+      await deleteAccount(supabaseClient);
+      dispatch({ type: 'SET_USER', payload: null });
+      addToast(t('settings.account_deleted'), 'success');
+    } catch (err) {
+      setDeleteAccountError(err?.message || t('settings.delete_account_failed'));
     } finally {
-      setIsUpdatingAvatar(false);
-    }
-  };
-
-  const handleRemoveAvatar = async () => {
-    if (!state.user?.id) return;
-    try {
-      setIsUpdatingAvatar(true);
-      await removeProfilePhoto(supabaseClient, { userId: state.user.id });
-      setAvatarUrl(null);
-      await refreshAvatarInState();
-      const { data: { user } } = await supabaseClient.auth.getUser();
-      dispatch({ type: 'SET_USER', payload: user });
-      addToast(t('toast.profile_updated_successfully'), 'success');
-    } catch (error) {
-      addToast(error?.message || t('toast.error_updating_profile', { message: 'Failed to remove avatar' }), 'error');
-    } finally {
-      setIsUpdatingAvatar(false);
+      setIsDeletingAccount(false);
     }
   };
 
@@ -261,6 +191,7 @@ function SettingsView() {
     const checked = e.target.checked;
     const orgId = state.currentOrganization?.id;
     if (!orgId) return;
+    setOrgSettingError(null);
     setIsSavingOrgAssignmentEmail(true);
     try {
       const { error } = await supabaseClient
@@ -268,7 +199,7 @@ function SettingsView() {
         .update({ default_send_assignment_email: checked })
         .eq('id', orgId);
       if (error) {
-        addToast(t('toast.error_updating_profile', { message: error.message }) || error.message, 'error');
+        setOrgSettingError(t('toast.error_updating_profile', { message: error.message }) || error.message);
         return;
       }
       dispatch({
@@ -277,7 +208,7 @@ function SettingsView() {
       });
       addToast(t('settings.org_notification_saved'), 'success');
     } catch (err) {
-      addToast(err?.message || t('settings.could_not_update_setting'), 'error');
+      setOrgSettingError(err?.message || t('settings.could_not_update_setting'));
     } finally {
       setIsSavingOrgAssignmentEmail(false);
     }
@@ -307,42 +238,20 @@ function SettingsView() {
           description={t('settings.profile_section_desc')}
         >
           <div data-onboarding="profile-section" className="space-y-6 max-w-xl">
-            <SettingsField label="Avatar">
-              <div className="flex items-center gap-4">
-                <Avatar
+            <SettingsField label={t('settings.profile_photo')}>
+              <div className="flex items-start gap-4">
+                <EditableProfileAvatar
                   name={state.user?.user_metadata?.full_name || state.user?.email}
-                  avatarUrl={avatarUrl}
                   size="xl"
+                  hintClassName="sr-only"
                 />
-                <div>
+                <div className="pt-1">
                   <p className="text-sm font-medium text-gray-900">
                     {state.user?.user_metadata?.full_name?.trim() || state.user?.email}
                   </p>
                   {state.user?.user_metadata?.full_name?.trim() && state.user?.email ? (
                     <p className="text-sm text-gray-500">{state.user.email}</p>
                   ) : null}
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <label className="inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        className="hidden"
-                        onChange={handleAvatarFileSelected}
-                        disabled={isUpdatingAvatar}
-                      />
-                      {isUpdatingAvatar ? t('settings.updating') : avatarUrl ? 'Change photo' : 'Upload photo'}
-                    </label>
-                    {avatarUrl ? (
-                      <button
-                        type="button"
-                        onClick={handleRemoveAvatar}
-                        disabled={isUpdatingAvatar}
-                        className="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-60"
-                      >
-                        Remove photo
-                      </button>
-                    ) : null}
-                  </div>
                 </div>
               </div>
             </SettingsField>
@@ -352,11 +261,19 @@ function SettingsView() {
                 <input
                   type="text"
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className={settingsInputClassName()}
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    setProfileError(null);
+                  }}
+                  className={fieldInputClassName(
+                    !!profileError,
+                    settingsInputClassName(),
+                  )}
                   placeholder={t('settings.enter_full_name')}
+                  aria-invalid={!!profileError}
                 />
               </SettingsField>
+              <FieldError message={profileError} />
               <div className="pt-1">
                 <SettingsPrimaryButton type="submit" disabled={isUpdating} className="gap-2">
                   {isUpdating ? (
@@ -382,24 +299,33 @@ function SettingsView() {
               <input
                 type="password"
                 value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className={settingsInputClassName()}
+                onChange={(e) => {
+                  setNewPassword(e.target.value);
+                  setPasswordError(null);
+                }}
+                className={fieldInputClassName(!!passwordError, settingsInputClassName())}
                 placeholder={t('settings.enter_new_password')}
                 minLength={6}
                 autoComplete="new-password"
+                aria-invalid={!!passwordError}
               />
             </SettingsField>
             <SettingsField label={t('settings.confirm_new_password')}>
               <input
                 type="password"
                 value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className={settingsInputClassName()}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  setPasswordError(null);
+                }}
+                className={fieldInputClassName(!!passwordError, settingsInputClassName())}
                 placeholder={t('settings.confirm_new_password_placeholder')}
                 minLength={6}
                 autoComplete="new-password"
+                aria-invalid={!!passwordError}
               />
             </SettingsField>
+            <FieldError message={passwordError} />
             <div className="pt-1">
               <SettingsPrimaryButton
                 type="submit"
@@ -467,6 +393,7 @@ function SettingsView() {
                       </span>
                     </span>
                   </label>
+                  <FieldError message={orgSettingError} className="mt-2" />
                 </PermissionGuard>
                 <div className="flex flex-wrap gap-2">
                   <PermissionGuard permission="can_manage_roles">
@@ -558,12 +485,27 @@ function SettingsView() {
           description={t('settings.session_section_desc')}
           className="last:border-b-0"
         >
-          <SettingsDangerButton type="button" onClick={handleSignOut} className="gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            {t('settings.sign_out')}
-          </SettingsDangerButton>
+          <div className="flex flex-col gap-4 max-w-xl">
+            <FieldError message={signOutError} />
+            <SettingsDangerButton type="button" onClick={handleSignOut} className="gap-2 w-fit">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              {t('settings.sign_out')}
+            </SettingsDangerButton>
+            <div className="pt-4 border-t border-red-100">
+              <p className="text-sm text-gray-600 mb-3">{t('settings.delete_account_desc')}</p>
+              <FieldError message={deleteAccountError} className="mb-3" />
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={isDeletingAccount}
+                className="inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed gap-2"
+              >
+                {isDeletingAccount ? t('settings.delete_account_deleting') : t('settings.delete_account')}
+              </button>
+            </div>
+          </div>
         </SettingsSection>
       </div>
 

@@ -4,6 +4,10 @@ function makeLocalId() {
   return globalThis.crypto?.randomUUID?.() || `task-photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+/**
+ * Best-effort capture time from EXIF (DateTimeOriginal / CreateDate / ModifyDate).
+ * GPS is not read; uploaded files are re-encoded client-side so location EXIF is not stored in the bucket.
+ */
 export async function extractExifCapturedAt(file) {
   if (!(file instanceof Blob)) return null;
   try {
@@ -67,6 +71,10 @@ export function buildTaskCompletionPhotoDetails(task) {
   };
 }
 
+/**
+ * Mirrors `public.can_manage_task` / task RLS: assignee, project PM, or org role name `Admin`.
+ * For new tasks before insert, pass `assigneeContactId` (selected assignee) instead of `task`.
+ */
 export function canManageTaskPhotos({
   project,
   userId,
@@ -163,7 +171,11 @@ export async function buildTaskPhotoDraft(file, index = 0) {
 
 export function revokeTaskPhotoDraftUrls(photos = []) {
   photos.forEach((photo) => {
-    if (photo?.preview_url?.startsWith?.('blob:')) URL.revokeObjectURL(photo.preview_url);
-    if (photo?.full_url?.startsWith?.('blob:')) URL.revokeObjectURL(photo.full_url);
+    if (photo?.preview_url?.startsWith?.('blob:')) {
+      URL.revokeObjectURL(photo.preview_url);
+    }
+    if (photo?.full_url?.startsWith?.('blob:')) {
+      URL.revokeObjectURL(photo.full_url);
+    }
   });
 }

@@ -8,6 +8,7 @@ import {
 } from '../utils/projectHelpers';
 import { supabaseClient } from '../context/AppContext';
 import PermissionGuard from './PermissionGuard';
+import { Skeleton } from './ui/Skeleton';
 
 function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
     const { t } = useTranslation();
@@ -105,7 +106,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
 
     if (projects.length === 0) {
         return (
-            <div className="app-card p-12 text-center" data-testid="projects-list-empty">
+            <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-12 text-center" data-testid="projects-list-empty">
                 <p className="text-slate-600 font-medium mb-1">{t('dashboard.no_projects_yet')}</p>
                 <p className="text-slate-500 text-sm max-w-md mx-auto">{t('dashboard.no_projects_description')}</p>
             </div>
@@ -113,13 +114,13 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
     }
 
     return (
-        <div className="app-card overflow-hidden" data-testid="projects-list-view">
+        <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden" data-testid="projects-list-view">
             <div className="w-full">
-                <table className="w-full table-auto">
+                <table className="w-full table-fixed">
                     <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
                             <th
-                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 min-w-[150px]"
+                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 w-[30%]"
                                 onClick={() => handleSort('name')}
                             >
                                 <div className="flex items-center gap-2">
@@ -137,7 +138,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                 </div>
                             </th>
                             <th
-                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 min-w-[140px]"
+                                className="px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100 w-[22%]"
                                 onClick={() => handleSort('progress')}
                                 title="Overall % from phase lengths and each phase’s progress (tasks and schedule)."
                             >
@@ -160,7 +161,7 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                             </th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="bg-white divide-y divide-gray-200">
                         {sortedProjects.map((project) => {
                             const data = projectData[project.id] || { progress: 0 };
                             const progress = Math.max(0, Math.min(100, data.progress || 0));
@@ -172,19 +173,21 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                                     onClick={() => onProjectClick && onProjectClick(project)}
                                 >
                                     <td className="px-4 sm:px-6 py-4">
-                                        <div className="text-sm font-semibold text-gray-900">{project.name}</div>
-                                        <div className="text-xs text-gray-500">{project.project_type}</div>
+                                        <div className="text-sm font-semibold text-gray-900 ui-ellipsis-1" title={project.name}>{project.name}</div>
+                                        <div className="text-xs text-gray-500 ui-ellipsis-1" title={project.project_type}>{project.project_type}</div>
                                     </td>
                                     <td className="px-4 sm:px-6 py-4">
-                                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(project.status)}`}>
+                                        <span
+                                            className={`inline-flex items-center whitespace-nowrap px-2.5 py-1 text-xs font-semibold leading-none rounded-full ${getStatusColor(project.status)}`}
+                                        >
                                             {normalizeStatusDisplay(project.status) || 'N/A'}
                                         </span>
                                     </td>
                                     <td className="px-4 sm:px-6 py-4">
                                         {data.loading ? (
                                             <div className="flex items-center gap-2 flex-wrap">
-                                                <div className="flex-1 min-w-[80px] max-w-[120px] h-2.5 bg-gray-200 rounded-full animate-pulse"></div>
-                                                <div className="w-12 h-4 bg-gray-200 rounded animate-pulse"></div>
+                                                <Skeleton className="flex-1 min-w-[80px] max-w-[120px] h-2.5 rounded-full" />
+                                                <Skeleton className="w-12 h-4 rounded" />
                                             </div>
                                         ) : (
                                             <div className="flex items-center gap-2 flex-wrap">

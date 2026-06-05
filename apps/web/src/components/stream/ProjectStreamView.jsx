@@ -13,31 +13,45 @@ import { maybeNotifyStreamUpdate } from '../../utils/browserNotify';
 import StreamComposer from './StreamComposer';
 import StreamPostCard from './StreamPostCard';
 import ReportContentModal from '../moderation/ReportContentModal';
+import { SkeletonCard } from '../ui/Skeleton';
 
 export default function ProjectStreamView({ project, supabaseClient, currentUserId, embedded = false }) {
   const { t } = useTranslation();
   const { addToast } = useToast();
   const [posts, setPosts] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
+  const [loadingOlder, setLoadingOlder] = React.useState(false);
+  const [hasMore, setHasMore] = React.useState(false);
   const [reportTarget, setReportTarget] = React.useState(null);
   const loadingRef = React.useRef(false);
   const postsRef = React.useRef(posts);
   postsRef.current = posts;
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async ({ append = false, beforeCreatedAt = null } = {}) => {
     if (!project?.id || loadingRef.current) return;
     loadingRef.current = true;
+    if (append) setLoadingOlder(true);
     try {
-      const rows = await fetchStreamPosts(supabaseClient, project.id);
-      setPosts(rows);
+      const { posts: rows, hasMore: more } = await fetchStreamPosts(supabaseClient, project.id, {
+        beforeCreatedAt,
+      });
+      setPosts((prev) => (append ? [...prev, ...rows] : rows));
+      setHasMore(more);
     } catch (e) {
       console.error(e);
       addToast(t('stream.load_error'), 'error');
     } finally {
       setLoading(false);
+      setLoadingOlder(false);
       loadingRef.current = false;
     }
-  }, [project?.id, supabaseClient, addToast]);
+  }, [project?.id, supabaseClient, addToast, t]);
+
+  const loadOlder = React.useCallback(() => {
+    const oldest = postsRef.current[postsRef.current.length - 1];
+    if (!oldest?.created_at || loadingOlder) return;
+    load({ append: true, beforeCreatedAt: oldest.created_at });
+  }, [load, loadingOlder]);
 
   React.useEffect(() => {
     setLoading(true);
@@ -201,7 +215,7 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
       {loading ? (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-28 animate-pulse rounded-2xl bg-slate-100" />
+            <SkeletonCard key={i} />
           ))}
         </div>
       ) : posts.length === 0 ? (
@@ -230,6 +244,18 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
               }
             />
           ))}
+          {hasMore ? (
+            <div className="flex justify-center pt-2">
+              <button
+                type="button"
+                onClick={loadOlder}
+                disabled={loadingOlder}
+                className="text-sm font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50"
+              >
+                {loadingOlder ? t('common.loading') : t('stream.load_older')}
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
 

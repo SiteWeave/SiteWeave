@@ -5,7 +5,7 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
 import Icon from './Icon';
-import packageJson from '../../package.json';
+import packageJson from '../config/version.js';
 
 async function resolveAppVersion() {
     if (window.electronAPI?.getAppVersion) {

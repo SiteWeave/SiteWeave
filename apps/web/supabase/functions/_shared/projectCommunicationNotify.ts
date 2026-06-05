@@ -8,9 +8,58 @@ export type ProjectRecipient = {
   email: string
 }
 
-export function buildAppProjectUrl(projectId: string, tab?: 'stream' | 'tasks') {
+type ProfileEmailRow = {
+  id: string
+  contact_id: string | null
+  contacts: { email: string | null } | { email: string | null }[] | null
+}
+
+async function resolveRecipientEmails(
+  supabase: SupabaseClient,
+  userIds: string[],
+): Promise<Map<string, string>> {
+  const emailByUserId = new Map<string, string>()
+  if (!userIds.length) return emailByUserId
+
+  const { data: profileRows } = await supabase
+    .from('profiles')
+    .select('id, contact_id, contacts:contact_id(email)')
+    .in('id', userIds)
+
+  const needAuth: string[] = []
+  const seen = new Set<string>()
+
+  for (const row of (profileRows || []) as ProfileEmailRow[]) {
+    seen.add(row.id)
+    const contact = Array.isArray(row.contacts) ? row.contacts[0] : row.contacts
+    const email = contact?.email
+    if (email) {
+      emailByUserId.set(row.id, email.toLowerCase())
+    } else {
+      needAuth.push(row.id)
+    }
+  }
+
+  for (const userId of userIds) {
+    if (!seen.has(userId)) needAuth.push(userId)
+  }
+
+  await Promise.all(needAuth.map(async (userId) => {
+    const { data: { user: authUser }, error } = await supabase.auth.admin.getUserById(userId)
+    if (!error && authUser?.email) {
+      emailByUserId.set(userId, authUser.email.toLowerCase())
+    }
+  }))
+
+  return emailByUserId
+}
+
+export function buildAppProjectUrl(projectId: string, tab?: 'stream' | 'tasks' | 'updates') {
   const base = Deno.env.get('PUBLIC_APP_URL') || Deno.env.get('DESKTOP_APP_URL') || 'https://app.siteweave.org'
-  const path = tab === 'stream' ? `/projects/${projectId}/stream` : `/projects/${projectId}/tasks`
+  let path = `/projects/${projectId}/tasks`
+  if (tab === 'stream' || tab === 'updates') {
+    path = `/projects/${projectId}/updates`
+  }
   return `${base.replace(/\/$/, '')}${path}`
 }
 
@@ -98,14 +147,13 @@ export async function getProjectRecipients(
 
   if (userIdSet.size === 0) return []
 
-  const recipients: ProjectRecipient[] = []
-  for (const userId of userIdSet) {
-    const { data: { user: authUser }, error } = await supabase.auth.admin.getUserById(userId)
-    if (!error && authUser?.email) {
-      recipients.push({ userId, email: authUser.email.toLowerCase() })
-    }
-  }
-  return recipients
+  const emailByUserId = await resolveRecipientEmails(supabase, [...userIdSet])
+  return [...userIdSet]
+    .map((userId) => {
+      const email = emailByUserId.get(userId)
+      return email ? { userId, email } : null
+    })
+    .filter((r): r is ProjectRecipient => Boolean(r))
 }
 
 export async function resolveMentionedRecipients(
@@ -153,11 +201,12 @@ export async function resolveMentionedRecipients(
 
   if (!profiles?.length) return []
 
+  const contactById = new Map(contacts.map((c) => [c.id, c]))
   const recipients: ProjectRecipient[] = []
   for (const p of profiles) {
-    const { data: { user: authUser }, error } = await supabase.auth.admin.getUserById(p.id)
-    if (!error && authUser?.email) {
-      recipients.push({ userId: p.id, email: authUser.email.toLowerCase() })
+    const email = contactById.get(p.contact_id)?.email
+    if (email) {
+      recipients.push({ userId: p.id, email: email.toLowerCase() })
     }
   }
   return recipients

@@ -26,6 +26,7 @@ export async function sendTwilioSms({ to, body }: SendSmsParams): Promise<SendSm
   if (!accountSid || !apiKey || !apiSecret) {
     return { success: false, error: 'twilio_not_configured' }
   }
+
   if (!messagingServiceSid && !fromNumber) {
     return { success: false, error: 'twilio_sender_not_configured' }
   }
@@ -33,8 +34,11 @@ export async function sendTwilioSms({ to, body }: SendSmsParams): Promise<SendSm
   const params = new URLSearchParams()
   params.set('To', to)
   params.set('Body', body)
-  if (messagingServiceSid) params.set('MessagingServiceSid', messagingServiceSid)
-  else if (fromNumber) params.set('From', fromNumber)
+  if (messagingServiceSid) {
+    params.set('MessagingServiceSid', messagingServiceSid)
+  } else if (fromNumber) {
+    params.set('From', fromNumber)
+  }
 
   const token = btoa(`${apiKey}:${apiSecret}`)
   const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`
@@ -55,8 +59,15 @@ export async function sendTwilioSms({ to, body }: SendSmsParams): Promise<SendSm
       return { success: false, error: message }
     }
 
-    return { success: true, sid: payload?.sid, status: payload?.status }
+    return {
+      success: true,
+      sid: payload?.sid,
+      status: payload?.status,
+    }
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'twilio_request_failed' }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'twilio_request_failed',
+    }
   }
 }

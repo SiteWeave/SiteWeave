@@ -1,6 +1,11 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
+import {
+  buildHelpSmsBody,
+  buildOptInConfirmedSmsBody,
+  buildOptOutConfirmedSmsBody,
+} from '../_shared/smsCompliance.ts'
 import { validateTwilioRequestSignature, resolveTwilioWebhookFullUrl } from '../_shared/twilioSignature.ts'
 
 const corsHeaders = {
@@ -89,13 +94,11 @@ serve(async (req) => {
       },
       { onConflict: 'phone_e164' },
     )
-    return new Response('', { status: 200, headers: { 'Content-Type': 'text/xml' } })
+    return twimlMessage(buildOptOutConfirmedSmsBody())
   }
 
   if (trimmedUpper.startsWith('HELP')) {
-    return twimlMessage(
-      'SiteWeave: Reply YES with the code we sent to confirm SMS. Reply STOP to opt out. Msg/data rates may apply.',
-    )
+    return twimlMessage(buildHelpSmsBody())
   }
 
   const { yes, token } = parseYesToken(body)
@@ -149,5 +152,5 @@ serve(async (req) => {
     return new Response('Error', { status: 500 })
   }
 
-  return twimlMessage("You're confirmed for SiteWeave project SMS. You'll get task and project messages at this number. Reply STOP anytime to opt out.")
+  return twimlMessage(buildOptInConfirmedSmsBody())
 })

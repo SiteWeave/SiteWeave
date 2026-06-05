@@ -82,7 +82,7 @@ supabase secrets set TWILIO_WEBHOOK_PUBLIC_URL=https://<project-ref>.supabase.co
 Outbound SMS continues to use `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY`, `TWILIO_API_SECRET`, and `TWILIO_MESSAGING_SERVICE_SID` (or `TWILIO_FROM_NUMBER`) as above.
 
 3. **Twilio / carrier compliance**  
-   For verification forms, document: opt-in type **Text**; proof can include a screenshot of the opt-in SMS copy plus this inbound handler (YES/STOP/HELP) and the `sms_phone_consent` row updated on confirm.
+   Opt-in SMS includes welcome text, as-needed frequency, Msg&data rates, HELP/STOP, and Terms/Privacy links. Substantive SMS is gated on `sms_phone_consent.status = confirmed` after inbound **YES**. See **[sms-twilio-campaign-registration.md](../../docs/sms-twilio-campaign-registration.md)** for copy-paste registration text and screenshot proof checklist.
 
 ## Step 2: Deploy Edge Functions
 

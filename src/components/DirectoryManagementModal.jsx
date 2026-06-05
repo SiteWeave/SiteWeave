@@ -4,13 +4,14 @@ import { useAppContext } from '../context/AppContext';
 import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { getOrganizationUsers, inviteUser, createUser, removeUserFromOrganization } from '../utils/userManagementService';
-import { getRoles } from '../utils/roleManagementService';
+import { getAssignableOrgRoles } from '../utils/roleManagementService';
 import PermissionGuard from './PermissionGuard';
 import Modal from './Modal';
 import LoadingSpinner from './LoadingSpinner';
 import CredentialCard from './CredentialCard';
 import Icon from './Icon';
 import Avatar from './Avatar';
+import { FieldError } from './FormAlert';
 
 /**
  * Directory Management Modal
@@ -26,7 +27,11 @@ function DirectoryManagementModal({ show, onClose }) {
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+  const [listError, setListError] = useState(null);
+  const [inviteError, setInviteError] = useState(null);
+  const [createUserError, setCreateUserError] = useState(null);
+  const [actionError, setActionError] = useState(null);
+
   // Tab state
   const [activeTab, setActiveTab] = useState('invite'); // 'invite' or 'create'
   
@@ -76,16 +81,17 @@ function DirectoryManagementModal({ show, onClose }) {
     if (!currentOrganization?.id) return;
 
     setLoading(true);
+    setListError(null);
     try {
       const [usersData, rolesData] = await Promise.all([
         getOrganizationUsers(supabaseClient, currentOrganization.id),
-        getRoles(supabaseClient, currentOrganization.id)
+        getAssignableOrgRoles(supabaseClient, currentOrganization.id)
       ]);
       setUsers(usersData);
       setRoles(rolesData);
     } catch (error) {
       console.error('Error loading directory data:', error);
-      addToast(t('team.failed_load_members'), 'error');
+      setListError(t('team.failed_load_members'));
     } finally {
       setLoading(false);
     }
@@ -156,16 +162,18 @@ function DirectoryManagementModal({ show, onClose }) {
 
   const handleInvite = async (e) => {
     e.preventDefault();
+    setInviteError(null);
+    setActionError(null);
     if (!inviteData.email || !currentOrganization?.id) {
-      addToast(t('team.email_required'), 'error');
+      setInviteError(t('team.email_required'));
       return;
     }
     if (!inviteData.firstName) {
-      addToast(t('team.first_name_required'), 'error');
+      setInviteError(t('team.first_name_required'));
       return;
     }
     if (!inviteData.roleId) {
-      addToast(t('team.role_required'), 'error');
+      setInviteError(t('team.role_required'));
       return;
     }
 
@@ -173,7 +181,7 @@ function DirectoryManagementModal({ show, onClose }) {
     try {
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (!session) {
-        addToast(t('team.not_authenticated'), 'error');
+        setInviteError(t('team.not_authenticated'));
         return;
       }
 
@@ -211,7 +219,7 @@ function DirectoryManagementModal({ show, onClose }) {
         } catch (e) {
           errorMessage = errorText || `Server error: ${response.status}`;
         }
-        addToast(errorMessage, 'error');
+        setInviteError(errorMessage);
         setIsInviting(false);
         return;
       }
@@ -237,11 +245,11 @@ function DirectoryManagementModal({ show, onClose }) {
         });
         loadData();
       } else {
-        addToast(result.error || t('team.failed_send_invite'), 'error');
+        setInviteError(result.error || t('team.failed_send_invite'));
       }
     } catch (error) {
       console.error('Error inviting user:', error);
-      addToast(t('team.failed_send_invite_detail', { message: error.message || 'Network error' }), 'error');
+      setInviteError(t('team.failed_send_invite_detail', { message: error.message || 'Network error' }));
     } finally {
       setIsInviting(false);
     }
@@ -249,18 +257,20 @@ function DirectoryManagementModal({ show, onClose }) {
 
   const handleCreateUser = async (e) => {
     e.preventDefault();
+    setCreateUserError(null);
+    setActionError(null);
     if (!createUserData.fullName || !createUserData.username || !createUserData.password || !currentOrganization?.id) {
-      addToast(t('team.fill_required'), 'error');
+      setCreateUserError(t('team.fill_required'));
       return;
     }
     if (!createUserData.roleId) {
-      addToast(t('team.role_required'), 'error');
+      setCreateUserError(t('team.role_required'));
       return;
     }
 
     // Validate PIN is 6 digits
     if (!/^\d{6}$/.test(createUserData.password)) {
-      addToast(t('team.pin_must_6_digits'), 'error');
+      setCreateUserError(t('team.pin_must_6_digits'));
       return;
     }
 
@@ -268,7 +278,7 @@ function DirectoryManagementModal({ show, onClose }) {
     try {
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (!session) {
-        addToast(t('team.not_authenticated'), 'error');
+        setCreateUserError(t('team.not_authenticated'));
         return;
       }
 
@@ -314,26 +324,27 @@ function DirectoryManagementModal({ show, onClose }) {
         });
         loadData();
       } else {
-        addToast(result.error || t('team.failed_create_user'), 'error');
+        setCreateUserError(result.error || t('team.failed_create_user'));
       }
     } catch (error) {
       console.error('Error creating user:', error);
-      addToast(t('team.failed_create_user'), 'error');
+      setCreateUserError(t('team.failed_create_user'));
     } finally {
       setIsCreating(false);
     }
   };
 
   const handleUpdateRole = async (userId) => {
+    setActionError(null);
     if (!newRoleId || !currentOrganization?.id) {
-      addToast(t('team.select_role_error'), 'error');
+      setActionError(t('team.select_role_error'));
       return;
     }
 
     try {
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (!session) {
-        addToast(t('team.not_authenticated'), 'error');
+        setActionError(t('team.not_authenticated'));
         return;
       }
 
@@ -361,11 +372,11 @@ function DirectoryManagementModal({ show, onClose }) {
         setNewRoleId('');
         loadData();
       } else {
-        addToast(result.error || t('team.failed_update_role'), 'error');
+        setActionError(result.error || t('team.failed_update_role'));
       }
     } catch (error) {
       console.error('Error updating role:', error);
-      addToast(t('team.failed_update_role'), 'error');
+      setActionError(t('team.failed_update_role'));
     }
   };
 
@@ -374,10 +385,11 @@ function DirectoryManagementModal({ show, onClose }) {
       return;
     }
 
+    setActionError(null);
     try {
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (!session) {
-        addToast(t('team.not_authenticated'), 'error');
+        setActionError(t('team.not_authenticated'));
         return;
       }
 
@@ -402,11 +414,11 @@ function DirectoryManagementModal({ show, onClose }) {
         addToast(t('team.user_removed'), 'success');
         loadData();
       } else {
-        addToast(result.error || t('team.failed_remove_user'), 'error');
+        setActionError(result.error || t('team.failed_remove_user'));
       }
     } catch (error) {
       console.error('Error removing user:', error);
-      addToast(t('team.failed_remove_user'), 'error');
+      setActionError(t('team.failed_remove_user'));
     }
   };
 
@@ -433,11 +445,16 @@ function DirectoryManagementModal({ show, onClose }) {
           />
         ) : (
           <div className="space-y-6">
+            <FieldError message={listError} />
             {/* Tab Navigation */}
             <div className="border-b border-gray-200">
               <nav className="flex space-x-8">
                 <button type="button"
-                  onClick={() => setActiveTab('invite')}
+                  onClick={() => {
+                    setActiveTab('invite');
+                    setCreateUserError(null);
+                    setActionError(null);
+                  }}
                   className={`py-4 px-1 border-b-2 font-medium text-sm ${
                     activeTab === 'invite'
                       ? 'border-blue-500 text-blue-600'
@@ -447,7 +464,11 @@ function DirectoryManagementModal({ show, onClose }) {
                   {t('team.tab_invite_email')}
                 </button>
                 <button type="button"
-                  onClick={() => setActiveTab('create')}
+                  onClick={() => {
+                    setActiveTab('create');
+                    setInviteError(null);
+                    setActionError(null);
+                  }}
                   className={`py-4 px-1 border-b-2 font-medium text-sm ${
                     activeTab === 'create'
                       ? 'border-blue-500 text-blue-600'
@@ -473,7 +494,10 @@ function DirectoryManagementModal({ show, onClose }) {
                         type="text"
                         placeholder={t('team.placeholder_first')}
                         value={inviteData.firstName}
-                        onChange={(e) => setInviteData({ ...inviteData, firstName: e.target.value })}
+                        onChange={(e) => {
+                          setInviteError(null);
+                          setInviteData({ ...inviteData, firstName: e.target.value });
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                         required
                       />
@@ -486,7 +510,10 @@ function DirectoryManagementModal({ show, onClose }) {
                         type="text"
                         placeholder={t('team.placeholder_last')}
                         value={inviteData.lastName}
-                        onChange={(e) => setInviteData({ ...inviteData, lastName: e.target.value })}
+                        onChange={(e) => {
+                          setInviteError(null);
+                          setInviteData({ ...inviteData, lastName: e.target.value });
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
@@ -499,7 +526,10 @@ function DirectoryManagementModal({ show, onClose }) {
                       type="email"
                       placeholder={t('team.placeholder_email')}
                       value={inviteData.email}
-                      onChange={(e) => setInviteData({ ...inviteData, email: e.target.value })}
+                      onChange={(e) => {
+                        setInviteError(null);
+                        setInviteData({ ...inviteData, email: e.target.value });
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                       required
                     />
@@ -521,6 +551,7 @@ function DirectoryManagementModal({ show, onClose }) {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       {t('team.select_role')}
                     </label>
+                    <p className="text-xs text-gray-500 mb-1">{t('team.app_permissions_role_hint')}</p>
                     <select
                       value={inviteData.roleId}
                       onChange={(e) => setInviteData({ ...inviteData, roleId: e.target.value })}
@@ -532,6 +563,7 @@ function DirectoryManagementModal({ show, onClose }) {
                       ))}
                     </select>
                   </div>
+                  <FieldError message={inviteError} />
                   <button
                     type="submit"
                     disabled={isInviting}
@@ -556,7 +588,10 @@ function DirectoryManagementModal({ show, onClose }) {
                       type="text"
                       placeholder={t('team.placeholder_full_name')}
                       value={createUserData.fullName}
-                      onChange={(e) => setCreateUserData({ ...createUserData, fullName: e.target.value })}
+                      onChange={(e) => {
+                        setCreateUserError(null);
+                        setCreateUserData({ ...createUserData, fullName: e.target.value });
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                       required
                     />
@@ -601,6 +636,7 @@ function DirectoryManagementModal({ show, onClose }) {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       {t('team.select_role')}
                     </label>
+                    <p className="text-xs text-gray-500 mb-1">{t('team.app_permissions_role_hint')}</p>
                     <select
                       value={createUserData.roleId}
                       onChange={(e) => setCreateUserData({ ...createUserData, roleId: e.target.value })}
@@ -612,6 +648,7 @@ function DirectoryManagementModal({ show, onClose }) {
                       ))}
                     </select>
                   </div>
+                  <FieldError message={createUserError} />
                   <button
                     type="submit"
                     disabled={isCreating}
@@ -627,6 +664,7 @@ function DirectoryManagementModal({ show, onClose }) {
             <div className="bg-white border border-gray-200 rounded-lg">
               <div className="p-4 border-b border-gray-200">
                 <h3 className="font-semibold">{t('team.members_heading', { count: users.length })}</h3>
+                <FieldError message={actionError} className="mt-3" />
               </div>
               <div className="divide-y divide-gray-200">
                 {users.length === 0 ? (

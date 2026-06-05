@@ -18,10 +18,28 @@ function AcceptInvitationView() {
     const [password, setPassword] = useState('');
     const [fullName, setFullName] = useState('');
     const [isSignUp, setIsSignUp] = useState(true);
+    const [useLegacyFlow, setUseLegacyFlow] = useState(false);
 
     useEffect(() => {
+        if (!token) {
+            setError('Invalid invitation link');
+            setIsLoading(false);
+            return;
+        }
+        try {
+            navigate(`/invite/${token}`, { replace: true });
+            setIsLoading(false);
+        } catch (redirectErr) {
+            console.warn('Invite redirect failed, using legacy view:', redirectErr);
+            setUseLegacyFlow(true);
+            setIsLoading(false);
+        }
+    }, [token, navigate]);
+
+    useEffect(() => {
+        if (!token || !useLegacyFlow) return;
         loadInvitation();
-    }, [token]);
+    }, [token, useLegacyFlow]);
 
     const loadInvitation = async () => {
         try {
@@ -160,6 +178,14 @@ function AcceptInvitationView() {
             setIsAccepting(false);
         }
     };
+
+    if (!useLegacyFlow) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
+                <LoadingSpinner size="lg" text="Redirecting to invitation..." />
+            </div>
+        );
+    }
 
     if (isLoading) {
         return (

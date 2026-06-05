@@ -19,6 +19,8 @@ export {
 
 export { normalizeAssigneePhone } from './utils/assigneePhone.js';
 
+export { sortProjectsByRecency } from './utils/projectListSort.js';
+
 export { upsertById, removeById, getRealtimeRow } from './utils/realtimeList.js';
 
 export {
@@ -47,6 +49,10 @@ export * from './services/tasksService.js';
 export * from './services/projectsService.js';
 export * from './services/workspaceService.js';
 export * from './constants/workspace.js';
+export {
+  ORG_ADMIN_PERMISSIONS,
+  getRolePermissionsForDisplay,
+} from './constants/orgAdminPermissions.js';
 export * from './services/messagesService.js';
 export * from './services/streamService.js';
 export * from './services/taskCommentsService.js';

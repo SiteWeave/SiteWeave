@@ -1503,7 +1503,16 @@ END $$;
 -- Get the organization_id of the currently logged-in user
 CREATE OR REPLACE FUNCTION get_user_organization_id()
 RETURNS UUID AS $$
-  SELECT organization_id FROM public.profiles WHERE id = auth.uid();
+  SELECT COALESCE(
+    (SELECT organization_id FROM public.profiles WHERE id = auth.uid()),
+    (
+      SELECT o.id
+      FROM public.organizations o
+      WHERE o.created_by_user_id = auth.uid()
+      ORDER BY o.created_at ASC NULLS LAST
+      LIMIT 1
+    )
+  );
 $$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Gets the role of the currently logged-in user

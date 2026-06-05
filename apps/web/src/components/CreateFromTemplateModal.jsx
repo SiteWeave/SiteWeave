@@ -4,6 +4,7 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import DateDropdown from './DateDropdown';
 import { createProjectFromTemplate } from '../utils/projectTemplateService';
+import { ensureOrganizationForWrites } from '../utils/organizationContext';
 
 export default function CreateFromTemplateModal({ onClose, onCreated }) {
   const { t } = useTranslation();
@@ -40,13 +41,23 @@ export default function CreateFromTemplateModal({ onClose, onCreated }) {
       addToast(t('templates.required_fields'), 'error');
       return;
     }
-    if (!orgId || !userId) {
+    if (!userId) {
       addToast(t('templates.missing_context'), 'error');
       return;
     }
     setCreating(true);
     try {
-      const result = await createProjectFromTemplate(supabaseClient, selectedId, orgId, userId, projectName.trim(), address.trim() || undefined, projectNumber.trim() || undefined, startDate);
+      const orgContext = await ensureOrganizationForWrites(supabaseClient, {
+        userId,
+        accountIntent: state.accountIntent,
+        currentOrganization: state.currentOrganization,
+        dispatch,
+      });
+      if (!orgContext.ok) {
+        addToast(orgContext.error || t('templates.missing_context'), 'error');
+        return;
+      }
+      const result = await createProjectFromTemplate(supabaseClient, selectedId, orgContext.organizationId, userId, projectName.trim(), address.trim() || undefined, projectNumber.trim() || undefined, startDate);
       if (result.success) {
         addToast(t('templates.created_success'), 'success');
         const { data: newProject } = await supabaseClient.from('projects').select('*').eq('id', result.projectId).single();

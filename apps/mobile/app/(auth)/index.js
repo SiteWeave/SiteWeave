@@ -7,7 +7,7 @@ import PressableWithFade from '../../components/PressableWithFade';
 import { colors, spacing } from '../../theme';
 
 const LOGO = require('../../assets/logo-vertical.png');
-const HERO = require('../../assets/onboarding-hero.png');
+const HERO = require('../../assets/onboarding-hero.jpg');
 
 /** SiteWeave brand accents for unauthenticated welcome (logo cyan + orange). */
 const brand = {

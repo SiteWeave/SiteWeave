@@ -200,9 +200,12 @@ function CalendarView() {
 
     useEffect(() => {
         loadCategories();
-        // Lazy load calendar events when calendar view opens
-        loadCalendarEventsIfNeeded();
+        loadCalendarEventsIfNeeded(currentDate);
     }, []);
+
+    useEffect(() => {
+        loadCalendarEventsIfNeeded(currentDate);
+    }, [currentDate.getFullYear(), currentDate.getMonth()]);
 
     // Sync visible categories when categories list changes (e.g., after adding new categories)
     useEffect(() => {

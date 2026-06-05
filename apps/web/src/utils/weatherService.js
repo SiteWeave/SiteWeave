@@ -1,10 +1,7 @@
 /**
- * Weather Service
- * Fetches weather data from WeatherAPI.com
+ * Weather Service — fetches via get-weather edge function (API key on server).
  */
-
-const WEATHER_API_KEY = import.meta.env.VITE_WEATHER_API_KEY;
-const WEATHER_API_URL = 'https://api.weatherapi.com/v1';
+import { supabase } from '../supabaseClient.js';
 
 export const WEATHER_ERROR_CODES = {
   MISSING_API_KEY: 'MISSING_API_KEY',
@@ -27,44 +24,26 @@ const createWeatherError = (code, message, details = null) => {
   return error;
 };
 
-const ensureApiKey = () => {
-  if (!WEATHER_API_KEY) {
-    throw createWeatherError(
-      WEATHER_ERROR_CODES.MISSING_API_KEY,
-      'Weather API key is not configured. Please add VITE_WEATHER_API_KEY to your .env file.',
-    );
+async function invokeWeather(body) {
+  const { data, error } = await supabase.functions.invoke('get-weather', { body });
+  if (error) {
+    throw createWeatherError(WEATHER_ERROR_CODES.NETWORK_ERROR, error.message || 'Weather request failed', {
+      cause: error,
+    });
   }
-};
-
-const parseApiError = async (response) => {
-  const errorData = await response.json().catch(() => ({}));
-
-  if (response.status === 401 || response.status === 403) {
-    throw createWeatherError(
-      WEATHER_ERROR_CODES.INVALID_API_KEY,
-      `Invalid weather API key. ${errorData.error?.message || 'Unauthorized request.'}`,
-      { status: response.status, apiError: errorData.error || null },
-    );
+  if (data?.error) {
+    const status = data.status ?? 500;
+    if (status === 401 || status === 403) {
+      throw createWeatherError(WEATHER_ERROR_CODES.INVALID_API_KEY, data.error);
+    }
+    if (status === 400) {
+      throw createWeatherError(WEATHER_ERROR_CODES.CITY_NOT_FOUND, data.error);
+    }
+    throw createWeatherError(WEATHER_ERROR_CODES.API_ERROR, data.error, { status });
   }
+  return data?.data;
+}
 
-  if (response.status === 400) {
-    throw createWeatherError(
-      WEATHER_ERROR_CODES.CITY_NOT_FOUND,
-      `City not found. ${errorData.error?.message || 'Please check the spelling.'}`,
-      { status: response.status, apiError: errorData.error || null },
-    );
-  }
-
-  throw createWeatherError(
-    WEATHER_ERROR_CODES.API_ERROR,
-    `Weather API error: ${errorData.error?.message || response.statusText}`,
-    { status: response.status, apiError: errorData.error || null },
-  );
-};
-
-/**
- * Get user's location using browser geolocation API
- */
 export const getUserLocation = () => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
@@ -97,49 +76,9 @@ export const getUserLocation = () => {
       {
         timeout: 10000,
         enableHighAccuracy: false,
-      }
+      },
     );
   });
-};
-
-/**
- * Fetch current weather data by coordinates
- */
-export const getCurrentWeather = async (latitude, longitude) => {
-  ensureApiKey();
-
-  try {
-    const url = `${WEATHER_API_URL}/current.json?key=${WEATHER_API_KEY}&q=${latitude},${longitude}`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      await parseApiError(response);
-    }
-
-    const data = await response.json();
-    return {
-      temperature: Math.round(data.current.temp_f),
-      feelsLike: Math.round(data.current.feelslike_f),
-      description: data.current.condition.text,
-      icon: data.current.condition.icon,
-      humidity: data.current.humidity,
-      windSpeed: Math.round(data.current.wind_mph || 0),
-      city: data.location.name,
-      country: data.location.country,
-    };
-  } catch (error) {
-    if (error?.code) {
-      throw error;
-    }
-    throw createWeatherError(WEATHER_ERROR_CODES.NETWORK_ERROR, 'Unable to reach weather service.', { cause: error });
-  }
-};
-
-const normalizeCityName = (cityName) => {
-  if (!cityName || !cityName.trim()) {
-    throw createWeatherError(WEATHER_ERROR_CODES.CITY_NOT_FOUND, 'Please enter a city name.');
-  }
-  return cityName.trim();
 };
 
 const mapCurrentWeather = (data) => ({
@@ -162,87 +101,62 @@ const mapForecast = (data) => data.forecast.forecastday.map((day) => ({
   icon: day.day.condition.icon,
 }));
 
-export const getCurrentWeatherByCity = async (cityName) => {
-  ensureApiKey();
-  const normalizedCity = normalizeCityName(cityName);
-
+export const getCurrentWeather = async (latitude, longitude) => {
   try {
-    const url = `${WEATHER_API_URL}/current.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(normalizedCity)}`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      await parseApiError(response);
-    }
-
-    const data = await response.json();
-    return mapCurrentWeather(data);
+    const payload = await invokeWeather({ mode: 'current', latitude, longitude });
+    return mapCurrentWeather(payload);
   } catch (error) {
-    if (error?.code) {
-      throw error;
-    }
+    if (error?.code) throw error;
+    throw createWeatherError(WEATHER_ERROR_CODES.NETWORK_ERROR, 'Unable to reach weather service.', { cause: error });
+  }
+};
+
+const normalizeCityName = (cityName) => {
+  if (!cityName || !cityName.trim()) {
+    throw createWeatherError(WEATHER_ERROR_CODES.CITY_NOT_FOUND, 'Please enter a city name.');
+  }
+  return cityName.trim();
+};
+
+export const getCurrentWeatherByCity = async (cityName) => {
+  const normalizedCity = normalizeCityName(cityName);
+  try {
+    const payload = await invokeWeather({ mode: 'current', city: normalizedCity });
+    return mapCurrentWeather(payload);
+  } catch (error) {
+    if (error?.code) throw error;
     throw createWeatherError(WEATHER_ERROR_CODES.NETWORK_ERROR, 'Unable to reach weather service.', { cause: error });
   }
 };
 
 export const getWeatherForecast = async (latitude, longitude) => {
-  ensureApiKey();
-
   try {
-    const url = `${WEATHER_API_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${latitude},${longitude}&days=7`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      await parseApiError(response);
-    }
-
-    const data = await response.json();
-    return mapForecast(data).slice(0, 7);
+    const payload = await invokeWeather({ mode: 'forecast', latitude, longitude, days: 7 });
+    return mapForecast(payload).slice(0, 7);
   } catch (error) {
-    if (error?.code) {
-      throw error;
-    }
+    if (error?.code) throw error;
     throw createWeatherError(WEATHER_ERROR_CODES.NETWORK_ERROR, 'Unable to reach weather service.', { cause: error });
   }
 };
 
 export const getWeatherForecastByCity = async (cityName) => {
-  ensureApiKey();
   const normalizedCity = normalizeCityName(cityName);
-
   try {
-    const url = `${WEATHER_API_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(normalizedCity)}&days=7`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      await parseApiError(response);
-    }
-
-    const data = await response.json();
-    return mapForecast(data).slice(0, 7);
+    const payload = await invokeWeather({ mode: 'forecast', city: normalizedCity, days: 7 });
+    return mapForecast(payload).slice(0, 7);
   } catch (error) {
-    if (error?.code) {
-      throw error;
-    }
+    if (error?.code) throw error;
     throw createWeatherError(WEATHER_ERROR_CODES.NETWORK_ERROR, 'Unable to reach weather service.', { cause: error });
   }
 };
 
 export const getExtendedWeatherForecast = async (cityName, days = 14) => {
-  ensureApiKey();
   const normalizedCity = normalizeCityName(cityName);
-
   try {
     const maxDays = Math.min(days, 14);
-    const url = `${WEATHER_API_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(normalizedCity)}&days=${maxDays}`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      await parseApiError(response);
-    }
-
-    const data = await response.json();
+    const payload = await invokeWeather({ mode: 'extended', city: normalizedCity, days: maxDays });
     const forecastMap = {};
-    data.forecast.forecastday.forEach((day) => {
+    payload.forecast.forecastday.forEach((day) => {
       const [year, month, dayOfMonth] = day.date.split('-').map(Number);
       const date = new Date(year, month - 1, dayOfMonth);
       const dateKey = date.toDateString();
@@ -259,9 +173,7 @@ export const getExtendedWeatherForecast = async (cityName, days = 14) => {
 
     return forecastMap;
   } catch (error) {
-    if (error?.code) {
-      throw error;
-    }
+    if (error?.code) throw error;
     throw createWeatherError(WEATHER_ERROR_CODES.NETWORK_ERROR, 'Unable to reach weather service.', { cause: error });
   }
 };
@@ -272,4 +184,3 @@ export const getWeatherIconUrl = (iconUrl) => {
   }
   return iconUrl || '';
 };
-

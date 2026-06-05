@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from '../components/Icon';
+import SetPasswordPanel from '../components/SetPasswordPanel';
+import { getOAuthProviderLabels, userHasEmailPassword } from '../utils/authIdentity';
 import {
   extractProjectInviteTokenFromUrl,
   provisionPersonalWorkspace,
@@ -9,27 +13,85 @@ import {
 } from '../utils/workspaceClient';
 
 function NoOrganizationView() {
+  const { t } = useTranslation();
   const { state, dispatch } = useAppContext();
   const { addToast } = useToast();
   const [inviteUrl, setInviteUrl] = useState('');
   const [shortCode, setShortCode] = useState('');
   const [isRedeeming, setIsRedeeming] = useState(false);
   const [isProvisioning, setIsProvisioning] = useState(false);
+  const [pendingOrgInvite, setPendingOrgInvite] = useState(null);
+
+  useEffect(() => {
+    const email = state.user?.email;
+    if (!email || state.currentOrganization) {
+      setPendingOrgInvite(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabaseClient
+        .from('invitations')
+        .select('id, invitation_token, organizations(name), roles(name)')
+        .eq('email', email)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (!cancelled && !error && data?.[0]) {
+        setPendingOrgInvite(data[0]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [state.user?.email, state.currentOrganization]);
 
   const handleSignOut = async () => {
+    const user = state.user;
+    if (user && !userHasEmailPassword(user)) {
+      const labels = getOAuthProviderLabels(user);
+      const providers = labels.length ? labels.join(' / ') : t('auth.google');
+      if (!window.confirm(t('guest.sign_out_oauth_warning', { providers }))) {
+        return;
+      }
+    }
     try {
       const { error } = await supabaseClient.auth.signOut();
       if (error) {
-        addToast('Error signing out: ' + error.message, 'error');
+        addToast(t('toast.error_signing_out', { message: error.message }), 'error');
       } else {
         dispatch({ type: 'SET_USER', payload: null });
-        addToast('Signed out successfully', 'success');
+        addToast(t('toast.signed_out_successfully'), 'success');
       }
     } catch (error) {
       console.error('Sign out error:', error);
-      addToast('Error signing out', 'error');
+      addToast(t('toast.error_signing_out', { message: '' }), 'error');
     }
   };
+
+  const pendingOrgInviteBanner = pendingOrgInvite ? (
+    <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-left text-sm">
+      <p className="font-semibold text-blue-900">{t('guest.pending_org_invite_title')}</p>
+      <p className="mt-1 text-xs text-blue-800">
+        {t('guest.pending_org_invite_hint', {
+          org: pendingOrgInvite.organizations?.name || t('common.user'),
+        })}
+      </p>
+      <Link
+        to={`/invite/${pendingOrgInvite.invitation_token}`}
+        className="inline-block mt-2 text-sm font-semibold text-blue-700 underline"
+      >
+        {t('guest.accept_org_invite_link')}
+      </Link>
+    </div>
+  ) : null;
+
+  const oauthReminder = state.user && !userHasEmailPassword(state.user) ? (
+    <p className="text-xs text-slate-500 text-center">
+      {t('guest.oauth_login_reminder', {
+        providers: getOAuthProviderLabels(state.user).join(' / ') || t('auth.google'),
+      })}
+    </p>
+  ) : null;
 
   const handleRedeemInvite = async () => {
     setIsRedeeming(true);
@@ -92,6 +154,9 @@ function NoOrganizationView() {
             </p>
           </div>
           <div className="space-y-4">
+            {pendingOrgInviteBanner}
+            <SetPasswordPanel user={state.user} />
+            {oauthReminder}
             <p className="text-sm text-gray-500">
               Open your shared projects from the dashboard.
             </p>
@@ -127,6 +192,9 @@ function NoOrganizationView() {
           </p>
 
           <div className="space-y-4">
+            {pendingOrgInviteBanner}
+            <SetPasswordPanel user={state.user} />
+            {oauthReminder}
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Paste invite link</label>
               <input

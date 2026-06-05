@@ -19,3 +19,13 @@ export function getIssuesLastReadAt(projectId) {
   if (!projectId) return null;
   return readAll()[projectId] || null;
 }
+
+export function markCollaborationRead(projectId) {
+  markIssuesRead(projectId);
+  try {
+    const { markStreamRead } = require('./streamReadState');
+    markStreamRead(projectId);
+  } catch {
+    // streamReadState imported by callers
+  }
+}

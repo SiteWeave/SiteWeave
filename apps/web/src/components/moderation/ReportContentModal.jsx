@@ -61,15 +61,15 @@ export default function ReportContentModal({
   return (
     <Modal show={show} onClose={handleClose} title={t('moderation.report_content')} size="large">
       {reportedUserName && (
-        <p className="text-sm text-slate-600 mb-4 bg-slate-50 rounded-lg p-3">
+        <p className="text-sm text-gray-600 mb-4 bg-gray-50 rounded-lg p-3">
           {t('moderation.reporting_from')}{' '}
-          <span className="font-semibold text-slate-900">{reportedUserName}</span>
+          <span className="font-semibold text-gray-900">{reportedUserName}</span>
         </p>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <fieldset className="border-0 p-0 m-0">
-          <legend className="text-sm font-semibold text-slate-900 mb-2">{t('moderation.reason_for_report')}</legend>
+          <legend className="text-sm font-semibold text-gray-900 mb-2">{t('moderation.reason_for_report')}</legend>
           <div className="space-y-2">
             {REPORT_REASONS.map((reason) => (
               <label
@@ -77,7 +77,7 @@ export default function ReportContentModal({
                 className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer ${
                   selectedReason === reason.value
                     ? 'border-blue-500 bg-blue-50'
-                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                    : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                 }`}
               >
                 <input
@@ -89,14 +89,14 @@ export default function ReportContentModal({
                   disabled={submitting}
                   className="text-blue-600"
                 />
-                <span className="text-sm text-slate-900">{reason.label}</span>
+                <span className="text-sm text-gray-900">{reason.label}</span>
               </label>
             ))}
           </div>
         </fieldset>
 
         <div>
-          <label className="block text-sm font-semibold text-slate-900 mb-2">
+          <label className="block text-sm font-semibold text-gray-900 mb-2">
             {t('moderation.additional_details_optional')}
           </label>
           <textarea
@@ -105,7 +105,7 @@ export default function ReportContentModal({
             placeholder={t('moderation.additional_context_placeholder')}
             rows={4}
             disabled={submitting}
-            className="w-full border border-slate-300 rounded-lg p-3 text-sm text-slate-900 resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full border border-gray-300 rounded-lg p-3 text-sm text-gray-900 resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
 
@@ -114,7 +114,7 @@ export default function ReportContentModal({
             type="button"
             onClick={handleClose}
             disabled={submitting}
-            className="flex-1 px-4 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium hover:bg-slate-200 disabled:opacity-50"
+            className="flex-1 px-4 py-2 rounded-lg bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 disabled:opacity-50"
           >
             {t('common.cancel')}
           </button>

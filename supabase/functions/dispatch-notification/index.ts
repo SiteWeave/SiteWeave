@@ -5,6 +5,7 @@ import { sendTwilioSms } from '../_shared/twilioSms.ts'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { createGuestShare } from '../_shared/guestShare.ts'
 import { gateOrSendOptInForSubstantiveSms, sendOptInIfEligible } from '../_shared/smsConsent.ts'
+import { withTransactionalSmsFooter } from '../_shared/smsCompliance.ts'
 import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
 import {
   assertCanManageProject,
@@ -452,7 +453,9 @@ serve(async (req) => {
               : `SMS: blocked (${gate.reason || 'consent'})`
           }
         } else {
-          const smsBody = `${senderName || 'A teammate'} sent a reminder: ${taskText || 'Task'} in ${projectName || 'your project'}. Open: ${guestUrl}`
+          const smsBody = withTransactionalSmsFooter(
+            `${senderName || 'A teammate'} sent a reminder: ${taskText || 'Task'} in ${projectName || 'your project'}. Open: ${guestUrl}`,
+          )
           const smsResult = await sendTwilioSms({ to: smsPhone, body: smsBody })
           if (!smsResult.success) {
             errorMessage = errorMessage

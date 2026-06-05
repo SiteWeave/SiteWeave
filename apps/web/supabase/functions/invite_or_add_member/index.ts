@@ -9,7 +9,16 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { sendTwilioSms } from '../_shared/twilioSms.ts'
 import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
+import { withTransactionalSmsFooter } from '../_shared/smsCompliance.ts'
 import { createProjectAccessInvite, mapRoleToAccessLevel } from '../_shared/projectInvite.ts'
+import { assertCanInviteGuestCollaborator, GUEST_COLLABORATOR_LIMIT_ERROR } from '../_shared/workspaceTier.ts'
+import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
+import {
+  assertCanManageProject,
+  createServiceClient,
+  jsonResponse,
+  requireUser,
+} from '../_shared/auth.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -37,17 +46,57 @@ function mapContactType(role?: string): string {
   return 'Team'
 }
 
-// CORS headers helper
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+async function buildBlockedInviteEmails(
+  supabase: ReturnType<typeof createClient>,
+  inviter: { id: string; email?: string | null },
+  projectId: string,
+): Promise<Set<string>> {
+  const blocked = new Set<string>()
+  const inviterEmail = normalizeEmail(inviter.email || '')
+  if (inviterEmail) blocked.add(inviterEmail)
+
+  const { data: projectRow } = await supabase
+    .from('projects')
+    .select('created_by_user_id, project_manager_id')
+    .eq('id', projectId)
+    .maybeSingle()
+
+  const ownerUserIds = [
+    projectRow?.created_by_user_id,
+    projectRow?.project_manager_id,
+  ].filter((id): id is string => Boolean(id))
+
+  if (ownerUserIds.length === 0) return blocked
+
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, contact_id')
+    .in('id', ownerUserIds)
+
+  const contactIds = (profiles || [])
+    .map((p) => p.contact_id)
+    .filter((id): id is string => Boolean(id))
+
+  if (contactIds.length === 0) return blocked
+
+  const { data: contacts } = await supabase
+    .from('contacts')
+    .select('email')
+    .in('id', contactIds)
+
+  for (const c of contacts || []) {
+    const e = normalizeEmail(c.email || '')
+    if (e) blocked.add(e)
+  }
+
+  return blocked
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
+  const corsHeaders = corsHeadersFor(req)
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return corsPreflightResponse(req)
   }
 
   if (req.method !== 'POST') {
@@ -58,37 +107,30 @@ serve(async (req) => {
   }
 
   try {
+    const authResult = await requireUser(req, corsHeaders)
+    if (authResult instanceof Response) return authResult
+    const { user } = authResult
+
     const body = await req.json()
     console.log('Received request body:', JSON.stringify(body))
     
-    const { projectId, entries, addedByUserId } = body
+    const { projectId, entries } = body
+    const addedByUserId = user.id
 
     if (!projectId || !Array.isArray(entries) || entries.length === 0) {
       console.error('Invalid payload:', { projectId, entries })
-      return new Response(
-        JSON.stringify({ error: 'Invalid payload', details: { projectId, entriesCount: entries?.length } }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      return jsonResponse(
+        { error: 'Invalid payload', details: { projectId, entriesCount: entries?.length } },
+        400,
+        corsHeaders,
       )
     }
+
+    const authz = await assertCanManageProject(supabaseAdmin, user.id, projectId, corsHeaders)
+    if (authz instanceof Response) return authz
+    const organizationId = authz.organizationId
     
     console.log('Processing entries for project:', projectId)
-
-    // Get the project's organization_id (required for project_contacts)
-    const { data: projectData, error: projectError } = await supabaseAdmin
-      .from('projects')
-      .select('organization_id')
-      .eq('id', projectId)
-      .single()
-
-    if (projectError || !projectData?.organization_id) {
-      console.error('Error fetching project or missing organization_id:', projectError)
-      return new Response(
-        JSON.stringify({ error: 'Project not found or missing organization', details: projectError }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    const organizationId = projectData.organization_id
     console.log('Project organization_id:', organizationId)
 
     const { data: orgRowForSms } = await supabaseAdmin
@@ -97,6 +139,8 @@ serve(async (req) => {
       .eq('id', organizationId)
       .maybeSingle()
     const organizationNameForSms = orgRowForSms?.name || 'Your team'
+
+    const blockedEmails = await buildBlockedInviteEmails(supabaseAdmin, user, projectId)
 
     const results: Array<{ email: string; action: 'added' | 'invited' | 'skipped'; reason?: string }> = []
     const emailsToSend: Array<{ from: string; to: string[]; subject: string; html: string }> = []
@@ -110,6 +154,12 @@ serve(async (req) => {
       if (!email.includes('@')) {
         console.log('Invalid email format:', email)
         results.push({ email, action: 'skipped', reason: 'invalid_email' })
+        continue
+      }
+
+      if (blockedEmails.has(email)) {
+        console.log('Skipping blocked self/owner invite:', email)
+        results.push({ email, action: 'skipped', reason: 'self_or_owner' })
         continue
       }
 
@@ -243,6 +293,12 @@ serve(async (req) => {
 
         // Successfully added contact to project
         console.log('Successfully added contact to project')
+
+        const perInviteCap = await assertCanInviteGuestCollaborator(supabaseAdmin, organizationId, projectId)
+        if (!perInviteCap.ok) {
+          results.push({ email, action: 'skipped', reason: GUEST_COLLABORATOR_LIMIT_ERROR })
+          continue
+        }
 
         const inviteResult = await createProjectAccessInvite(supabaseAdmin, {
           projectId,
@@ -589,7 +645,10 @@ serve(async (req) => {
           }
           continue
         }
-        const smsResult = await sendTwilioSms({ to: sms.phone, body: sms.message })
+        const smsResult = await sendTwilioSms({
+          to: sms.phone,
+          body: withTransactionalSmsFooter(sms.message),
+        })
         if (!smsResult.success) {
           console.error('Twilio SMS failed:', { email: sms.email, phone: sms.phone, error: smsResult.error })
           const resultIndex = results.findIndex((r) => r.email === sms.email)

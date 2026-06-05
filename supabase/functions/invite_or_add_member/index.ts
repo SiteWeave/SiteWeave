@@ -9,6 +9,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { sendTwilioSms } from '../_shared/twilioSms.ts'
 import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
+import { withTransactionalSmsFooter } from '../_shared/smsCompliance.ts'
 import { createProjectAccessInvite, mapRoleToAccessLevel } from '../_shared/projectInvite.ts'
 import { assertCanInviteGuestCollaborator, GUEST_COLLABORATOR_LIMIT_ERROR } from '../_shared/workspaceTier.ts'
 import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
@@ -43,6 +44,52 @@ function mapContactType(role?: string): string {
   if (r === 'subcontractor') return 'Subcontractor'
   if (r === 'pm' || r === 'project manager') return 'Team'
   return 'Team'
+}
+
+async function buildBlockedInviteEmails(
+  supabase: ReturnType<typeof createClient>,
+  inviter: { id: string; email?: string | null },
+  projectId: string,
+): Promise<Set<string>> {
+  const blocked = new Set<string>()
+  const inviterEmail = normalizeEmail(inviter.email || '')
+  if (inviterEmail) blocked.add(inviterEmail)
+
+  const { data: projectRow } = await supabase
+    .from('projects')
+    .select('created_by_user_id, project_manager_id')
+    .eq('id', projectId)
+    .maybeSingle()
+
+  const ownerUserIds = [
+    projectRow?.created_by_user_id,
+    projectRow?.project_manager_id,
+  ].filter((id): id is string => Boolean(id))
+
+  if (ownerUserIds.length === 0) return blocked
+
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, contact_id')
+    .in('id', ownerUserIds)
+
+  const contactIds = (profiles || [])
+    .map((p) => p.contact_id)
+    .filter((id): id is string => Boolean(id))
+
+  if (contactIds.length === 0) return blocked
+
+  const { data: contacts } = await supabase
+    .from('contacts')
+    .select('email')
+    .in('id', contactIds)
+
+  for (const c of contacts || []) {
+    const e = normalizeEmail(c.email || '')
+    if (e) blocked.add(e)
+  }
+
+  return blocked
 }
 
 serve(async (req) => {
@@ -93,6 +140,8 @@ serve(async (req) => {
       .maybeSingle()
     const organizationNameForSms = orgRowForSms?.name || 'Your team'
 
+    const blockedEmails = await buildBlockedInviteEmails(supabaseAdmin, user, projectId)
+
     const results: Array<{ email: string; action: 'added' | 'invited' | 'skipped'; reason?: string }> = []
     const emailsToSend: Array<{ from: string; to: string[]; subject: string; html: string }> = []
     const smsToSend: Array<{ email: string; phone: string; message: string }> = []
@@ -105,6 +154,12 @@ serve(async (req) => {
       if (!email.includes('@')) {
         console.log('Invalid email format:', email)
         results.push({ email, action: 'skipped', reason: 'invalid_email' })
+        continue
+      }
+
+      if (blockedEmails.has(email)) {
+        console.log('Skipping blocked self/owner invite:', email)
+        results.push({ email, action: 'skipped', reason: 'self_or_owner' })
         continue
       }
 
@@ -590,7 +645,10 @@ serve(async (req) => {
           }
           continue
         }
-        const smsResult = await sendTwilioSms({ to: sms.phone, body: sms.message })
+        const smsResult = await sendTwilioSms({
+          to: sms.phone,
+          body: withTransactionalSmsFooter(sms.message),
+        })
         if (!smsResult.success) {
           console.error('Twilio SMS failed:', { email: sms.email, phone: sms.phone, error: smsResult.error })
           const resultIndex = results.findIndex((r) => r.email === sms.email)

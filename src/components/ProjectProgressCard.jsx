@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getLocalizedProjectStatus } from '@siteweave/i18n';
-import { computeWeightedProjectProgressPercent } from '../utils/projectProgressRollup.js';
+import { computeWeightedProjectProgressPercent } from '@siteweave/core-logic';
 import { getStatusColor } from '../utils/projectHelpers';
 import { supabaseClient } from '../context/AppContext';
 import { SkeletonText } from './ui/Skeleton';

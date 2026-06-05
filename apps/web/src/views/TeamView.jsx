@@ -9,12 +9,16 @@ import RoleSummaryCard from '../components/RoleSummaryCard';
 import RoleCreationModal from '../components/RoleCreationModal';
 import DeleteRoleModal from '../components/DeleteRoleModal';
 import PermissionGuard from '../components/PermissionGuard';
-import { getRoles } from '../utils/roleManagementService';
+import {
+  getOrganizationRoles,
+  canEditRolePermissions,
+} from '../utils/roleManagementService';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
 import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
 import { isCustomRolesLockedError } from '@siteweave/core-logic';
+import { FieldError } from '../components/FormAlert';
 
 function TeamView() {
   const { t } = useTranslation();
@@ -31,6 +35,7 @@ function TeamView() {
   const [isSavingRole, setIsSavingRole] = useState(false);
   const [rolePendingDelete, setRolePendingDelete] = useState(null);
   const [roleModalReadOnly, setRoleModalReadOnly] = useState(false);
+  const [roleSaveError, setRoleSaveError] = useState(null);
 
   const canManageRoles = state.userRole?.permissions?.can_manage_roles === true;
 
@@ -46,7 +51,7 @@ function TeamView() {
 
     setLoadingRoles(true);
     try {
-      const rolesData = await getRoles(supabaseClient, state.currentOrganization.id);
+      const rolesData = await getOrganizationRoles(supabaseClient, state.currentOrganization.id);
       setRoles(rolesData);
 
       // Count members per role by querying profiles
@@ -68,25 +73,27 @@ function TeamView() {
       setRoleMemberCounts(counts);
     } catch (error) {
       console.error('Error loading roles:', error);
-      addToast(t('team.failed_load_roles'), 'error');
+      setRoleSaveError(t('team.failed_load_roles'));
     } finally {
       setLoadingRoles(false);
     }
   };
 
   const handleViewRole = (role) => {
+    setRoleSaveError(null);
     setEditingRole(role);
     setRoleModalReadOnly(true);
     setShowRoleModal(true);
   };
 
   const handleEditRole = (role) => {
+    setRoleSaveError(null);
     if (!role) return;
-    if (role.name === 'Org Admin' || role.is_system_role || !canCustomRoles) {
-      handleViewRole(role);
-      return;
-    }
-    if (!canManageRoles) {
+    if (!canEditRolePermissions(role, {
+      canManageRoles,
+      canCustomRoles,
+      userRoleName: state.userRole?.name,
+    })) {
       handleViewRole(role);
       return;
     }
@@ -96,6 +103,7 @@ function TeamView() {
   };
 
   const handleCreateRole = () => {
+    setRoleSaveError(null);
     if (!canCustomRoles) {
       setShowRolesUpgrade(true);
       return;
@@ -113,9 +121,10 @@ function TeamView() {
   const handleSaveRole = async (roleData) => {
     if (!roleData.name || !state.currentOrganization?.id) return;
 
+    setRoleSaveError(null);
     // Prevent saving changes to Org Admin
     if (editingRole && editingRole.name === 'Org Admin') {
-      addToast(t('team.org_admin_cannot_modify'), 'error');
+      setRoleSaveError(t('team.org_admin_cannot_modify'));
       return;
     }
 
@@ -131,7 +140,7 @@ function TeamView() {
           setEditingRole(null);
           loadRolesAndCounts();
         } else {
-          addToast(result.error || t('team.failed_update_role'), 'error');
+          setRoleSaveError(result.error || t('team.failed_update_role'));
         }
       } else {
         // Create new role
@@ -146,7 +155,7 @@ function TeamView() {
       if (isCustomRolesLockedError(error)) {
         setShowRolesUpgrade(true);
       } else {
-        addToast(error.message || t('team.failed_save_role'), 'error');
+        setRoleSaveError(error.message || t('team.failed_save_role'));
       }
     } finally {
       setIsSavingRole(false);
@@ -179,12 +188,16 @@ function TeamView() {
           <div>
             <h2 className="text-2xl font-bold text-gray-900">{t('team.roles_permissions_title')}</h2>
             <p className="text-gray-500 text-sm mt-1">
-              {canManageRoles && canCustomRoles
-                ? t('team.roles_permissions_desc_manage')
+              {canManageRoles
+                ? (canCustomRoles
+                  ? t('team.roles_permissions_desc_manage')
+                  : t('team.roles_permissions_desc_defaults'))
                 : t('team.roles_permissions_desc_view')}
             </p>
           </div>
         </div>
+
+        <FieldError message={roleSaveError} className="mb-4 max-w-2xl" />
 
         {loadingRoles ? (
           <LoadingSpinner />
@@ -205,11 +218,17 @@ function TeamView() {
                     memberCount={roleMemberCounts[role.id] || 0}
                     onView={() => handleViewRole(role)}
                     onEdit={
-                      canManageRoles && canCustomRoles && !role.is_system_role && role.name !== 'Org Admin'
+                      canEditRolePermissions(role, {
+                        canManageRoles,
+                        canCustomRoles,
+                        userRoleName: state.userRole?.name,
+                      })
                         ? () => handleEditRole(role)
                         : undefined
                     }
-                    canEdit={canManageRoles && canCustomRoles}
+                    canEdit={
+                      canManageRoles || state.userRole?.name === 'Org Admin'
+                    }
                     onDelete={
                       canManageRoles && canCustomRoles && !role.is_system_role && role.name !== 'Org Admin'
                         ? () => handleDeleteRole(role)

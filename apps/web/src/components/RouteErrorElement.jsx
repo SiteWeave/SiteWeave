@@ -29,7 +29,7 @@ export default function RouteErrorElement() {
           {/* Header */}
           <div className="bg-red-50 px-6 py-4 border-b border-red-200">
             <div className="flex items-center gap-3">
-              <svg className="h-8 w-8 text-red-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-8 w-8 text-red-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
               <div>
@@ -58,7 +58,7 @@ export default function RouteErrorElement() {
 
             <div className="mb-4">
               <p className="text-sm font-medium text-gray-700 mb-1">Error message:</p>
-              <p className="text-sm text-red-700 bg-red-50 rounded-md px-3 py-2 font-mono wrap-break-word">
+              <p className="text-sm text-red-700 bg-red-50 rounded-md px-3 py-2 font-mono break-words">
                 {errorMessage}
               </p>
             </div>

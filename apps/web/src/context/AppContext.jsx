@@ -1,10 +1,13 @@
-/**
- * App context for web app. Mirrors root src/context/AppContext.jsx with web-specific behavior.
- * TODO: Refactor - Establish single source of truth (e.g. share via packages/ or document desktop vs web feature flags).
- */
 import React, { createContext, useContext, useEffect, useReducer, useState, useRef, useCallback } from 'react';
+import {
+  clearMemoryCache,
+  PROJECT_LIST_COLUMNS,
+  loadWithFallback,
+  clearStaleSupabaseSession,
+  isStaleRefreshTokenError,
+  sortProjectsByRecency,
+} from '@siteweave/core-logic';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
-import { supabase as supabaseClient } from '../supabaseClient';
 import { dedupeTasksById } from '../utils/taskDedupe';
 import {
   analyzeSemanticTaskDuplicates,
@@ -13,26 +16,19 @@ import {
   logTaskDuplicateReport,
 } from '../utils/taskDuplicateDiagnostics';
 
-// Single browser client — must match LoginView, useSession, etc.
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (import.meta.env.DEV) {
-  console.log('Environment variables loaded:', {
-    SUPABASE_URL: SUPABASE_URL ? 'present' : 'missing',
-    SUPABASE_ANON_KEY: SUPABASE_ANON_KEY ? 'present' : 'missing',
-  });
-}
+// --- SUPABASE CLIENT (single instance — must match useSession / LoginForm) ---
+import { supabase as supabaseClient } from '../supabaseClient';
 
 // Inject the canonical client into the Electron OAuth handler so it can do the
 // PKCE code-for-session exchange itself (no React mount required).
 supabaseElectronAuth.init(supabaseClient);
 
-const appStateRefForLazy = { current: null };
-
 export { supabaseClient };
 
 export const AppContext = createContext();
+
+/** Latest reducer state for lazy loaders (avoids stale closures across `await import()` / network). */
+const appStateRefForLazy = { current: null };
 
 // Helper functions for sessionStorage persistence
 const STORAGE_KEY = 'siteweave_app_state';
@@ -46,7 +42,7 @@ function normalizeProjectRecord(p) {
 
 function normalizeProjectsArray(list) {
   if (!Array.isArray(list)) return list;
-  return list.map(normalizeProjectRecord);
+  return sortProjectsByRecency(list.map(normalizeProjectRecord));
 }
 
 const saveStateToStorage = (state) => {
@@ -58,8 +54,6 @@ const saveStateToStorage = (state) => {
       tasks: state.tasks,
       files: state.files,
       calendarEvents: state.calendarEvents,
-      messageChannels: state.messageChannels,
-      messages: state.messages,
       activityLog: state.activityLog,
       selectedProjectId: state.selectedProjectId,
       activeView: state.activeView,
@@ -98,8 +92,6 @@ const loadStateFromStorage = (currentUserId) => {
       tasks: parsed.tasks || [],
       files: parsed.files || [],
       calendarEvents: parsed.calendarEvents || [],
-      messageChannels: parsed.messageChannels || [],
-      messages: parsed.messages || [],
       activityLog: parsed.activityLog || [],
       selectedProjectId: parsed.selectedProjectId || null,
       activeView: parsed.activeView || 'Dashboard'
@@ -116,10 +108,10 @@ const getInitialState = () => {
     authLoading: true, // Add separate auth loading state
     activeView: 'Dashboard', 
     selectedProjectId: null, 
-    selectedChannelId: null,
-    projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], messageChannels: [], messages: [], activityLog: [],
+    projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], activityLog: [],
     user: null, // Changed from hardcoded user to null for proper auth
     userContactId: null, // The user's linked contact_id (from profiles table) — used for matching assignee_id on tasks
+    profileAvatarUrl: null, // Canonical contacts.avatar_url for the signed-in user
     userPreferences: null, // Add user preferences for onboarding
     currentOrganization: null, // Current organization context
     userRole: null, // User's role with permissions
@@ -129,6 +121,10 @@ const getInitialState = () => {
     isProjectCollaborator: false, // User is a guest collaborator
     collaborationProjects: [], // Projects user can access as collaborator
     accountIntent: 'workspace_owner',
+    // Lazy loading flags
+    tasksLoaded: false,
+    filesLoaded: false,
+    calendarEventsLoaded: false,
   };
   
   // Try to restore from sessionStorage (will be null if no user or different user)
@@ -146,6 +142,7 @@ function appReducer(state, action) {
   let newState;
   switch (action.type) {
     case 'SET_DATA': {
+      // Preserve current activeView if not provided in payload (to prevent resetting on data refresh)
       const payload = { ...action.payload };
       if (payload.projects !== undefined) {
         payload.projects = normalizeProjectsArray(payload.projects);
@@ -164,25 +161,32 @@ function appReducer(state, action) {
       saveStateToStorage(newState);
       return newState;
     case 'SET_PROJECT': return { ...state, selectedProjectId: action.payload };
-    case 'SET_CHANNEL': return { ...state, selectedChannelId: action.payload, activeView: 'Messages' };
     case 'SET_USER': 
       // When user is cleared (logout), also clear userContactId to prevent stale data
-      return { ...state, user: action.payload, userContactId: action.payload ? state.userContactId : null };
-    case 'SET_USER_CONTACT_ID': return { ...state, userContactId: action.payload };
-    case 'SET_AUTH_LOADING': return { ...state, authLoading: action.payload };
-    case 'ADD_PROJECT': 
-      newState = { ...state, projects: [...state.projects, normalizeProjectRecord(action.payload)] };
-      saveStateToStorage(newState);
-      return newState;
-    case 'UPDATE_PROJECT': 
-      newState = {
+      return {
         ...state,
-        projects: state.projects.map((p) =>
-          p.id === action.payload.id ? normalizeProjectRecord({ ...p, ...action.payload }) : p,
-        ),
+        user: action.payload,
+        userContactId: action.payload ? state.userContactId : null,
+        profileAvatarUrl: action.payload ? state.profileAvatarUrl : null,
       };
+    case 'SET_USER_CONTACT_ID': return { ...state, userContactId: action.payload };
+    case 'SET_PROFILE_AVATAR_URL': return { ...state, profileAvatarUrl: action.payload };
+    case 'SET_AUTH_LOADING': return { ...state, authLoading: action.payload };
+    case 'ADD_PROJECT': {
+      const project = normalizeProjectRecord(action.payload);
+      const withoutDup = state.projects.filter((p) => p.id !== project.id);
+      newState = { ...state, projects: [project, ...withoutDup] };
       saveStateToStorage(newState);
       return newState;
+    }
+    case 'UPDATE_PROJECT': {
+      const existing = state.projects.find((p) => p.id === action.payload.id);
+      const updated = normalizeProjectRecord({ ...existing, ...action.payload });
+      const rest = state.projects.filter((p) => p.id !== updated.id);
+      newState = { ...state, projects: [updated, ...rest] };
+      saveStateToStorage(newState);
+      return newState;
+    }
     case 'DELETE_PROJECT': 
       newState = { ...state, projects: state.projects.filter(p => p.id !== action.payload) };
       saveStateToStorage(newState);
@@ -203,10 +207,6 @@ function appReducer(state, action) {
     case 'UPDATE_TASK': return { ...state, tasks: state.tasks.map(task => task.id === action.payload.id ? action.payload : task) };
     case 'DELETE_TASK': return { ...state, tasks: state.tasks.filter(task => task.id !== action.payload) };
     case 'REORDER_TASKS': return { ...state, tasks: action.payload };
-    case 'SET_TASKS':
-      newState = { ...state, tasks: dedupeTasksById(action.payload) };
-      saveStateToStorage(newState);
-      return newState;
     case 'ADD_FILE': return { ...state, files: [...state.files, action.payload] };
     case 'ADD_EVENT': return { ...state, calendarEvents: [...state.calendarEvents, action.payload] };
     case 'UPDATE_EVENT': return { 
@@ -219,29 +219,6 @@ function appReducer(state, action) {
       ...state, 
       calendarEvents: state.calendarEvents.filter(event => event.id !== action.payload) 
     };
-    case 'ADD_MESSAGE': {
-      // Prevent duplicates
-      const exists = state.messages.some(m => m.id === action.payload.id);
-      if (exists) return state;
-      return { ...state, messages: [...state.messages, action.payload] };
-    }
-    case 'UPDATE_MESSAGE': {
-      return { 
-        ...state, 
-        messages: state.messages.map(msg => 
-          msg.id === action.payload.id ? action.payload : msg
-        ) 
-      };
-    }
-    case 'SET_CHANNEL_MESSAGES': {
-      // Set messages for a specific channel (replaces existing messages for that channel)
-      const channelId = action.payload.channelId;
-      const newMessages = action.payload.messages;
-      // Remove existing messages for this channel and add new ones
-      const filteredMessages = state.messages.filter(m => m.channel_id !== channelId);
-      return { ...state, messages: [...filteredMessages, ...newMessages] };
-    }
-    case 'ADD_CHANNEL': return { ...state, messageChannels: [...state.messageChannels, action.payload] };
     case 'ADD_ACTIVITY': return { ...state, activityLog: [action.payload, ...state.activityLog].slice(0, 50) }; // Keep latest 50
     case 'ADD_CONTACT': {
       // Ensure project_contacts is always an array and prevent duplicates
@@ -269,40 +246,13 @@ function appReducer(state, action) {
       ...state, 
       contacts: state.contacts.filter(contact => contact.id !== action.payload) 
     };
-    case 'ADD_PROJECT_CONTACT': {
-      const contactId = action.payload.contact_id;
-      const projectId = action.payload.project_id;
-      
-      // Check if contact exists in state
-      const contactExists = state.contacts.some(c => c.id === contactId);
-      
-      if (contactExists) {
-        // Update existing contact
-        return { 
-          ...state, 
-          contacts: state.contacts.map(c => {
-            if (c.id === contactId) {
-              const existingProjectContacts = Array.isArray(c.project_contacts) ? c.project_contacts : [];
-              const alreadyHasProject = existingProjectContacts.some(pc => 
-                String(pc.project_id) === String(projectId)
-              );
-              
-              if (!alreadyHasProject) {
-                return { 
-                  ...c, 
-                  project_contacts: [...existingProjectContacts, { project_id: projectId }] 
-                };
-              }
-            }
-            return c;
-          })
-        };
-      } else {
-        // Contact doesn't exist yet - fetch it
-        // This will be handled by the realtime subscription or manual refresh
-        return state;
-      }
-    }
+    case 'ADD_PROJECT_CONTACT': return { 
+      ...state, 
+      contacts: state.contacts.map(c => c.id === action.payload.contact_id 
+        ? { ...c, project_contacts: [...(Array.isArray(c.project_contacts) ? c.project_contacts : []), { project_id: action.payload.project_id }] } 
+        : c
+      ) 
+    };
     case 'REMOVE_PROJECT_CONTACT': return { 
       ...state, 
       contacts: state.contacts.map(c => c.id === action.payload.contact_id 
@@ -317,13 +267,31 @@ function appReducer(state, action) {
     case 'SET_MUST_CHANGE_PASSWORD': return { ...state, mustChangePassword: action.payload };
     case 'SET_ORGANIZATION_ERROR': return { ...state, organizationError: action.payload };
     case 'SET_ORGANIZATION_LOADING': return { ...state, organizationLoading: action.payload };
-    case 'SET_COLLABORATOR_STATUS': return { 
-      ...state, 
+    case 'SET_COLLABORATOR_STATUS': return {
+      ...state,
       isProjectCollaborator: action.payload.isCollaborator,
       collaborationProjects: normalizeProjectsArray(action.payload.projects || []),
     };
     case 'SET_ACCOUNT_INTENT':
       return { ...state, accountIntent: action.payload };
+    case 'RESET_LAZY_DATA': {
+      newState = {
+        ...state,
+        tasks: [],
+        files: [],
+        calendarEvents: [],
+        tasksLoaded: false,
+        filesLoaded: false,
+        calendarEventsLoaded: false,
+      };
+      saveStateToStorage(newState);
+      return newState;
+    }
+    case 'MERGE_TASKS':
+      return { ...state, tasks: dedupeTasksById(action.payload) };
+    case 'SET_TASKS_LOADED': return { ...state, tasks: dedupeTasksById(action.payload), tasksLoaded: true };
+    case 'SET_FILES_LOADED': return { ...state, files: action.payload, filesLoaded: true };
+    case 'SET_CALENDAR_EVENTS_LOADED': return { ...state, calendarEvents: action.payload, calendarEventsLoaded: true };
     default: return state;
   }
 }
@@ -332,12 +300,20 @@ export const AppProvider = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
   appStateRefForLazy.current = state;
   const currentActiveViewRef = useRef(state.activeView);
+  /** Last org id after a successful fetch — used to reset lazy-loaded data on org / user context change */
+  const lastOrgIdForLazyRef = useRef(undefined);
   const taskDupWatchSigRef = useRef('');
 
   // Keep ref in sync with state
   useEffect(() => {
     currentActiveViewRef.current = state.activeView;
   }, [state.activeView]);
+
+  useEffect(() => {
+    if (!state.user) {
+      lastOrgIdForLazyRef.current = undefined;
+    }
+  }, [state.user]);
 
   // Expose debug helpers to window for console access (development only)
   useEffect(() => {
@@ -448,10 +424,9 @@ export const AppProvider = ({ children }) => {
       try {
         const { data: { session }, error } = await supabaseClient.auth.getSession();
         if (error) {
-          // Handle invalid refresh token error
-          if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
-            console.warn('Invalid refresh token detected, clearing session');
-            await supabaseClient.auth.signOut();
+          if (isStaleRefreshTokenError(error)) {
+            console.warn('Stale session cleared; sign in again.');
+            await clearStaleSupabaseSession(supabaseClient);
             dispatch({ type: 'SET_USER', payload: null });
           } else {
             console.error('Error getting session:', error);
@@ -459,7 +434,7 @@ export const AppProvider = ({ children }) => {
         } else if (session?.user) {
           dispatch({ type: 'SET_USER', payload: session.user });
           // Restore cached data immediately when user is set, but preserve current activeView
-          const cachedData = loadStateFromStorage(session.user.id);
+            const cachedData = loadStateFromStorage(session.user.id);
           if (cachedData) {
             // Preserve current activeView if it's already set (user is navigating)
             const activeViewToUse = currentActiveViewRef.current && currentActiveViewRef.current !== 'Dashboard' 
@@ -475,12 +450,10 @@ export const AppProvider = ({ children }) => {
           }
         }
       } catch (error) {
-          // Handle invalid refresh token error in catch block
-          if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
-            console.warn('Invalid refresh token detected, clearing session');
-            await supabaseClient.auth.signOut();
+          if (isStaleRefreshTokenError(error)) {
+            console.warn('Stale session cleared; sign in again.');
+            await clearStaleSupabaseSession(supabaseClient);
             dispatch({ type: 'SET_USER', payload: null });
-            // Clear cached data on logout
             sessionStorage.removeItem(STORAGE_KEY);
             sessionStorage.removeItem(STORAGE_USER_KEY);
           } else {
@@ -499,10 +472,9 @@ export const AppProvider = ({ children }) => {
         try {
           // Handle token refresh errors
           if (event === 'TOKEN_REFRESHED' && !session) {
-            console.warn('Token refresh failed, signing out');
-            await supabaseClient.auth.signOut();
+            console.warn('Token refresh failed; clearing local session.');
+            await clearStaleSupabaseSession(supabaseClient);
             dispatch({ type: 'SET_USER', payload: null });
-            // Clear cached data on logout
             sessionStorage.removeItem(STORAGE_KEY);
             sessionStorage.removeItem(STORAGE_USER_KEY);
           } else if (session?.user) {
@@ -515,12 +487,10 @@ export const AppProvider = ({ children }) => {
             sessionStorage.removeItem(STORAGE_USER_KEY);
           }
         } catch (error) {
-          // Handle invalid refresh token errors
-          if (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found')) {
-            console.warn('Invalid refresh token detected, clearing session');
-            await supabaseClient.auth.signOut();
+          if (isStaleRefreshTokenError(error)) {
+            console.warn('Stale session cleared; sign in again.');
+            await clearStaleSupabaseSession(supabaseClient);
             dispatch({ type: 'SET_USER', payload: null });
-            // Clear cached data on logout
             sessionStorage.removeItem(STORAGE_KEY);
             sessionStorage.removeItem(STORAGE_USER_KEY);
           } else {
@@ -598,21 +568,10 @@ export const AppProvider = ({ children }) => {
       const error = event.reason || event.error;
       if (!error) return;
       
-      // Check if it's a Supabase auth error about invalid refresh token
-      const errorMessage = error.message || error.toString() || '';
-      const isInvalidTokenError = 
-        errorMessage.includes('Invalid Refresh Token') || 
-        errorMessage.includes('Refresh Token Not Found') ||
-        (error.name === 'AuthApiError' && errorMessage.includes('refresh'));
-      
-      if (isInvalidTokenError) {
-        console.warn('Caught invalid refresh token error, clearing session');
-        // Prevent the error from showing in console as an unhandled error
+      if (isStaleRefreshTokenError(error)) {
+        console.warn('Stale session cleared; sign in again.');
         event.preventDefault();
-        // Clear the invalid session silently
-        supabaseClient.auth.signOut().catch(() => {
-          // Ignore errors during sign out
-        });
+        void clearStaleSupabaseSession(supabaseClient);
         dispatch({ type: 'SET_USER', payload: null });
       }
     };
@@ -628,9 +587,17 @@ export const AppProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    if (!state.user) {
+      clearMemoryCache();
+    }
+  }, [state.user]);
+
+  useEffect(() => {
     if (!state.authLoading && state.user) {
       // Only fetch data if user is authenticated
       async function fetchInitialData() {
+        const startTime = performance.now();
+        
         try {
           // First, check if user has a profile
           const { data: profile, error: profileError } = await supabaseClient
@@ -639,7 +606,6 @@ export const AppProvider = ({ children }) => {
             .eq('id', state.user.id)
             .maybeSingle();
           
-          console.log('User profile:', profile);
           if (profileError) {
             console.error('Profile error:', profileError);
           }
@@ -782,6 +748,16 @@ export const AppProvider = ({ children }) => {
             dispatch({ type: 'SET_USER_CONTACT_ID', payload: contactId });
           }
 
+          if (state.user?.id) {
+            try {
+              const { resolveUserAvatarUrl } = await import('@siteweave/core-logic');
+              const avatarUrl = await resolveUserAvatarUrl(supabaseClient, state.user.id);
+              dispatch({ type: 'SET_PROFILE_AVATAR_URL', payload: avatarUrl });
+            } catch (avatarErr) {
+              console.warn('Could not load profile avatar:', avatarErr);
+            }
+          }
+
           try {
             const workspaceClient = await import('../utils/workspaceClient');
             const pendingIntent = sessionStorage.getItem('pendingAccountIntent');
@@ -793,13 +769,48 @@ export const AppProvider = ({ children }) => {
                 role: 'Team',
               }, { onConflict: 'id' });
             }
-            const pendingInviteToken = workspaceClient.consumePendingProjectInviteToken();
-            if (pendingInviteToken) {
-              await workspaceClient.redeemProjectInvite(supabaseClient, { token: pendingInviteToken });
-            }
-            await workspaceClient.autoRedeemProjectInvites(supabaseClient);
+            await workspaceClient.runInviteBootstrap(supabaseClient);
           } catch (bootstrapErr) {
             console.warn('Account bootstrap (invites/provision):', bootstrapErr);
+          }
+
+          try {
+            const meta = state.user?.user_metadata || {};
+            if (meta.pending_organization_id) {
+              const { data: pendingResult, error: pendingErr } = await supabaseClient.functions.invoke(
+                'update-profile-organization',
+                {
+                  body: {
+                    userId: state.user.id,
+                    organizationId: meta.pending_organization_id,
+                    roleId: meta.pending_role_id ?? null,
+                    contactId: meta.pending_contact_id ?? null,
+                  },
+                },
+              );
+              if (!pendingErr && pendingResult?.success) {
+                if (meta.pending_invitation_id) {
+                  const { error: inviteAcceptError } = await supabaseClient
+                    .from('invitations')
+                    .update({
+                      status: 'accepted',
+                      accepted_at: new Date().toISOString(),
+                    })
+                    .eq('id', meta.pending_invitation_id);
+                  if (inviteAcceptError) {
+                    console.warn('Could not mark pending invitation accepted:', inviteAcceptError);
+                  }
+                }
+                const nextMeta = { ...meta };
+                delete nextMeta.pending_organization_id;
+                delete nextMeta.pending_role_id;
+                delete nextMeta.pending_contact_id;
+                delete nextMeta.pending_invitation_id;
+                await supabaseClient.auth.updateUser({ data: nextMeta });
+              }
+            }
+          } catch (pendingOrgErr) {
+            console.warn('Pending org invite completion:', pendingOrgErr);
           }
           
           // Load organization and user role
@@ -915,11 +926,52 @@ export const AppProvider = ({ children }) => {
             dispatch({ type: 'SET_MUST_CHANGE_PASSWORD', payload: true });
           }
 
-          // Fetch projects - RLS policy handles filtering automatically by organization_id
-          // The RLS policy allows:
-          // - Organization members: projects in their organization
-          // - Project collaborators: specific projects they're invited to
-          const fetchActivityLogWeb = async () => {
+          // Legacy accounts: align profiles.organization_id with RLS before any writes
+          if (state.user?.id && (profileWithOrg?.account_intent || 'workspace_owner') === 'workspace_owner') {
+            try {
+              const { ensureOrganizationForWrites } = await import('../utils/organizationContext');
+              const repaired = await ensureOrganizationForWrites(supabaseClient, {
+                userId: state.user.id,
+                accountIntent: profileWithOrg?.account_intent || state.accountIntent,
+                currentOrganization: organization,
+                dispatch,
+              });
+              if (repaired.ok && repaired.organization) {
+                organization = repaired.organization;
+              }
+            } catch (repairErr) {
+              console.warn('ensureOrganizationForWrites on boot:', repairErr);
+            }
+          }
+
+          const orgIdForLazy = organization?.id ?? null;
+          const prevOrgId = lastOrgIdForLazyRef.current;
+          if (prevOrgId !== undefined && prevOrgId !== orgIdForLazy) {
+            dispatch({ type: 'RESET_LAZY_DATA' });
+          }
+
+          // === PHASE 1: Critical Data (Projects) - Load first for fast UI render ===
+          let finalProjects = [];
+          try {
+            const { data: projects, error: projectsError } = await supabaseClient
+              .from('projects')
+              .select(PROJECT_LIST_COLUMNS)
+              .order('updated_at', { ascending: false });
+            if (projectsError) throw projectsError;
+            finalProjects = projects || [];
+            dispatch({ type: 'SET_DATA', payload: {
+              projects: finalProjects,
+              activeView: currentActiveViewRef.current || state.activeView,
+            }});
+          } catch (projectsErr) {
+            console.error('Error loading projects on boot:', projectsErr);
+            finalProjects = appStateRefForLazy.current?.projects?.length
+              ? appStateRefForLazy.current.projects
+              : [];
+          }
+          
+          // === PHASE 2: Essential Secondary Data (NOT tasks/files/events - loaded on demand) ===
+          const fetchActivityLog = async () => {
             let q = supabaseClient
               .from('activity_log')
               .select('*')
@@ -933,22 +985,25 @@ export const AppProvider = ({ children }) => {
             return data || [];
           };
 
-          const [{ data: projects }, { data: tasks }, { data: files }, {data: calendarEvents}, { data: userPreferences, error: userPrefsError }, activityLog] = await Promise.all([
-            supabaseClient.from('projects').select('*'),
-            supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email, phone)'),
-            supabaseClient.from('files').select('*'),
-            supabaseClient.from('calendar_events').select('*'),
-            supabaseClient.from('user_preferences').select('*').eq('user_id', state.user.id).maybeSingle(),
-            fetchActivityLogWeb()
-          ]);
+          const userPreferences = await loadWithFallback(
+            async () => {
+              const { data, error } = await supabaseClient
+                .from('user_preferences')
+                .select('*')
+                .eq('user_id', state.user.id)
+                .maybeSingle();
+              if (error) throw error;
+              return data;
+            },
+            null,
+            { label: 'user_preferences' },
+          );
+
+          const activityLog = await loadWithFallback(fetchActivityLog, [], { label: 'activity_log' });
           
-          // RLS policy automatically filters projects based on user role
-          // No need for manual filtering - RLS handles it
-          const finalProjects = projects || [];
-          console.log('Loaded projects:', finalProjects.length);
+          // Tasks, Files, and Calendar Events will be loaded on-demand when user navigates to those views
           
-          // Fetch virtual contacts (Organization Directory + Project Collaborators)
-          // Import virtual contacts service
+          // === PHASE 3: Contacts (slower query) - Load last ===
           const { getVirtualContacts, getProjectContactsForContacts } = await import('../utils/virtualContactsService');
           const userProjectIds = finalProjects.map(p => p.id);
           const organizationId = organization?.id || null;
@@ -1000,36 +1055,30 @@ export const AppProvider = ({ children }) => {
             finalContacts = [];
           }
           
-          // Preserve current activeView when fetching data
+          // Final dispatch with critical data. Do not set tasks/files/calendarEvents here — they are
+          // lazy-loaded (see lazyDataLoader). Including empty arrays would race with loadTasksIfNeeded
+          // and wipe the full task list after the dashboard briefly showed correct stats.
+          const endTime = performance.now();
+          
           dispatch({ type: 'SET_DATA', payload: { 
             projects: finalProjects, 
             contacts: finalContacts, 
-            tasks: tasks || [], 
-            files: files || [], 
-            calendarEvents: calendarEvents || [], 
-            messageChannels: [], 
-            messages: [],
             activityLog: activityLog || [],
             activeView: currentActiveViewRef.current || state.activeView
           } });
+
+          lastOrgIdForLazyRef.current = orgIdForLazy;
           
-          // Handle user preferences with error checking
-          if (userPrefsError) {
-            console.warn('User preferences table may not exist yet:', userPrefsError.message);
-            dispatch({ type: 'SET_USER_PREFERENCES', payload: null });
-          } else {
-            dispatch({ type: 'SET_USER_PREFERENCES', payload: userPreferences });
-          }
+          dispatch({ type: 'SET_USER_PREFERENCES', payload: userPreferences });
         } catch (error) {
           console.error('Error fetching initial data:', error);
-          // Still set loading to false even if there's an error
-          dispatch({ type: 'SET_DATA', payload: { projects: [], contacts: [], tasks: [], files: [], calendarEvents: [], messageChannels: [], messages: [] } });
-          dispatch({ type: 'SET_USER_PREFERENCES', payload: null });
         }
       }
     fetchInitialData();
 
     // --- REAL-TIME SUBSCRIPTIONS ---
+    // Note: Subscriptions will fail silently if realtime is not enabled for a table
+    // This is expected behavior - WebSocket errors can be ignored
     const projectsSubscription = supabaseClient.channel('public:projects')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, (payload) => {
         if (payload.eventType === 'INSERT') {
@@ -1040,7 +1089,9 @@ export const AppProvider = ({ children }) => {
           dispatch({ type: 'DELETE_PROJECT', payload: payload.old.id });
         }
       })
-      .subscribe(() => {}); // Silently handle subscription status
+      .subscribe((status) => {
+        // Silently handle subscription status - errors are expected if realtime is disabled
+      });
 
     const filesSubscription = supabaseClient.channel('public:files')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'files' }, (payload) => {
@@ -1062,31 +1113,39 @@ export const AppProvider = ({ children }) => {
 
     const contactsSubscription = supabaseClient.channel('public:contacts')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contacts' }, async (payload) => {
-        // Re-fetch the contact with relationships to match initial load structure
-        const { data: fullContact } = await supabaseClient
-          .from('contacts')
-          .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
-          .eq('id', payload.new.id)
-          .single();
-        if (fullContact) {
-          dispatch({ type: 'ADD_CONTACT', payload: fullContact });
-        } else {
-          // Fallback to payload.new if re-fetch fails
-          dispatch({ type: 'ADD_CONTACT', payload: payload.new });
+        try {
+          // Re-fetch the contact with relationships to match initial load structure
+          const { data: fullContact } = await supabaseClient
+            .from('contacts')
+            .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
+            .eq('id', payload.new.id)
+            .single();
+          if (fullContact) {
+            dispatch({ type: 'ADD_CONTACT', payload: fullContact });
+          } else {
+            // Fallback to payload.new if re-fetch fails
+            dispatch({ type: 'ADD_CONTACT', payload: payload.new });
+          }
+        } catch (error) {
+          console.error('Error processing contact INSERT in subscription:', error);
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'contacts' }, async (payload) => {
-        // Re-fetch the contact with relationships
-        const { data: fullContact } = await supabaseClient
-          .from('contacts')
-          .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
-          .eq('id', payload.new.id)
-          .single();
-        if (fullContact) {
-          dispatch({ type: 'UPDATE_CONTACT', payload: fullContact });
-        } else {
-          // Fallback to payload.new if re-fetch fails
-          dispatch({ type: 'UPDATE_CONTACT', payload: payload.new });
+        try {
+          // Re-fetch the contact with relationships
+          const { data: fullContact } = await supabaseClient
+            .from('contacts')
+            .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
+            .eq('id', payload.new.id)
+            .single();
+          if (fullContact) {
+            dispatch({ type: 'UPDATE_CONTACT', payload: fullContact });
+          } else {
+            // Fallback to payload.new if re-fetch fails
+            dispatch({ type: 'UPDATE_CONTACT', payload: payload.new });
+          }
+        } catch (error) {
+          console.error('Error processing contact UPDATE in subscription:', error);
         }
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'contacts' }, (payload) => {
@@ -1095,22 +1154,8 @@ export const AppProvider = ({ children }) => {
       .subscribe(() => {}); // Silently handle subscription status
 
     const projectContactsSubscription = supabaseClient.channel('public:project_contacts')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_contacts' }, async (payload) => {
-        // Always fetch the contact with its project_contacts to ensure we have the latest data
-        const { data: contact } = await supabaseClient
-          .from('contacts')
-          .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
-          .eq('id', payload.new.contact_id)
-          .single();
-        
-        if (contact) {
-          // ADD_CONTACT reducer handles duplicates by updating existing contacts
-          // This ensures the contact has the latest project_contacts relationship
-          dispatch({ type: 'ADD_CONTACT', payload: contact });
-        } else {
-          // Fallback: just update the project_contacts relationship for existing contact
-          dispatch({ type: 'ADD_PROJECT_CONTACT', payload: payload.new });
-        }
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_contacts' }, (payload) => {
+        dispatch({ type: 'ADD_PROJECT_CONTACT', payload: payload.new });
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'project_contacts' }, (payload) => {
         dispatch({ type: 'REMOVE_PROJECT_CONTACT', payload: payload.old });
@@ -1119,14 +1164,18 @@ export const AppProvider = ({ children }) => {
     
     const tasksSubscription = supabaseClient.channel('public:tasks')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
-        if (payload.eventType === 'INSERT') {
-          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email, phone)').eq('id', payload.new.id).single();
+        try {
+          if (payload.eventType === 'INSERT') {
+          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url, email, phone)').eq('id', payload.new.id).single();
           if (updatedTask) dispatch({ type: 'ADD_TASK', payload: updatedTask });
         } else if (payload.eventType === 'UPDATE') {
-          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts!fk_tasks_assignee_id(name, avatar_url, email, phone)').eq('id', payload.new.id).single();
-          if (updatedTask) dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
-        } else if (payload.eventType === 'DELETE') {
-          dispatch({ type: 'DELETE_TASK', payload: payload.old.id });
+          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url, email, phone)').eq('id', payload.new.id).single();
+            if (updatedTask) dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
+          } else if (payload.eventType === 'DELETE') {
+            dispatch({ type: 'DELETE_TASK', payload: payload.old.id });
+          }
+        } catch (error) {
+          console.error('Error processing task change in subscription:', error);
         }
       })
       .subscribe(() => {}); // Silently handle subscription status
@@ -1145,15 +1194,60 @@ export const AppProvider = ({ children }) => {
       })
       .subscribe(() => {}); // Silently handle subscription status
 
-      return () => supabaseClient.removeAllChannels();
+    // CRITICAL: Subscribe to profiles table for organization member updates
+    // This ensures the UI updates immediately when users are added/removed/updated
+    const profilesSubscription = supabaseClient.channel('public:profiles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async (payload) => {
+        try {
+          // Only process if it's related to the current organization
+          const profileOrgId = payload.new?.organization_id || payload.old?.organization_id;
+          if (profileOrgId && profileOrgId === state.currentOrganization?.id) {
+            // Refresh contacts list to include new org members
+            const { getVirtualContacts } = await import('../utils/virtualContactsService');
+            const projects = state.projects || [];
+            const userProjectIds = projects.map(p => p.id);
+            const organizationId = state.currentOrganization?.id || null;
+
+            const updatedContacts = await getVirtualContacts(
+              supabaseClient,
+              state.user?.id,
+              organizationId,
+              userProjectIds
+            );
+
+            // Update contacts in state
+            dispatch({ type: 'SET_DATA', payload: {
+              contacts: updatedContacts,
+              activeView: state.activeView // Preserve current view
+            }});
+          }
+        } catch (error) {
+          console.error('Error processing profiles subscription:', error);
+        }
+      })
+      .subscribe((status) => {
+        // Handle subscription status changes silently
+        if (status === 'SUBSCRIBED') {
+          // Successfully subscribed
+        } else if (status === 'CHANNEL_ERROR') {
+          // Channel error - realtime may not be enabled for this table
+          // Silently fail - this is expected if realtime is not enabled
+        }
+      });
+
+      return () => {
+        // Clean up subscriptions
+        supabaseClient.removeAllChannels();
+      };
     }
-  }, [state.authLoading, state.user]);
+  }, [state.authLoading, state.user?.id, state.currentOrganization?.id]);
 
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>;
 };
 
 export const useAppContext = () => useContext(AppContext);
 
+// Custom hook for lazy loading data
 export const useLazyDataLoader = () => {
   const { state, dispatch } = useAppContext();
   const getState = useCallback(() => appStateRefForLazy.current, []);
@@ -1189,7 +1283,7 @@ export const useLazyDataLoader = () => {
     loadProjectTasks,
     tasksLoaded: state.tasksLoaded,
     filesLoaded: state.filesLoaded,
-    calendarEventsLoaded: state.calendarEventsLoaded,
+    calendarEventsLoaded: state.calendarEventsLoaded
   };
 };
 

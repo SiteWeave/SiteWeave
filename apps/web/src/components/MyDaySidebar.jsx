@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import Avatar from './Avatar';
 import { formatActivityLine } from '../utils/formatActivityLine';
-import { activityLineT } from '../utils/activityLineT';
 import PermissionGuard from './PermissionGuard';
 
 function MyDaySidebar() {
@@ -11,24 +10,9 @@ function MyDaySidebar() {
     const { state } = useAppContext();
     const [lastUpdate, setLastUpdate] = useState(new Date());
 
-    useEffect(() => {
-        // Update timestamp when tasks or events change
-        setLastUpdate(new Date());
-    }, [state.tasks.length, state.calendarEvents.length]);
-
-    // FIXED: assignee_id stores contacts.id, NOT auth.uid()
-    // Use state.userContactId (resolved from profiles.contact_id) for correct matching
-    // Guard: if userContactId is null (no linked contact yet), show no tasks rather than
-    // accidentally matching all unassigned tasks (where assignee_id is also null)
-    const myTodos = state.userContactId
-        ? state.tasks.filter(task => task.assignee_id === state.userContactId && !task.completed)
-        : [];
-
-    const today = new Date();
-    const todayEvents = state.calendarEvents.filter(event => 
-        new Date(event.start_time).toDateString() === today.toDateString()
-    );
-
+    const tasks = state.tasks || [];
+    const calendarEvents = state.calendarEvents || [];
+    const activityLog = state.activityLog || [];
     const projectNamesById = useMemo(() => {
         const m = {};
         (state.projects || []).forEach((p) => {
@@ -37,23 +21,48 @@ function MyDaySidebar() {
         return m;
     }, [state.projects]);
 
+    useEffect(() => {
+        // Update timestamp when tasks or events change
+        setLastUpdate(new Date());
+    }, [tasks.length, calendarEvents.length]);
+
+    // FIXED: assignee_id stores contacts.id, NOT auth.uid()
+    // Use state.userContactId (resolved from profiles.contact_id) for correct matching
+    // Guard: if userContactId is null (no linked contact yet), show no tasks rather than
+    // accidentally matching all unassigned tasks (where assignee_id is also null)
+    const myTodos = state.userContactId
+        ? tasks.filter(task => task.assignee_id === state.userContactId && !task.completed)
+        : [];
+
+    const today = new Date();
+    const todayStart = new Date(today);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+    // Include events that overlap any part of "today", not just those starting today.
+    const todayEvents = calendarEvents.filter((event) => {
+        const start = event?.start_time ? new Date(event.start_time) : null;
+        const end = event?.end_time ? new Date(event.end_time) : start;
+        if (!start || Number.isNaN(start.getTime())) return false;
+        const safeEnd = !end || Number.isNaN(end.getTime()) ? start : end;
+        return start < todayEnd && safeEnd >= todayStart;
+    });
+
     // Get recent activity from the database (filtered by RLS)
-    const recentActivity = (state.activityLog || []).slice(0, 4).map(activity => ({
+    const recentActivity = activityLog.slice(0, 4).map(activity => ({
         id: activity.id,
         user: { 
             name: activity.user_name, 
             avatar: activity.user_avatar || null // null means use default Avatar component
         },
-        description: formatActivityLine(activity, activityLineT, { projectNamesById }),
+        description: formatActivityLine(activity, t, { projectNamesById }),
         time: formatTimeAgo(activity.created_at)
     }));
 
-    // Helper function to format time ago
     function formatTimeAgo(dateString) {
         const now = new Date();
         const activityDate = new Date(dateString);
         const diffInMinutes = Math.floor((now - activityDate) / (1000 * 60));
-        
         if (diffInMinutes < 60) {
             return t('activityHistory.time_ago_minutes', { count: diffInMinutes });
         }
@@ -72,32 +81,32 @@ function MyDaySidebar() {
                     <span>{t('myDay.live')}</span>
                 </div>
             </div>
-            <div>
+            <div className="min-w-0">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('myDay.todo_section', { count: myTodos.length })}</h3>
                 <div className="space-y-2.5">
                     {myTodos.length > 0 ? myTodos.map(task => (
                         <div key={task.id} className="flex items-center gap-2.5 text-sm text-gray-700">
                             <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                            <span className="flex-1">{task.text}</span>
+                            <span className="flex-1 ui-clamp-2">{task.text}</span>
                         </div>
                     )) : <p className="text-sm text-center py-3 text-gray-400">{t('myDay.no_tasks_assigned')}</p>}
                 </div>
             </div>
             <PermissionGuard permission="can_view_activity_history">
-            <div>
+            <div className="min-w-0">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('myDay.recent_activity_section')}</h3>
                  <div className="space-y-2.5">
                     {recentActivity.length > 0 ? recentActivity.map(activity => (
                         <div key={activity.id} className="flex items-start gap-2.5 text-sm">
                             {activity.user.avatar ? (
-                                <img src={activity.user.avatar} alt={activity.user.name} className="w-7 h-7 rounded-full shrink-0" />
+                                <img src={activity.user.avatar} alt={activity.user.name} className="w-7 h-7 rounded-full flex-shrink-0" />
                             ) : (
-                                <div className="shrink-0">
+                                <div className="flex-shrink-0">
                                     <Avatar name={activity.user.name} size="sm" />
                                 </div>
                             )}
                             <div className="flex-1 min-w-0">
-                                <p className="text-gray-700"><span className="font-semibold">{activity.user.name}</span> {activity.description}</p>
+                                <p className="text-gray-700 ui-clamp-3"><span className="font-semibold">{activity.user.name}</span> {activity.description}</p>
                                 <p className="text-xs text-gray-400 mt-0.5">{activity.time}</p>
                             </div>
                         </div>
@@ -107,7 +116,7 @@ function MyDaySidebar() {
                 </div>
             </div>
             </PermissionGuard>
-            <div>
+            <div className="min-w-0">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('myDay.todays_calendar_section', { count: todayEvents.length })}</h3>
                  <div className="space-y-2.5">
                      {todayEvents.length > 0 ? todayEvents.map(event => {
@@ -122,10 +131,17 @@ function MyDaySidebar() {
                         
                         // Determine icon based on event category or title
                         const getEventIcon = () => {
-                            const title = event.title.toLowerCase();
+                            const title = (event.title || '').toLowerCase();
                             const category = event.category?.toLowerCase();
-                            
-                            if (title.includes('standup') || title.includes('meeting') || category === 'meeting') {
+
+                            if (
+                                title.includes('standup') ||
+                                title.includes('meeting') ||
+                                title.includes('sync') ||
+                                title.includes('call') ||
+                                title.includes('1:1') ||
+                                category === 'meeting'
+                            ) {
                                 // Video camera icon for meetings
                                 return "M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z";
                             } else if (title.includes('site') || title.includes('visit') || title.includes('inspection')) {
@@ -143,15 +159,15 @@ function MyDaySidebar() {
                         return (
                             <div key={event.id} className="bg-gray-50 rounded-lg p-2.5 border border-gray-200">
                                 <div className="flex items-start gap-2.5">
-                                    <div className="shrink-0 mt-0.5">
+                                    <div className="flex-shrink-0 mt-0.5">
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="#3B82F6" className="w-4 h-4">
                                             <path strokeLinecap="round" strokeLinejoin="round" d={getEventIcon()} />
                                         </svg>
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <h4 className="font-semibold text-gray-900 text-sm leading-tight">{event.title}</h4>
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            {timeString} • {location}
+                                        <h4 className="font-semibold text-gray-900 text-sm leading-tight ui-clamp-2">{event.title}</h4>
+                                        <p className="mt-1 text-xs text-gray-500 ui-clamp-2">
+                                            {event.is_all_day ? t('myDay.all_day') : timeString} • {location}
                                         </p>
                                     </div>
                                 </div>

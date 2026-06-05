@@ -24,9 +24,19 @@ if (typeof window !== 'undefined') {
   const originalError = console.error;
   console.error = function(...args) {
     const message = args[0]?.toString() || '';
+    const name = args[0]?.name || '';
     // Filter out WebSocket connection errors
     if (message.includes('WebSocket') && message.includes('failed')) {
-      return; // Suppress WebSocket errors
+      return;
+    }
+    // Stale Supabase refresh token on startup — session is cleared automatically
+    if (
+      name === 'AuthApiError' ||
+      message.includes('Invalid Refresh Token') ||
+      message.includes('Refresh Token Not Found') ||
+      message.includes('refresh_token_not_found')
+    ) {
+      return;
     }
     originalError.apply(console, args);
   };

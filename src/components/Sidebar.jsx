@@ -4,7 +4,7 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
 import LiveActivityIndicator from './LiveActivityIndicator';
-import Avatar from './Avatar';
+import EditableProfileAvatar from './EditableProfileAvatar';
 
 const ICONS = {
     Dashboard: <Icon path="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" />,
@@ -24,8 +24,6 @@ function Sidebar() {
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const avatarUrl = state.contacts?.find((contact) => contact.id === state.userContactId)?.avatar_url || state.user?.user_metadata?.avatar_url || null;
-
     const projects = state.projects || [];
 
     const handleLogout = async () => {
@@ -189,12 +187,19 @@ function Sidebar() {
             </nav>
              <div className="p-4 border-t border-gray-200 space-y-3">
                 <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
+                    {isCollapsed ? (
+                        <EditableProfileAvatar
+                            name={state.user?.user_metadata?.full_name || state.user?.email}
+                            size="lg"
+                            hintClassName="sr-only"
+                        />
+                    ) : null}
                     {!isCollapsed && (
                         <div className="flex items-center gap-3">
-                            <Avatar 
-                                name={state.user?.user_metadata?.full_name || state.user?.email} 
-                                avatarUrl={avatarUrl}
+                            <EditableProfileAvatar
+                                name={state.user?.user_metadata?.full_name || state.user?.email}
                                 size="lg"
+                                hintClassName="sr-only"
                             />
                             <div className="flex-1 min-w-0">
                                 <p className="text-sm font-semibold text-gray-800 truncate">

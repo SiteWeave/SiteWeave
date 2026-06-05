@@ -136,6 +136,46 @@ export async function resolveUserAvatarUrl(supabase, userId) {
   }
 }
 
+/**
+ * Refresh contacts + profileAvatarUrl in client app state after upload/remove.
+ * @returns {Promise<string|null>} canonical avatar URL
+ */
+export async function syncProfileAvatarToAppState(
+  supabase,
+  { userId, dispatch, contacts = [], userContactId = null },
+) {
+  if (!userId || !dispatch) return null;
+
+  let contactId = userContactId;
+  let avatar_url = await resolveUserAvatarUrl(supabase, userId);
+
+  if (!contactId) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('contact_id')
+      .eq('id', userId)
+      .maybeSingle();
+    contactId = profile?.contact_id || null;
+    if (contactId) {
+      dispatch({ type: 'SET_USER_CONTACT_ID', payload: contactId });
+    }
+  }
+
+  if (contactId) {
+    dispatch({
+      type: 'UPDATE_CONTACT',
+      payload: {
+        ...(contacts?.find((entry) => entry.id === contactId) || {}),
+        id: contactId,
+        avatar_url,
+      },
+    });
+  }
+
+  dispatch({ type: 'SET_PROFILE_AVATAR_URL', payload: avatar_url });
+  return avatar_url;
+}
+
 export async function prepareWebAvatarFile(file, { outputSize = PROFILE_PHOTO_SIZE } = {}) {
   if (!file) throw new Error('No file selected.');
   if (typeof window === 'undefined' || typeof document === 'undefined') return file;

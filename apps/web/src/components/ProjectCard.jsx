@@ -9,49 +9,15 @@ import PermissionGuard from './PermissionGuard';
 
 const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
     const { i18n, t } = useTranslation();
-    const { dispatch, state } = useAppContext();
     const navigate = useNavigate();
+    const { dispatch, state } = useAppContext();
     const [showActions, setShowActions] = useState(false);
     
-    // Get all members for this project:
-    // 1. Contacts explicitly added via project_contacts
-    // 2. Project creator (if they have a contact_id)
-    // 3. Project manager (if they have a contact_id)
-    // 4. Organization admins (if showing full team)
-    const projectContactIds = new Set(
-        state.contacts
-            .filter(contact => 
-                contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id)
-            )
-            .map(contact => contact.id)
+    // Get all members for this project (any contact linked via project_contacts)
+    const contacts = state.contacts || [];
+    const teamMembers = contacts.filter(contact => 
+        contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id)
     );
-    
-    // Add creator if they have a contact and aren't already in the list
-    if (project.created_by_user_id) {
-        const creatorContact = state.contacts.find(contact => 
-            contact.id && state.profiles?.find(p => 
-                p.id === project.created_by_user_id && p.contact_id === contact.id
-            )
-        );
-        if (creatorContact && !projectContactIds.has(creatorContact.id)) {
-            projectContactIds.add(creatorContact.id);
-        }
-    }
-    
-    // Add manager if they have a contact and aren't already in the list
-    if (project.project_manager_id) {
-        const managerContact = state.contacts.find(contact => 
-            contact.id && state.profiles?.find(p => 
-                p.id === project.project_manager_id && p.contact_id === contact.id
-            )
-        );
-        if (managerContact && !projectContactIds.has(managerContact.id)) {
-            projectContactIds.add(managerContact.id);
-        }
-    }
-    
-    // Get final team members list
-    const teamMembers = state.contacts.filter(contact => projectContactIds.has(contact.id));
     
     const formatDate = (dateString) => {
         if (!dateString) return '';
@@ -84,7 +50,8 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
             onClick={handleCardClick} 
             onMouseEnter={() => setShowActions(true)}
             onMouseLeave={() => setShowActions(false)}
-            className="app-card p-4 space-y-3 cursor-pointer transition-all hover-lift animate-slide-in relative group hover:shadow-md"
+            className="relative min-w-0 overflow-hidden rounded-xl bg-white p-4 space-y-3 cursor-pointer transition-all hover-lift animate-slide-in group"
+            style={{ boxShadow: '0px 4px 12px rgba(0,0,0,0.05)' }}
             role="button"
             tabIndex={0}
             aria-label={`Project: ${project.name}, Status: ${project.status}, Due: ${formatDate(project.due_date)}`}
@@ -95,31 +62,34 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
                 }
             }}
         >
-            <div className="flex justify-between items-start">
-                <div className="flex-1 pr-2">
-                    <h3 className="text-xl font-bold text-slate-900">{project.name}</h3>
-                    <p className="text-xs text-slate-500">{project.project_type}</p>
-                </div>
+            <div className="min-w-0 pr-14">
+                <h3 className="text-xl font-bold ui-clamp-2" title={project.name}>{project.name}</h3>
+                <p className="mt-1 text-xs text-gray-500 ui-ellipsis-1" title={project.project_type}>{project.project_type}</p>
                 {project.notification_count > 0 && (
-                    <div className="flex shrink-0 items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full">
+                    <div className="mt-2 flex h-5 min-w-5 w-fit items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold text-white">
                         {project.notification_count}
                     </div>
                 )}
             </div>
             <div>
                 <p className="text-xs text-gray-400 font-semibold">{t('projectCard.next_milestone')}</p>
-                <p className="text-sm font-medium">{typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || t('projectCard.no_milestone'))}</p>
+                <p
+                    className="text-sm font-medium ui-clamp-2"
+                    title={typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || t('projectCard.no_milestone'))}
+                >
+                    {typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || t('projectCard.no_milestone'))}
+                </p>
             </div>
             
             {/* Progress Status */}
             <ProjectProgressCard project={project} />
             
-            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                <div>
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100">
+                <div className="min-w-0">
                     <p className="text-xs text-gray-400 font-semibold">{t('projectCard.due_date')}</p>
-                    <p className="text-sm font-medium">{formatDate(project.due_date)}</p>
+                    <p className="text-sm font-medium ui-clamp-2">{formatDate(project.due_date)}</p>
                 </div>
-                <div className="flex -space-x-2">
+                <div className="flex shrink-0 -space-x-2">
                     {teamMembers.slice(0, 3).map(member => (
                         <Avatar key={member.id} name={member.name} size="sm" />
                     ))}

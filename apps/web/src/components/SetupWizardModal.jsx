@@ -8,7 +8,7 @@ import LoadingSpinner from './LoadingSpinner';
 import Icon from './Icon';
 
 /**
- * SetupWizardModal — founding Org Admin only (shown by AppStandalone shell flow).
+ * SetupWizardModal — founding Org Admin only (see App.jsx).
  * Single step: invite teammates with three preset roles (no permission editing here).
  */
 

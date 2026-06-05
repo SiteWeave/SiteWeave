@@ -31,6 +31,10 @@ function ladLog(...args) {
   if (LAD_DEBUG) console.log(...args);
 }
 
+function ladWarn(...args) {
+  if (LAD_DEBUG) console.warn(...args);
+}
+
 /** @deprecated use TASK_LIST_COLUMNS from @siteweave/core-logic */
 export const TASK_LIST_SELECT = TASK_LIST_COLUMNS;
 
@@ -43,9 +47,16 @@ async function runTasksLoadWithRetries(supabaseClient, dispatch, getState) {
     if (state?.tasksLoaded) ladLog('Tasks already loaded, skipping');
     return;
   }
+  // Org-wide task preload removed — project views load tasks on demand.
   dispatch({ type: 'SET_TASKS_LOADED', payload: state.tasks || [] });
 }
 
+/**
+ * Load tasks if not already loaded
+ * @param {Object} supabaseClient - Supabase client instance
+ * @param {Function} dispatch - Redux-like dispatch function
+ * @param {() => Object} getState - Returns current app state (avoids stale snapshot after awaits)
+ */
 export async function loadTasksIfNeeded(supabaseClient, dispatch, getState) {
   const snapshot = getState();
   if (!snapshot || snapshot.tasksLoaded) {
@@ -62,6 +73,12 @@ export async function loadTasksIfNeeded(supabaseClient, dispatch, getState) {
   await tasksLoadInFlight;
 }
 
+/**
+ * Load files if not already loaded
+ * @param {Object} supabaseClient - Supabase client instance
+ * @param {Function} dispatch - Redux-like dispatch function
+ * @param {() => Object} getState - Returns current app state
+ */
 export async function loadFilesIfNeeded(supabaseClient, dispatch, getState) {
   const state = getState();
   if (!state || state.filesLoaded) {
@@ -69,7 +86,9 @@ export async function loadFilesIfNeeded(supabaseClient, dispatch, getState) {
     return;
   }
 
-  ladLog('Lazy loading files...');
+  ladLog('📦 Lazy loading files...');
+  const startTime = performance.now();
+
   try {
     const orgId = state.currentOrganization?.id;
     let query = supabaseClient.from('files').select(FILE_LIST_COLUMNS);
@@ -78,7 +97,12 @@ export async function loadFilesIfNeeded(supabaseClient, dispatch, getState) {
     }
 
     const { data: files, error } = await query;
+
     if (error) throw error;
+
+    const endTime = performance.now();
+    ladLog(`✅ Files loaded in ${Math.round(endTime - startTime)}ms`);
+
     dispatch({ type: 'SET_FILES_LOADED', payload: files || [] });
   } catch (error) {
     console.error('Error loading files:', error);
@@ -86,6 +110,14 @@ export async function loadFilesIfNeeded(supabaseClient, dispatch, getState) {
   }
 }
 
+/**
+ * Load calendar events for a reference date (3-month window).
+ * Refetches when the reference date moves outside the currently loaded window.
+ * @param {Object} supabaseClient - Supabase client instance
+ * @param {Function} dispatch - Redux-like dispatch function
+ * @param {() => Object} getState - Returns current app state
+ * @param {Date} [referenceDate]
+ */
 export async function loadCalendarEventsIfNeeded(
   supabaseClient,
   dispatch,
@@ -100,9 +132,16 @@ export async function loadCalendarEventsIfNeeded(
     return;
   }
 
+  ladLog('📦 Lazy loading calendar events...');
+  const startTime = performance.now();
+
   try {
     const calendarEvents = await fetchCalendarEvents(supabaseClient, referenceDate);
     calendarLoadedRange = getCalendarLoadRange(referenceDate);
+
+    const endTime = performance.now();
+    ladLog(`✅ Calendar events loaded in ${Math.round(endTime - startTime)}ms`);
+
     dispatch({ type: 'SET_CALENDAR_EVENTS_LOADED', payload: calendarEvents || [] });
   } catch (error) {
     console.error('Error loading calendar events:', error);
@@ -110,7 +149,17 @@ export async function loadCalendarEventsIfNeeded(
   }
 }
 
+/**
+ * Load tasks for a specific project (more efficient than loading all tasks)
+ * @param {Object} supabaseClient - Supabase client instance
+ * @param {Function} dispatch - Redux-like dispatch function
+ * @param {string} projectId - Project ID to load tasks for
+ * @param {() => Object} getState - Returns current app state
+ */
 export async function loadProjectTasks(supabaseClient, dispatch, projectId, getState) {
+  ladLog(`📦 Loading tasks for project ${projectId}...`);
+  const startTime = performance.now();
+
   try {
     const { data: tasks, error } = await supabaseClient
       .from('tasks')
@@ -120,6 +169,9 @@ export async function loadProjectTasks(supabaseClient, dispatch, projectId, getS
       .order('id', { ascending: true });
 
     if (error) throw error;
+
+    const endTime = performance.now();
+    ladLog(`✅ Project tasks loaded in ${Math.round(endTime - startTime)}ms`);
 
     const state = getState() || { tasks: [] };
     const otherTasks = (state.tasks || []).filter((t) => String(t.project_id) !== String(projectId));

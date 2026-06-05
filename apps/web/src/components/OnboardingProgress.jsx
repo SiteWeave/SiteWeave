@@ -7,8 +7,9 @@ function OnboardingProgress({ currentStep, totalSteps, currentView }) {
     'Dashboard': 'Dashboard',
     'Projects': 'Projects', 
     'Calendar': 'Calendar',
-    'Contacts': 'Contacts',
-    'Messages': 'Messages',
+    'Contacts': 'Team',
+    'Messages': 'Team',
+    'Team': 'Team',
     'Settings': 'Settings'
   };
 

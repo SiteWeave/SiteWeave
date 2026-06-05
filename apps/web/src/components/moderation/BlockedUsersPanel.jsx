@@ -100,20 +100,20 @@ export default function BlockedUsersPanel() {
 
   if (blockedUsers.length === 0) {
     return (
-      <div className="text-center py-8 text-slate-500">
-        <p className="font-medium text-slate-700">{t('moderation.blocked_empty_title')}</p>
+      <div className="text-center py-8 text-gray-500">
+        <p className="font-medium text-gray-700">{t('moderation.blocked_empty_title')}</p>
         <p className="text-sm mt-2">{t('moderation.blocked_empty_hint')}</p>
       </div>
     );
   }
 
   return (
-    <ul className="divide-y divide-slate-200 border border-slate-200 rounded-lg overflow-hidden">
+    <ul className="divide-y divide-gray-200 border border-gray-200 rounded-lg overflow-hidden">
       {blockedUsers.map((user) => (
         <li key={user.id} className="flex items-center justify-between gap-4 p-4 bg-white">
           <div>
-            <p className="font-medium text-slate-900">{user.name || t('moderation.unknown_user')}</p>
-            {user.email && <p className="text-sm text-slate-500">{user.email}</p>}
+            <p className="font-medium text-gray-900">{user.name || t('moderation.unknown_user')}</p>
+            {user.email && <p className="text-sm text-gray-500">{user.email}</p>}
           </div>
           <button
             type="button"

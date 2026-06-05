@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import Avatar from './Avatar';
 
@@ -12,6 +13,7 @@ function ContactSelector({
   projectId = null,
   showRecipientType = true 
 }) {
+  const { t } = useTranslation();
   const { state } = useAppContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [manualEmail, setManualEmail] = useState('');
@@ -85,7 +87,7 @@ function ContactSelector({
         <div className="flex gap-2">
           <input
             type="text"
-            placeholder="Search contacts..."
+            placeholder={t('contact_selector.search_contacts')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
@@ -95,10 +97,10 @@ function ContactSelector({
             onChange={(e) => setFilterType(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
           >
-            <option value="all">All</option>
-            <option value="team">Team</option>
-            <option value="client">Clients</option>
-            <option value="external">External</option>
+            <option value="all">{t('common.all')}</option>
+            <option value="team">{t('contact_selector.team')}</option>
+            <option value="client">{t('contact_selector.clients')}</option>
+            <option value="external">{t('contact_selector.external')}</option>
           </select>
         </div>
 
@@ -113,7 +115,7 @@ function ContactSelector({
           <div className="flex gap-2">
             <input
               type="email"
-              placeholder="Enter email address"
+              placeholder={t('contact_selector.enter_email')}
               value={manualEmail}
               onChange={(e) => setManualEmail(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleAddManualEmail()}
@@ -141,7 +143,7 @@ function ContactSelector({
       {/* Selected Recipients */}
       {selectedRecipients.length > 0 && (
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">Recipients</label>
+          <label className="block text-sm font-medium text-gray-700">{t('contact_selector.recipients')}</label>
           <div className="space-y-2">
             {selectedRecipients.map((recipient, index) => (
               <div
@@ -180,7 +182,7 @@ function ContactSelector({
                 <button type="button"
                   onClick={() => handleRemoveRecipient(index)}
                   className="text-red-600 hover:text-red-700"
-                  aria-label="Remove recipient"
+                  aria-label={t('contact_selector.remove_recipient')}
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

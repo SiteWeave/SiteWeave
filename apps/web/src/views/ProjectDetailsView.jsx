@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -17,7 +18,13 @@ import TaskModal from '../components/TaskModal';
 import TaskPhotosModal from '../components/TaskPhotosModal';
 import TaskDiscussionModal from '../components/TaskDiscussionModal';
 import PhaseTaskSection from '../components/PhaseTaskSection';
-import BuildPath from '../components/BuildPath';
+import BuildPath, { PhaseModal } from '../components/BuildPath';
+import PhasesToolbar from '../components/phases/PhasesToolbar';
+import PhasesSummaryStrip from '../components/phases/PhasesSummaryStrip';
+import PhasesEmptyState from '../components/phases/PhasesEmptyState';
+import PhaseQuickAdd from '../components/phases/PhaseQuickAdd';
+import PhasesHintBanner from '../components/phases/PhasesHintBanner';
+import useProjectPhases from '../hooks/useProjectPhases';
 import ProjectSidebar from '../components/ProjectSidebar';
 import ProjectModal from '../components/ProjectModal';
 import ShareModal from '../components/ShareModal';
@@ -58,9 +65,11 @@ import { useStreamUnread } from '../hooks/useStreamUnread';
 import { useIssuesUnread } from '../hooks/useIssuesUnread';
 import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
 import Icon from '../components/Icon';
+import { SkeletonList } from '../components/ui/Skeleton';
 
-function ProjectDetailsView() {
+function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const { t } = useTranslation();
+    const navigate = useNavigate();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
 
@@ -95,6 +104,42 @@ function ProjectDetailsView() {
     const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
     const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, updates, activity
     const [collabPanel, setCollabPanel] = useState('stream');
+
+    const applyRouteTab = useCallback((tab) => {
+        if (!tab) return;
+        if (tab === 'field-issues') {
+            setCollabPanel('issues');
+            setActiveTab('updates');
+            return;
+        }
+        if (tab === 'stream' || tab === 'updates') {
+            setCollabPanel('stream');
+            setActiveTab('updates');
+            return;
+        }
+        if (tab === 'tasks' || tab === 'gantt' || tab === 'activity') {
+            setActiveTab(tab);
+        }
+    }, []);
+
+    useEffect(() => {
+        applyRouteTab(routeTab);
+    }, [routeTab, applyRouteTab]);
+
+    const selectTab = useCallback((tab, { panel } = {}) => {
+        if (onTabChange) {
+            if (tab === 'updates') {
+                const p = panel ?? 'stream';
+                onTabChange(p === 'issues' ? 'field-issues' : p === 'stream' ? 'stream' : 'updates');
+            } else {
+                onTabChange(tab);
+            }
+            return;
+        }
+        if (tab === 'updates' && panel) setCollabPanel(panel);
+        setActiveTab(tab);
+    }, [onTabChange]);
+
     const { unreadCount: streamUnreadCount } = useStreamUnread(
         supabaseClient,
         project?.id,
@@ -124,10 +169,11 @@ function ProjectDetailsView() {
     const [createTaskPhotoUploadProgress, setCreateTaskPhotoUploadProgress] = useState(null);
     const [taskDependencies, setTaskDependencies] = useState([]);
     const [projectDependencyMode, setProjectDependencyMode] = useState('auto');
-    const [projectPhases, setProjectPhases] = useState([]);
     const [photoModalTaskId, setPhotoModalTaskId] = useState(null);
     const [discussionModalTaskId, setDiscussionModalTaskId] = useState(null);
     const [showPhasesModal, setShowPhasesModal] = useState(false);
+    const [showAddPhaseModal, setShowAddPhaseModal] = useState(false);
+    const [taskModalDefaultPhaseId, setTaskModalDefaultPhaseId] = useState('');
     const [dependencyDrawerTaskId, setDependencyDrawerTaskId] = useState(null);
     const [drawerPredecessorQuery, setDrawerPredecessorQuery] = useState('');
     const [drawerSuccessorQuery, setDrawerSuccessorQuery] = useState('');
@@ -137,29 +183,27 @@ function ProjectDetailsView() {
     const dependencyPickerRef = useRef(null);
 
     const canViewActivityHistory = state.userRole?.permissions?.can_view_activity_history === true;
+    const canEditProjects = state.userRole?.permissions?.can_edit_projects === true;
+
+    const phaseControl = useProjectPhases(project?.id, project);
+    const {
+        phases: projectPhases,
+        loading: phasesLoading,
+        isMutating: phasesMutating,
+        overallProgress: phasesOverallProgress,
+        addPhase,
+        addPhaseByName,
+        updatePhase,
+        deletePhase,
+        seedDefaultPhases,
+    } = phaseControl;
 
     useEffect(() => {
-        if (!state.selectedProjectId) {
-            setProjectPhases([]);
-            return;
+        if (project?.id && projectRefreshNonce > 0) {
+            phaseControl.refresh();
         }
-        const ac = new AbortController();
-        (async () => {
-            const { data, error } = await supabaseClient
-                .from('project_phases')
-                .select('*')
-                .eq('project_id', state.selectedProjectId)
-                .order('order', { ascending: true });
-            if (ac.signal.aborted) return;
-            if (error) {
-                console.error('Error loading project phases:', error);
-                setProjectPhases([]);
-            } else {
-                setProjectPhases(data || []);
-            }
-        })();
-        return () => ac.abort();
-    }, [state.selectedProjectId, projectRefreshNonce]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh when project data reloads
+    }, [projectRefreshNonce, project?.id]);
 
     useEffect(() => {
         if (!state.selectedProjectId) {
@@ -289,6 +333,7 @@ function ProjectDetailsView() {
 
     // Load tasks for this project; keep a local list so it cannot be overwritten by cache/auth
     const [projectTasksList, setProjectTasksList] = useState([]);
+    const [tasksLoading, setTasksLoading] = useState(false);
     const allTasksFromState = useMemo(
         () => (tasksState || []).filter((t) => t.project_id === state.selectedProjectId),
         [tasksState, state.selectedProjectId]
@@ -311,6 +356,7 @@ function ProjectDetailsView() {
             return;
         }
         setProjectTasksList([]);
+        setTasksLoading(true);
         const ac = new AbortController();
         (async () => {
             try {
@@ -333,6 +379,8 @@ function ProjectDetailsView() {
                 dispatch({ type: 'MERGE_TASKS', payload: [...otherTasks, ...list] });
             } catch (e) {
                 if (!ac.signal.aborted) console.error('Error loading project tasks:', e);
+            } finally {
+                if (!ac.signal.aborted) setTasksLoading(false);
             }
         })();
         return () => ac.abort();
@@ -389,10 +437,18 @@ function ProjectDetailsView() {
     };
 
     const hydrateTaskRows = async (rows) => {
-        const base = await Promise.all((rows || []).map(async (task) => ({
+        const allPhotos = (rows || []).flatMap((task) => task.task_photos || []);
+        const signedPhotos = allPhotos.length
+            ? await attachTaskPhotoUrls(supabaseClient, allPhotos)
+            : [];
+        const photoById = new Map(signedPhotos.map((photo) => [photo.id, photo]));
+
+        const base = (rows || []).map((task) => ({
             ...task,
-            task_photos: await hydratePhotoRows(task.task_photos || []),
-        })));
+            task_photos: sortTaskPhotos(
+                (task.task_photos || []).map((photo) => photoById.get(photo.id) || photo),
+            ),
+        }));
         const phones = new Set();
         for (const t of base) {
             const n = normalizeAssigneePhone(String(t.contacts?.phone || '').trim(), { defaultRegion: 'US' });
@@ -681,9 +737,19 @@ function ProjectDetailsView() {
         }
     };
 
-    const taskPhaseGroups = useMemo(() => {
-        const unassigned = tasks.filter((t) => !t.project_phase_id);
-        return { unassigned };
+    const { tasksByPhaseId, unassignedTasks } = useMemo(() => {
+        const byPhase = new Map();
+        const unassigned = [];
+        for (const task of tasks) {
+            const pid = task.project_phase_id;
+            if (!pid) {
+                unassigned.push(task);
+                continue;
+            }
+            if (!byPhase.has(pid)) byPhase.set(pid, []);
+            byPhase.get(pid).push(task);
+        }
+        return { tasksByPhaseId: byPhase, unassignedTasks: unassigned };
     }, [tasks]);
 
     const progressPercentForTasks = (taskList) => {
@@ -697,15 +763,31 @@ function ProjectDetailsView() {
         [photoModalTaskId, allTasks]
     );
 
-    const refreshProjectPhases = useCallback(async () => {
-        if (!project?.id) return;
-        const { data, error } = await supabaseClient
-            .from('project_phases')
-            .select('*')
-            .eq('project_id', project.id)
-            .order('order', { ascending: true });
-        if (!error) setProjectPhases(data || []);
-    }, [project?.id]);
+    const openTaskModalForPhase = useCallback((phaseId = '') => {
+        setTaskModalDefaultPhaseId(phaseId || '');
+        setShowTaskModal(true);
+    }, []);
+
+    const handleRenamePhase = useCallback(
+        async (phaseId, currentName) => {
+            const next = window.prompt(t('projectDetail.rename_phase'), currentName);
+            if (next == null) return;
+            const trimmed = next.trim();
+            if (!trimmed || trimmed === currentName) return;
+            await updatePhase(phaseId, { name: trimmed });
+        },
+        [t, updatePhase],
+    );
+
+    const handleDeletePhaseConfirm = useCallback(
+        async (phaseId) => {
+            const phase = projectPhases.find((p) => p.id === phaseId);
+            if (!phase) return;
+            if (!window.confirm(t('projectDetail.delete_phase') + `: ${phase.name}?`)) return;
+            await deletePhase(phaseId);
+        },
+        [projectPhases, deletePhase, t],
+    );
 
     const handleRequestAssigneeSmsConsent = async (task, { forceResend = false } = {}) => {
         const fallbackContact = task.assignee_id
@@ -2085,7 +2167,10 @@ function ProjectDetailsView() {
                     <p className="text-gray-500 mb-4">{t('projects.no_project_description')}</p>
                     <button
                         type="button"
-                        onClick={() => dispatch({ type: 'SET_VIEW', payload: 'Dashboard' })}
+                        onClick={() => {
+                            dispatch({ type: 'SET_VIEW', payload: 'Dashboard' });
+                            navigate('/');
+                        }}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                     >
                         {t('projects.go_to_dashboard')}
@@ -2286,7 +2371,7 @@ function ProjectDetailsView() {
                     <div className="border-b border-gray-200 mb-6">
                         <nav className="-mb-px flex flex-wrap gap-x-5 gap-y-2">
                             <button type="button"
-                                onClick={() => setActiveTab('tasks')}
+                                onClick={() => selectTab('tasks')}
                                 className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === 'tasks'
                                         ? 'border-blue-500 text-blue-600'
@@ -2296,7 +2381,7 @@ function ProjectDetailsView() {
                                 {t('projectTabs.tasks', { count: Math.max(allTasks.length, ganttTasks.length) })}
                             </button>
                             <button type="button"
-                                onClick={() => setActiveTab('gantt')}
+                                onClick={() => selectTab('gantt')}
                                 className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === 'gantt'
                                         ? 'border-blue-500 text-blue-600'
@@ -2306,10 +2391,7 @@ function ProjectDetailsView() {
                                 {t('projectTabs.gantt')}
                             </button>
                             <button type="button"
-                                onClick={() => {
-                                    setCollabPanel('stream');
-                                    setActiveTab('updates');
-                                }}
+                                onClick={() => selectTab('updates', { panel: 'stream' })}
                                 className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors inline-flex items-center gap-1.5 ${
                                     activeTab === 'updates'
                                         ? 'border-blue-500 text-blue-600'
@@ -2330,7 +2412,7 @@ function ProjectDetailsView() {
                             </button>
                             {canViewActivityHistory && (
                             <button type="button"
-                                onClick={() => setActiveTab('activity')}
+                                onClick={() => selectTab('activity')}
                                 className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === 'activity'
                                         ? 'border-blue-500 text-blue-600'
@@ -2489,16 +2571,6 @@ function ProjectDetailsView() {
                                                         <button
                                                             type="button"
                                                             onClick={() => {
-                                                                setShowPhasesModal(true);
-                                                                setToolbarMenu(null);
-                                                            }}
-                                                            className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                                                        >
-                                                            {t('projects.manage_phases')}
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
                                                                 setShowMsProjectImportModal(true);
                                                                 setToolbarMenu(null);
                                                             }}
@@ -2521,8 +2593,20 @@ function ProjectDetailsView() {
                                                 )}
                                             </div>
                                         </PermissionGuard>
+                                        <PermissionGuard permission="can_edit_projects">
+                                            <PhasesToolbar
+                                                onOpenSchedule={() => setShowPhasesModal(true)}
+                                                onAddPhase={() => setShowAddPhaseModal(true)}
+                                            />
+                                        </PermissionGuard>
                                         <PermissionGuard permission="can_create_tasks">
-                                            <button type="button" onClick={() => setShowTaskModal(true)} className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full shadow-xs hover:bg-blue-700">{t('projectDetail.new_task')}</button>
+                                            <button
+                                                type="button"
+                                                onClick={() => openTaskModalForPhase('')}
+                                                className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full shadow-xs hover:bg-blue-700"
+                                            >
+                                                {t('projectDetail.new_task')}
+                                            </button>
                                         </PermissionGuard>
                                     </div>
                                 </div>
@@ -2532,7 +2616,32 @@ function ProjectDetailsView() {
                                     onBulkDelete={handleBulkDelete}
                                     onClearSelection={() => setSelectedTasks([])}
                                 />
-                                {tasks.length > 0 ? (
+                                {phasesLoading && allTasks.length === 0 ? (
+                                    <SkeletonList count={3} rowClassName="h-12" className="py-4 space-y-3" />
+                                ) : null}
+                                {!phasesLoading && projectPhases.length === 0 && (
+                                    <PhasesEmptyState
+                                        taskCount={allTasks.length}
+                                        onAddPhase={() => setShowAddPhaseModal(true)}
+                                        onUseTemplate={seedDefaultPhases}
+                                        isMutating={phasesMutating}
+                                    />
+                                )}
+                                {!phasesLoading && projectPhases.length > 0 && (
+                                    <>
+                                        <PhasesHintBanner />
+                                        <PhasesSummaryStrip
+                                            projectId={project.id}
+                                            phases={projectPhases}
+                                            overallProgress={phasesOverallProgress}
+                                            includeUnassigned={unassignedTasks.length > 0}
+                                        />
+                                    </>
+                                )}
+                                {tasksLoading && allTasks.length === 0 ? (
+                                    <SkeletonList count={6} rowClassName="h-16" className="py-4 space-y-3" />
+                                ) : null}
+                                {tasks.length > 0 || projectPhases.length > 0 ? (
                                     <div
                                         className={`space-y-3 ${tasks.length > 7 ? 'max-h-[min(70vh,560px)] overflow-y-auto pr-1' : ''}`}
                                     >
@@ -2540,8 +2649,10 @@ function ProjectDetailsView() {
                                             return (
                                                 <>
                                                     {projectPhases.map((phase) => {
-                                                        const phaseTasks = tasks.filter((t) => t.project_phase_id === phase.id);
+                                                        const phaseTasks = tasksByPhaseId.get(phase.id) || [];
                                                         const rows = mergeWeatherIntoPhaseTasks(phaseTasks, weatherImpacts);
+                                                        const hasContent =
+                                                            phaseTasks.length > 0 || rows.some((r) => r.kind === 'weather');
                                                         return (
                                                             <PhaseTaskSection
                                                                 key={phase.id}
@@ -2549,10 +2660,15 @@ function ProjectDetailsView() {
                                                                 phaseKey={phase.id}
                                                                 phaseId={phase.id}
                                                                 title={phase.name}
+                                                                taskCount={phaseTasks.length}
                                                                 progressPercent={progressPercentForTasks(phaseTasks)}
                                                                 onTaskDrop={handleTaskDrop}
+                                                                canManagePhases={canEditProjects}
+                                                                onAddTaskToPhase={openTaskModalForPhase}
+                                                                onRenamePhase={handleRenamePhase}
+                                                                onDeletePhase={handleDeletePhaseConfirm}
                                                             >
-                                                                {phaseTasks.length > 0 || rows.some((r) => r.kind === 'weather') ? (
+                                                                {hasContent ? (
                                                                     <ul className="bg-white">
                                                                         {rows.map((row) =>
                                                                             row.kind === 'weather' ? (
@@ -2590,30 +2706,38 @@ function ProjectDetailsView() {
                                                                                     pingingTaskId={pingingTaskId}
                                                                                     project={project}
                                                                                 />
-                                                                            )
+                                                                            ),
                                                                         )}
                                                                     </ul>
                                                                 ) : (
-                                                                    <p className="text-sm text-gray-400 px-3 py-2 bg-white">
-                                                                        {t('projectDetail.no_tasks_in_phase')}
-                                                                    </p>
+                                                                    <div className="px-3 py-3 bg-white">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => openTaskModalForPhase(phase.id)}
+                                                                            className="text-sm font-medium text-blue-600 hover:text-blue-800"
+                                                                        >
+                                                                            {t('projectDetail.add_task_to_phase')}
+                                                                        </button>
+                                                                    </div>
                                                                 )}
                                                             </PhaseTaskSection>
                                                         );
                                                     })}
-                                                    {taskPhaseGroups.unassigned.length > 0 && (
+                                                    {unassignedTasks.length > 0 && (
                                                         <PhaseTaskSection
                                                             projectId={project.id}
                                                             phaseKey="unassigned"
                                                             phaseId={null}
+                                                            variant="unassigned"
                                                             title={t('tasks.unassigned')}
-                                                            progressPercent={progressPercentForTasks(taskPhaseGroups.unassigned)}
+                                                            taskCount={unassignedTasks.length}
+                                                            progressPercent={progressPercentForTasks(unassignedTasks)}
                                                             onTaskDrop={handleTaskDrop}
                                                         >
                                                             <ul className="bg-white">
                                                                 {mergeWeatherIntoPhaseTasks(
-                                                                    taskPhaseGroups.unassigned,
-                                                                    weatherImpacts
+                                                                    unassignedTasks,
+                                                                    weatherImpacts,
                                                                 ).map((row) =>
                                                                     row.kind === 'weather' ? (
                                                                         <WeatherDelayMarker
@@ -2650,32 +2774,29 @@ function ProjectDetailsView() {
                                                                             pingingTaskId={pingingTaskId}
                                                                             project={project}
                                                                         />
-                                                                    )
+                                                                    ),
                                                                 )}
                                                             </ul>
                                                         </PhaseTaskSection>
+                                                    )}
+                                                    {canEditProjects && projectPhases.length > 0 && (
+                                                        <PhaseQuickAdd
+                                                            isMutating={phasesMutating}
+                                                            onAdd={async (name) => {
+                                                                const result = await addPhaseByName(name);
+                                                                return result != null;
+                                                            }}
+                                                        />
                                                     )}
                                                 </>
                                             );
                                         })()}
                                     </div>
-                                ) : (
-                                    <div className="text-center py-12">
-                                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                                            </svg>
-                                        </div>
-                                        <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('projectDetail.no_tasks_yet')}</h3>
-                                        <p className="text-gray-500 mb-4">{t('projectDetail.no_tasks_description')}</p>
-                                        <button type="button" 
-                                            onClick={() => setShowTaskModal(true)}
-                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                                        >
-                                            {t('projectDetail.add_first_task')}
-                                        </button>
-                                    </div>
-                                )}
+                                ) : projectPhases.length > 0 ? (
+                                    <p className="text-center text-sm text-gray-500 py-8">
+                                        {t('projectDetail.no_tasks_description')}
+                                    </p>
+                                ) : null}
                             </div>
                         )}
 
@@ -2914,11 +3035,27 @@ function ProjectDetailsView() {
                 <TaskModal
                     project={project}
                     projectPhases={projectPhases}
-                    onClose={() => setShowTaskModal(false)}
+                    defaultPhaseId={taskModalDefaultPhaseId}
+                    onSetupPhases={() => setShowAddPhaseModal(true)}
+                    onClose={() => {
+                        setShowTaskModal(false);
+                        setTaskModalDefaultPhaseId('');
+                    }}
                     onSave={handleAddTask}
                     isLoading={isCreatingTask}
                     photoUploadProgress={createTaskPhotoUploadProgress}
                     allTasks={allTasks}
+                />
+            )}
+
+            {showAddPhaseModal && project && (
+                <PhaseModal
+                    phase={null}
+                    onClose={() => setShowAddPhaseModal(false)}
+                    onSave={async (data) => {
+                        await addPhase(data);
+                    }}
+                    isLoading={phasesMutating}
                 />
             )}
 
@@ -2964,32 +3101,41 @@ function ProjectDetailsView() {
                     role="dialog"
                     aria-modal="true"
                     aria-labelledby="phases-modal-title"
-                    onClick={() => {
-                        setShowPhasesModal(false);
-                        refreshProjectPhases();
+                    onClick={() => setShowPhasesModal(false)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Escape') setShowPhasesModal(false);
                     }}
                 >
                     <div
                         className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-200">
-                            <h2 id="phases-modal-title" className="text-lg font-bold text-gray-900">
-                                {t('projects.manage_phases')}
-                            </h2>
+                        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 bg-white">
+                            <div>
+                                <h2 id="phases-modal-title" className="text-lg font-bold text-gray-900">
+                                    {t('projectDetail.project_schedule')}
+                                </h2>
+                                <p className="text-sm text-gray-500 mt-0.5">
+                                    {t('projectDetail.project_schedule_subtitle')}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 min-h-[min(480px,50vh)] max-h-[calc(90vh-8rem)]">
+                            <BuildPath
+                                project={project}
+                                phaseControl={phaseControl}
+                                embedded
+                                onPhasesChange={() => phaseControl.refresh()}
+                            />
+                        </div>
+                        <div className="sticky bottom-0 border-t border-gray-200 bg-white px-5 py-4 flex justify-end">
                             <button
                                 type="button"
-                                className="text-sm font-medium text-gray-600 hover:text-gray-900"
-                                onClick={() => {
-                                    setShowPhasesModal(false);
-                                    refreshProjectPhases();
-                                }}
+                                className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full hover:bg-blue-700"
+                                onClick={() => setShowPhasesModal(false)}
                             >
-                                Close
+                                {t('projectDetail.schedule_done')}
                             </button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-4 min-h-[min(480px,50vh)] max-h-[calc(90vh-5rem)]">
-                            <BuildPath project={project} />
                         </div>
                     </div>
                 </div>

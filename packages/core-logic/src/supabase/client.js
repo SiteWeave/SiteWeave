@@ -74,6 +74,62 @@ function polyfillReactNativeCrypto() {
   }
 }
 
+const AUTH_STORAGE_KEY = 'supabase.auth.token';
+
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+export function isStaleRefreshTokenError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return (
+    message.includes('invalid refresh token') ||
+    message.includes('refresh token not found') ||
+    message.includes('refresh_token_not_found') ||
+    message.includes('invalid_grant')
+  );
+}
+
+/**
+ * Clears a persisted session that Supabase can no longer refresh (revoked/expired token).
+ * @param {import('@supabase/supabase-js').SupabaseClient} client
+ */
+export async function clearStaleSupabaseSession(client) {
+  try {
+    await client.auth.signOut({ scope: 'local' });
+  } catch (_) {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
+  }
+}
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} client
+ */
+function attachStaleSessionRecovery(client) {
+  if (typeof window === 'undefined') return;
+
+  client.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'TOKEN_REFRESHED' && !session) {
+      await clearStaleSupabaseSession(client);
+    }
+  });
+
+  void (async () => {
+    try {
+      const { error } = await client.auth.getSession();
+      if (error && isStaleRefreshTokenError(error)) {
+        await clearStaleSupabaseSession(client);
+      }
+    } catch (error) {
+      if (isStaleRefreshTokenError(error)) {
+        await clearStaleSupabaseSession(client);
+      }
+    }
+  })();
+}
+
 /**
  * Creates a Supabase client instance
  * @param {string} supabaseUrl - Supabase project URL
@@ -92,7 +148,7 @@ export function createSupabaseClient(supabaseUrl, supabaseAnonKey) {
     persistSession: true,
     // Browser OAuth returns tokens in the URL; they must be parsed into a session (RN uses deep links separately).
     detectSessionInUrl: !isReactNative,
-    storageKey: 'supabase.auth.token',
+    storageKey: AUTH_STORAGE_KEY,
     flowType: hasWebCrypto ? 'pkce' : 'implicit',
   };
   
@@ -106,18 +162,22 @@ export function createSupabaseClient(supabaseUrl, supabaseAnonKey) {
     const fallbackUrl = 'https://demo.supabase.co';
     const fallbackKey = 'demo-key';
     
-    return createClient(
+    const client = createClient(
       supabaseUrl || fallbackUrl,
       supabaseAnonKey || fallbackKey,
       {
         auth: authOptions,
       }
     );
+    attachStaleSessionRecovery(client);
+    return client;
   }
   
-  return createClient(supabaseUrl, supabaseAnonKey, {
+  const client = createClient(supabaseUrl, supabaseAnonKey, {
     auth: authOptions,
   });
+  attachStaleSessionRecovery(client);
+  return client;
 }
 
 /**

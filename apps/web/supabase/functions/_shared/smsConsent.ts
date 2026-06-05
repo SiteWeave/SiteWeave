@@ -1,4 +1,5 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { buildOptInSmsBody } from './smsCompliance.ts'
 import { sendTwilioSms } from './twilioSms.ts'
 
 export type SmsConsentRow = {
@@ -89,9 +90,7 @@ export async function sendOptInIfEligible(
   }
 
   const token = randomToken()
-  const shortOrg = (organizationName || 'Your team').slice(0, 40)
-  const body =
-    `${shortOrg} (SiteWeave): Reply YES ${token} to get project SMS. Msg/data rates may apply. Reply STOP to opt out. Reply HELP for help.`
+  const body = buildOptInSmsBody(organizationName, token)
 
   const smsResult = await sendTwilioSms({ to: phoneE164, body })
   if (!smsResult.success) {

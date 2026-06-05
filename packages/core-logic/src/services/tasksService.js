@@ -271,7 +271,7 @@ export async function fetchCompletedTasksList(supabase, limit = 100) {
     .from('tasks')
     .select(TASK_LIST_COLUMNS)
     .eq('completed', true)
-    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(limit);
 
   if (error) throw error;

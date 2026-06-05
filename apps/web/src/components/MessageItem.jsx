@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
@@ -6,6 +7,7 @@ import Avatar from './Avatar';
 import { fetchThreadReplies, getThreadReplyCount, fetchMessageWithUserInfo } from '@siteweave/core-logic';
 
 function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar = true, showTimestamp = false, isLastInChannel = false, onReply, onThreadExpand, onReport, onBlock, currentUserId }) {
+    const { i18n } = useTranslation();
     const { state } = useAppContext();
     const { addToast } = useToast();
 
@@ -47,8 +49,8 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
     // Always use the sender's user info (with avatar_url)
     const user = messageWithUser.user || null;
 
-    const formatTime = (isoString) => new Date(isoString).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    const formatDate = (isoString) => new Date(isoString).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const formatTime = (isoString) => new Date(isoString).toLocaleTimeString(i18n.language, { hour: 'numeric', minute: '2-digit' });
+    const formatDate = (isoString) => new Date(isoString).toLocaleDateString(i18n.language, { month: 'short', day: 'numeric' });
 
     const handleEditMessage = async () => {
         if (!editContent.trim()) return;

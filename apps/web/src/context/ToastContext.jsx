@@ -37,7 +37,7 @@ const ToastContainer = ({ toasts, removeToast }) => {
     <>
       {/* Error toasts at top center for maximum visibility */}
       {errorToasts.length > 0 && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-60 space-y-3 max-w-md w-full">
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[60] space-y-3 max-w-md w-full">
           {errorToasts.map(toast => (
             <Toast key={toast.id} toast={toast} onRemove={removeToast} />
           ))}
@@ -94,7 +94,7 @@ const Toast = ({ toast, onRemove }) => {
         boxShadow: '0 20px 25px -5px rgba(239, 68, 68, 0.3), 0 10px 10px -5px rgba(239, 68, 68, 0.2)'
       } : {}}
     >
-      <div className="shrink-0">
+      <div className="flex-shrink-0">
         <svg className={type === 'error' ? 'w-6 h-6' : 'w-5 h-5'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={type === 'error' ? 2.5 : 2} d={iconPaths[type]} />
         </svg>
@@ -104,7 +104,7 @@ const Toast = ({ toast, onRemove }) => {
       </div>
       <button type="button" 
         onClick={handleRemove}
-        className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors p-1 rounded hover:bg-gray-100"
+        className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors p-1 rounded hover:bg-gray-100"
         aria-label="Close notification"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

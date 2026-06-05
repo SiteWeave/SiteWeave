@@ -1,16 +1,18 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
+import { requirePlatformAdmin } from '../_shared/auth.ts'
+import { ensureDefaultRoles, ORG_ADMIN_PERMISSIONS } from '../_shared/ensureDefaultRoles.ts'
 
 serve(async (req) => {
-  // Handle CORS preflight
+  const corsHeaders = corsHeadersFor(req)
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return corsPreflightResponse(req)
   }
+
+  const adminDenied = requirePlatformAdmin(req, corsHeaders)
+  if (adminDenied) return adminDenied
 
   try {
     // Create Supabase client with service role key (bypasses RLS)
@@ -40,6 +42,8 @@ serve(async (req) => {
       .insert({
         name: orgName,
         slug: orgSlug,
+        workspace_type: 'business',
+        max_projects: null,
         created_by_user_id: null // Created by system
       })
       .select()
@@ -59,22 +63,7 @@ serve(async (req) => {
       .insert({
         organization_id: org.id,
         name: 'Org Admin',
-        permissions: {
-          can_manage_team: true,
-          can_manage_users: true,
-          can_manage_roles: true,
-          can_create_projects: true,
-          can_edit_projects: true,
-          can_delete_projects: true,
-          can_assign_tasks: true,
-          can_manage_contacts: true,
-          can_create_tasks: true,
-          can_edit_tasks: true,
-          can_delete_tasks: true,
-          can_send_messages: true,
-          can_manage_progress_reports: true,
-          can_manage_org_progress_reports: true,
-        },
+        permissions: ORG_ADMIN_PERMISSIONS,
         is_system_role: true
       })
       .select()
@@ -87,70 +76,8 @@ serve(async (req) => {
 
     console.log(`Admin role created: ${adminRole.id}`)
 
-    // "Member" role with basic permissions
-    const { data: memberRole, error: memberRoleError } = await supabaseAdmin
-      .from('roles')
-      .insert({
-        organization_id: org.id,
-        name: 'Member',
-        permissions: {
-          can_manage_team: false,
-          can_manage_users: false,
-          can_manage_roles: false,
-          can_create_projects: false,
-          can_edit_projects: false,
-          can_delete_projects: false,
-          can_assign_tasks: false,
-          can_manage_contacts: false,
-          can_create_tasks: false,
-          can_edit_tasks: false,
-          can_delete_tasks: false,
-          can_send_messages: true
-        },
-        is_system_role: true
-      })
-      .select()
-      .single()
-
-    if (memberRoleError) {
-      console.error('Error creating member role:', memberRoleError)
-      throw memberRoleError
-    }
-
-    console.log(`Member role created: ${memberRole.id}`)
-
-    // "Project Manager" role with project management permissions
-    const { data: pmRole, error: pmRoleError } = await supabaseAdmin
-      .from('roles')
-      .insert({
-        organization_id: org.id,
-        name: 'Project Manager',
-        permissions: {
-          can_manage_team: false,
-          can_manage_users: false,
-          can_manage_roles: false,
-          can_create_projects: true,
-          can_edit_projects: true,
-          can_delete_projects: false,
-          can_assign_tasks: true,
-          can_manage_contacts: true,
-          can_create_tasks: true,
-          can_edit_tasks: true,
-          can_delete_tasks: true,
-          can_send_messages: true,
-          can_manage_progress_reports: true
-        },
-        is_system_role: true
-      })
-      .select()
-      .single()
-
-    if (pmRoleError) {
-      console.error('Error creating project manager role:', pmRoleError)
-      throw pmRoleError
-    }
-
-    console.log(`Project Manager role created: ${pmRole.id}`)
+    const { memberRoleId, projectManagerRoleId } = await ensureDefaultRoles(supabaseAdmin, org.id)
+    console.log(`Default roles ensured: Member=${memberRoleId}, PM=${projectManagerRoleId}`)
 
     // 3. Create auth user with password using Admin API
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -241,8 +168,8 @@ serve(async (req) => {
         },
         roles: {
           adminRoleId: adminRole.id,
-          memberRoleId: memberRole.id,
-          pmRoleId: pmRole.id
+          memberRoleId: memberRoleId,
+          pmRoleId: projectManagerRoleId
         },
         message: `Organization "${orgName}" created successfully. Admin user ready to log in.`
       }),

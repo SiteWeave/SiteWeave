@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+/**
+ * Searchable dependency picker with tag-style selected items (replaces native multi-select).
+ */
 function TaskDependencyCombobox({
   allTasks = [],
   selectedIds,
@@ -71,7 +74,10 @@ function TaskDependencyCombobox({
         className={inputClassName}
       />
       {open && filtered.length > 0 && (
-        <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg" role="listbox">
+        <ul
+          className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+          role="listbox"
+        >
           {filtered.map((t) => (
             <li key={t.id} role="option">
               <button

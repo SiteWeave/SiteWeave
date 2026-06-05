@@ -27,6 +27,8 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
   const { addToast } = useToast();
   const [issues, setIssues] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [statusFilter, setStatusFilter] = useState('open');
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -73,23 +75,40 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
     })();
   }, [projectTeamContacts]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ append = false, beforeCreatedAt = null } = {}) => {
     if (!projectId) return;
     try {
-      setIsLoading(true);
-      const rows = await fetchProjectIssues(supabaseClient, projectId, { statusFilter });
-      setIssues(rows);
-      setSelectedIssue((sel) => {
-        if (!sel) return sel;
-        return rows.find((r) => r.id === sel.id) || sel;
+      if (append) {
+        setLoadingOlder(true);
+      } else {
+        setIsLoading(true);
+      }
+      const { issues: rows, hasMore: more } = await fetchProjectIssues(supabaseClient, projectId, {
+        statusFilter,
+        beforeCreatedAt,
       });
+      setIssues((prev) => (append ? [...prev, ...rows] : rows));
+      setHasMore(more);
+      if (!append) {
+        setSelectedIssue((sel) => {
+          if (!sel) return sel;
+          return rows.find((r) => r.id === sel.id) || sel;
+        });
+      }
     } catch (e) {
       console.error(e);
       addToast(t('fieldIssues.load_error'), 'error');
     } finally {
       setIsLoading(false);
+      setLoadingOlder(false);
     }
-  }, [projectId, statusFilter, addToast]);
+  }, [projectId, statusFilter, addToast, t]);
+
+  const loadOlder = useCallback(() => {
+    const oldest = issues[issues.length - 1];
+    if (!oldest?.created_at || loadingOlder) return;
+    load({ append: true, beforeCreatedAt: oldest.created_at });
+  }, [issues, loadingOlder, load]);
 
   useEffect(() => {
     load();
@@ -219,6 +238,18 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
                   onSelect={setSelectedIssue}
                 />
               ))}
+              {hasMore ? (
+                <div className="flex justify-center pt-2 pb-1">
+                  <button
+                    type="button"
+                    onClick={loadOlder}
+                    disabled={loadingOlder}
+                    className="text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50"
+                  >
+                    {loadingOlder ? t('common.loading') : t('fieldIssues.load_older')}
+                  </button>
+                </div>
+              ) : null}
             </div>
           )}
         </div>

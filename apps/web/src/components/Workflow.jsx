@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
 
 const Workflow = ({ projectId }) => {
+    const { i18n } = useTranslation();
     const { state } = useAppContext();
     const { addToast } = useToast();
     const [workflows, setWorkflows] = useState([]);
@@ -12,52 +14,17 @@ const Workflow = ({ projectId }) => {
     const [isCreating, setIsCreating] = useState(false);
     const [expandedWorkflow, setExpandedWorkflow] = useState(null);
 
-    // Get project data to check creator and manager
-    const project = state.projects?.find(p => p.id === projectId);
-    
-    // Get project team members:
-    // 1. Contacts explicitly added via project_contacts
-    // 2. Project creator (if they have a contact_id)
-    // 3. Project manager (if they have a contact_id)
-    const projectContactIds = new Set(
-        state.contacts
-            .filter(contact => {
-                const hasProjectAccess = contact.project_contacts?.some(pc => 
-                    pc.project_id === projectId || 
-                    pc.project_id === String(projectId) || 
-                    String(pc.project_id) === String(projectId)
-                );
-                return hasProjectAccess && contact.type === 'Team';
-            })
-            .map(contact => contact.id)
-    );
-    
-    // Add creator if they have a contact and aren't already in the list
-    if (project?.created_by_user_id) {
-        const creatorProfile = state.profiles?.find(p => p.id === project.created_by_user_id);
-        if (creatorProfile?.contact_id) {
-            const creatorContact = state.contacts.find(c => c.id === creatorProfile.contact_id && c.type === 'Team');
-            if (creatorContact && !projectContactIds.has(creatorContact.id)) {
-                projectContactIds.add(creatorContact.id);
-            }
-        }
-    }
-    
-    // Add manager if they have a contact and aren't already in the list
-    if (project?.project_manager_id) {
-        const managerProfile = state.profiles?.find(p => p.id === project.project_manager_id);
-        if (managerProfile?.contact_id) {
-            const managerContact = state.contacts.find(c => c.id === managerProfile.contact_id && c.type === 'Team');
-            if (managerContact && !projectContactIds.has(managerContact.id)) {
-                projectContactIds.add(managerContact.id);
-            }
-        }
-    }
-    
-    // Get final team members list
-    const projectTeamMembers = state.contacts.filter(contact => 
-        projectContactIds.has(contact.id) && contact.type === 'Team'
-    );
+    const contacts = state.contacts || [];
+
+    // Get project team members
+    const projectTeamMembers = contacts.filter(contact => {
+        const hasProjectAccess = contact.project_contacts?.some(pc => 
+            pc.project_id === projectId || 
+            pc.project_id === String(projectId) || 
+            String(pc.project_id) === String(projectId)
+        );
+        return hasProjectAccess && contact.type === 'Team';
+    });
 
     // Form state for creating new workflow
     const [newWorkflow, setNewWorkflow] = useState({
@@ -81,7 +48,7 @@ const Workflow = ({ projectId }) => {
             setIsLoading(true);
             const { data, error } = await supabaseClient
                 .from('tasks')
-                .select('id, text, project_id, workflow_steps, current_workflow_step, completed, created_at')
+                .select('*')
                 .eq('project_id', projectId)
                 .not('workflow_steps', 'is', null);
 
@@ -241,17 +208,16 @@ const Workflow = ({ projectId }) => {
     const formatDate = (dateString) => {
         if (!dateString) return '';
         const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return date.toLocaleDateString(i18n.language, { month: 'short', day: 'numeric' });
     };
 
     return (
-        <div className="p-6 app-card">
+        <div className="p-6 bg-white rounded-xl shadow-xs border border-gray-200">
             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-slate-900">Workflows ({workflows.length})</h2>
-                <button 
-                    type="button"
+                <h2 className="text-xl font-bold">Workflows ({workflows.length})</h2>
+                <button type="button" 
                     onClick={() => setShowCreateModal(true)}
-                    className="app-action-primary px-4 py-2 text-sm font-semibold rounded-lg"
+                    className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700"
                 >
                     + Create Workflow
                 </button>
@@ -343,7 +309,7 @@ const Workflow = ({ projectId }) => {
                                                     
                                                     return (
                                                         <React.Fragment key={index}>
-                                                            <div className="flex flex-col items-center shrink-0">
+                                                            <div className="flex flex-col items-center flex-shrink-0">
                                                                 <div className={`flex items-center justify-center w-8 h-8 rounded-full text-xs font-semibold transition-all ${
                                                                     stepIsCompleted
                                                                         ? 'bg-green-600 text-white shadow-md' 
@@ -413,7 +379,7 @@ const Workflow = ({ projectId }) => {
                                                         }`}
                                                     >
                                                         <div className="flex items-start gap-3">
-                                                            <div className={`flex items-center justify-center w-8 h-8 rounded-full text-xs font-semibold shrink-0 ${
+                                                            <div className={`flex items-center justify-center w-8 h-8 rounded-full text-xs font-semibold flex-shrink-0 ${
                                                                 isCompleted
                                                                     ? 'bg-green-600 text-white' 
                                                                     : isCurrentStep
@@ -448,17 +414,17 @@ const Workflow = ({ projectId }) => {
                                                                         )}
                                                                     </div>
                                                                     {isCompleted && (
-                                                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 shrink-0">
+                                                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 flex-shrink-0">
                                                                             Done
                                                                         </span>
                                                                     )}
                                                                     {isCurrentStep && (
-                                                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 shrink-0">
+                                                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 flex-shrink-0">
                                                                             Current
                                                                         </span>
                                                                     )}
                                                                     {isPending && (
-                                                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 shrink-0">
+                                                                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 flex-shrink-0">
                                                                             Pending
                                                                         </span>
                                                                     )}
@@ -503,10 +469,9 @@ const Workflow = ({ projectId }) => {
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">No workflows yet</h3>
                     <p className="text-gray-500 mb-4">Create workflows to track multi-step processes and task progress.</p>
-                    <button 
-                        type="button"
+                    <button type="button" 
                         onClick={() => setShowCreateModal(true)}
-                        className="app-action-primary px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                     >
                         Create Your First Workflow
                     </button>
@@ -515,8 +480,8 @@ const Workflow = ({ projectId }) => {
 
             {/* Create Workflow Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/20 flex items-center justify-center z-50">
-                    <div className="app-card max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+                <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
                         <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-xl font-bold">Create New Workflow</h3>

@@ -22,6 +22,10 @@ import {
   isPersonalWorkspace,
   isProjectLimitError,
 } from '@siteweave/core-logic';
+import {
+  ensureOrganizationForWrites,
+  isOrganizationRlsError,
+} from '../utils/organizationContext';
 
 function DashboardView() {
     const { t } = useTranslation();
@@ -187,17 +191,22 @@ function DashboardView() {
             setIsCreatingProject(true);
             // Remove selectedContacts and emailAddresses from projectData as they're not columns in the projects table
             const { selectedContacts, emailAddresses, ...projectFields } = projectData;
-            
-            // Ensure organization_id is included for multi-tenant RLS
-            if (!state.currentOrganization?.id) {
-                addToast('Error: No organization found. Please contact support.', 'error');
+
+            const orgContext = await ensureOrganizationForWrites(supabaseClient, {
+                userId: state.user.id,
+                accountIntent: state.accountIntent,
+                currentOrganization: state.currentOrganization,
+                dispatch,
+            });
+            if (!orgContext.ok) {
+                addToast(orgContext.error || 'Error: No organization found. Please contact support.', 'error');
                 setIsCreatingProject(false);
                 return;
             }
             
             const projectDataWithAudit = {
                 ...projectFields,
-                organization_id: state.currentOrganization.id,
+                organization_id: orgContext.organizationId,
                 project_manager_id: state.user.id,
                 created_by_user_id: state.user.id,
                 updated_by_user_id: state.user.id,
@@ -213,6 +222,11 @@ function DashboardView() {
                 console.error('Project creation error:', error);
                 if (isProjectLimitError(error)) {
                     setShowProjectLimitModal(true);
+                } else if (isOrganizationRlsError(error)) {
+                    addToast(
+                        'Your account is not linked to a workspace yet. Sign out and back in, or use Settings to refresh. If this persists, contact support.',
+                        'error',
+                    );
                 } else {
                     addToast('Error creating project: ' + error.message, 'error');
                 }
@@ -458,7 +472,7 @@ function DashboardView() {
                                     <button
                                         type="button"
                                         onClick={() => setShowProgressReportModal(true)}
-                                        title="Organization progress reports"
+                                        title={t('dashboard.org_reports_title')}
                                         className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-emerald-600 text-white hover:bg-emerald-700"
                                     >
                                         {t('dashboard.org_reports')}

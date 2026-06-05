@@ -1,125 +1,93 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useAppContext } from '../context/AppContext';
-import { formatActivityLine } from '../utils/formatActivityLine';
-import { activityLineT } from '../utils/activityLineT';
+import React, { useState, useEffect } from 'react';
+import { useAppContext, supabaseClient } from '../context/AppContext';
 
 function NotificationBadge() {
     const { state } = useAppContext();
     const [notifications, setNotifications] = useState([]);
     const [isVisible, setIsVisible] = useState(false);
-    const hasShownSessionRef = useRef(false);
-    const lastActivityIdsRef = useRef(new Set());
+    const [busyId, setBusyId] = useState(null);
 
     useEffect(() => {
-        if (state.userRole?.permissions?.can_view_activity_history !== true) {
+        if (!state.user?.email) {
             return;
         }
 
-        const activityLog = state.activityLog || [];
-        const projectNamesById = {};
-        (state.projects || []).forEach((p) => {
-            projectNamesById[p.id] = p.name;
-        });
-        const line = (activity) => formatActivityLine(activity, activityLineT, { projectNamesById });
-
-        // Only show notifications for NEW activities since last session, or once per app session
-        const recentActivity = activityLog.slice(0, 4);
-        
-        if (recentActivity.length === 0) {
-            return;
-        }
-
-        // On first load, check if we've shown notifications this session
-        if (!hasShownSessionRef.current) {
-            // Check localStorage for last shown activity ID
-            const lastShownId = localStorage.getItem('lastShownActivityId');
-            const lastActivityId = recentActivity[0]?.id;
-            
-            // Only show if there are new activities (different ID) or if no previous ID stored
-            if (!lastShownId || lastActivityId !== lastShownId) {
-                const formattedActivity = recentActivity.map(activity => ({
-                    id: activity.id,
-                    message: `${activity.user_name} ${line(activity)}`,
-                    time: formatTimeAgo(activity.created_at),
-                    type: activity.entity_type || 'general'
-                }));
-
-                setNotifications(formattedActivity);
-                setIsVisible(true);
-                hasShownSessionRef.current = true;
-                
-                // Store the latest activity ID
-                if (lastActivityId) {
-                    localStorage.setItem('lastShownActivityId', lastActivityId);
-                }
-
-                // Auto-hide after 5 seconds
-                const timer = setTimeout(() => {
-                    setIsVisible(false);
-                }, 5000);
-
-                return () => clearTimeout(timer);
+        const loadNotifications = async () => {
+            let query = supabaseClient
+                .from('user_notifications')
+                .select('*')
+                .is('read_at', null)
+                .order('created_at', { ascending: false })
+                .limit(6);
+            if (state.user.id) {
+                query = query.or(`recipient_email.ilike.${state.user.email},recipient_user_id.eq.${state.user.id}`);
+            } else {
+                query = query.ilike('recipient_email', state.user.email);
             }
-        } else {
-            // After initial show, only show for NEW activities (not already shown)
-            const newActivities = recentActivity.filter(activity => 
-                !lastActivityIdsRef.current.has(activity.id)
-            );
-            
-            if (newActivities.length > 0) {
-                // Update the ref with new activity IDs
-                newActivities.forEach(activity => {
-                    lastActivityIdsRef.current.add(activity.id);
+            const { data, error } = await query;
+            if (error) {
+                console.error('Failed loading notifications:', error.message);
+                return;
+            }
+            setNotifications(data || []);
+            setIsVisible((data || []).length > 0);
+        };
+
+        loadNotifications();
+
+        const channel = supabaseClient
+            .channel(`user-notifications-${state.user.id || state.user.email}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'user_notifications' }, (payload) => {
+                const nextRow = payload.new || payload.old;
+                const emailMatch = nextRow?.recipient_email?.toLowerCase?.() === state.user.email.toLowerCase();
+                const userMatch = !!state.user.id && nextRow?.recipient_user_id === state.user.id;
+                if (!emailMatch && !userMatch) return;
+
+                setNotifications((prev) => {
+                    if (payload.eventType === 'DELETE') {
+                        return prev.filter((n) => n.id !== nextRow.id);
+                    }
+                    const merged = [nextRow, ...prev.filter((n) => n.id !== nextRow.id)];
+                    return merged
+                        .filter((n) => !n.read_at)
+                        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                        .slice(0, 6);
                 });
-                
-                const formattedActivity = newActivities.slice(0, 4).map(activity => ({
-                    id: activity.id,
-                    message: `${activity.user_name} ${line(activity)}`,
-                    time: formatTimeAgo(activity.created_at),
-                    type: activity.entity_type || 'general'
-                }));
-
-                setNotifications(formattedActivity);
                 setIsVisible(true);
-                
-                // Store the latest activity ID
-                if (newActivities[0]?.id) {
-                    localStorage.setItem('lastShownActivityId', newActivities[0].id);
-                }
+            })
+            .subscribe();
 
-                // Auto-hide after 5 seconds
-                const timer = setTimeout(() => {
-                    setIsVisible(false);
-                }, 5000);
+        return () => {
+            supabaseClient.removeChannel(channel);
+        };
+    }, [state.user?.email, state.user?.id]);
 
-                return () => clearTimeout(timer);
-            }
+    const runAction = async (notificationId, actionType) => {
+        setBusyId(notificationId);
+        try {
+            const { error } = await supabaseClient.functions.invoke('dispatch-notification', {
+                body: {
+                    action: 'notification_action',
+                    notificationId,
+                    actionType,
+                    userId: state.user?.id || null,
+                },
+            });
+            if (error) throw error;
+            setNotifications((prev) => {
+                const next = prev.filter((row) => {
+                    if (row.id !== notificationId) return true;
+                    return actionType !== 'mark_read';
+                });
+                setIsVisible(next.length > 0);
+                return next;
+            });
+        } catch (error) {
+            console.error(`Failed notification action ${actionType}:`, error.message || error);
+        } finally {
+            setBusyId(null);
         }
-        
-        // Initialize the ref with current activity IDs
-        recentActivity.forEach(activity => {
-            lastActivityIdsRef.current.add(activity.id);
-        });
-    }, [state.activityLog, state.projects, state.userRole]);
-
-    // Helper function to format time ago
-    function formatTimeAgo(dateString) {
-        const now = new Date();
-        const activityDate = new Date(dateString);
-        const diffInMinutes = Math.floor((now - activityDate) / (1000 * 60));
-        
-        if (diffInMinutes < 60) {
-            return `${diffInMinutes}m ago`;
-        } else if (diffInMinutes < 1440) {
-            return `${Math.floor(diffInMinutes / 60)}h ago`;
-        } else {
-            return `${Math.floor(diffInMinutes / 1440)}d ago`;
-        }
-    }
-
-    if (state.userRole?.permissions?.can_view_activity_history !== true) {
-        return null;
-    }
+    };
 
     if (!isVisible || notifications.length === 0) return null;
 
@@ -127,7 +95,7 @@ function NotificationBadge() {
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4">
             <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-4">
                 <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-gray-800">Recent Activity</h3>
+                    <h3 className="text-sm font-semibold text-gray-800">Notifications</h3>
                     <button type="button" 
                         onClick={() => setIsVisible(false)}
                         className="text-gray-400 hover:text-gray-600"
@@ -136,20 +104,43 @@ function NotificationBadge() {
                     </button>
                 </div>
                 <div className="space-y-2">
-                    {notifications.slice(0, 3).map(notification => (
-                        <div key={notification.id} className="flex items-start gap-2 text-sm">
-                            <div className={`w-2 h-2 rounded-full mt-2 ${
-                                notification.type === 'task' ? 'bg-blue-500' :
-                                notification.type === 'project' ? 'bg-green-500' :
-                                notification.type === 'file' ? 'bg-purple-500' :
-                                'bg-orange-500'
-                            }`} />
-                            <div className="flex-1">
-                                <p className="text-gray-800">{notification.message}</p>
-                                <p className="text-xs text-gray-500">{notification.time}</p>
+                    {notifications.slice(0, 4).map(notification => {
+                        const badgeKey = notification.metadata?.batch_key;
+                        return (
+                        <div key={notification.id} className="rounded-md border border-gray-200 px-3 py-2 text-sm">
+                            <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1">
+                                    <p className="text-gray-900 font-medium">{notification.title}</p>
+                                    <p className="text-gray-700">{notification.body}</p>
+                                    {badgeKey && (
+                                        <p className="text-xs text-emerald-600 mt-1">Batched by project</p>
+                                    )}
+                                </div>
+                                <span className="text-[11px] text-gray-500">
+                                    {new Date(notification.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                                </span>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    disabled={busyId === notification.id}
+                                    onClick={() => runAction(notification.id, 'acknowledge')}
+                                    className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                                >
+                                    Acknowledge
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={busyId === notification.id}
+                                    onClick={() => runAction(notification.id, 'mark_read')}
+                                    className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                    Mark read
+                                </button>
                             </div>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         </div>

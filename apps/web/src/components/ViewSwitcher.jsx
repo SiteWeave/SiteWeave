@@ -35,7 +35,7 @@ function ViewSwitcher({ currentView, onViewChange, compact = false }) {
     };
 
     return (
-        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
             {views.map((view) => {
                 const label = t(view.labelKey);
                 return (
@@ -45,7 +45,7 @@ function ViewSwitcher({ currentView, onViewChange, compact = false }) {
                     className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                         currentView === view.id
                             ? 'bg-white text-blue-600 shadow-xs'
-                            : 'text-slate-600 hover:text-slate-900'
+                            : 'text-gray-600 hover:text-gray-900'
                     }`}
                     title={t('view_switcher.view_title', { label })}
                 >

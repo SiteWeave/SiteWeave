@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
+import { FieldError, fieldInputClassName } from './FormAlert';
 import { ROUTE_PATHS } from '../config/routes';
 import {
   autoRedeemProjectInvites,
@@ -20,7 +21,19 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
   const [accountIntent, setAccountIntent] = useState('workspace_owner');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [formError, setFormError] = useState(null);
+  /** @type {'email' | 'password' | 'oauth' | 'name'} */
+  const [errorField, setErrorField] = useState('password');
   const oauthTimeoutRef = useRef(null);
+
+  const setFieldError = (message, field = 'password') => {
+    setFormError(message);
+    setErrorField(field);
+  };
+
+  const clearFormError = () => {
+    setFormError(null);
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -53,11 +66,11 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
         clearTimeout(oauthTimeoutRef.current);
         oauthTimeoutRef.current = null;
       }
-      addToast(message, 'error');
+      setFieldError(message, 'oauth');
     };
     window.addEventListener('supabase-oauth-error', handleOAuthError);
     return () => window.removeEventListener('supabase-oauth-error', handleOAuthError);
-  }, [addToast]);
+  }, [t]);
 
   const persistAccountIntent = async (userId, intent) => {
     await supabaseClient.from('profiles').upsert({
@@ -84,12 +97,13 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
     if (oauthTimeoutRef.current) clearTimeout(oauthTimeoutRef.current);
     oauthTimeoutRef.current = setTimeout(() => {
       setIsLoading(false);
-      addToast(t('auth.oauth_timeout'), 'error');
+      setFieldError(t('auth.oauth_timeout'), 'oauth');
     }, 30000);
   };
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
+    clearFormError();
     setIsLoading(true);
 
     if (isSignUp) {
@@ -101,7 +115,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
         },
       });
       if (error) {
-        addToast(t('auth.signup_failed', { message: error.message }), 'error');
+        setFieldError(t('auth.signup_failed_short'), 'email');
         setIsLoading(false);
         return;
       }
@@ -110,13 +124,13 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
           await runPostAuthBootstrap(data.user, accountIntent);
           addToast(t('auth.account_created'), 'success');
         } catch (err) {
-          addToast(err?.message || t('auth.setup_failed'), 'error');
+          setFieldError(t('auth.setup_failed'), 'password');
         }
       }
     } else {
       const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
       if (error) {
-        addToast(t('auth.login_failed', { message: error.message }), 'error');
+        setFieldError(t('auth.login_failed_short'), 'password');
       } else if (data?.user) {
         addToast(t('auth.login_successful'), 'success');
         onAuthSuccess?.();
@@ -127,13 +141,14 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
 
   const handleForgotPassword = async () => {
     if (!email) {
-      addToast(t('auth.enter_email_first'), 'warning');
+      setFieldError(t('auth.enter_email_first'), 'email');
       return;
     }
+    clearFormError();
     const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}${ROUTE_PATHS.login}`,
     });
-    if (error) addToast(error.message, 'error');
+    if (error) setFieldError(t('auth.reset_email_failed_short'), 'email');
     else addToast(t('auth.password_reset_sent'), 'success');
   };
 
@@ -172,10 +187,11 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
   };
 
   const handleGoogleLogin = async () => {
+    clearFormError();
     startOAuthLoadingGuard();
     const { error } = await startProviderOAuth('google');
     if (error) {
-      addToast(t('auth.google_login_failed', { message: error.message }), 'error');
+      setFieldError(t('auth.google_login_failed_short'), 'oauth');
       setIsLoading(false);
       if (oauthTimeoutRef.current) {
         clearTimeout(oauthTimeoutRef.current);
@@ -185,10 +201,11 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
   };
 
   const handleMicrosoftLogin = async () => {
+    clearFormError();
     startOAuthLoadingGuard();
     const { error } = await startProviderOAuth('azure', { scopes: 'openid email profile' });
     if (error) {
-      addToast(t('auth.microsoft_login_failed', { message: error.message }), 'error');
+      setFieldError(t('auth.microsoft_login_failed_short'), 'oauth');
       setIsLoading(false);
       if (oauthTimeoutRef.current) {
         clearTimeout(oauthTimeoutRef.current);
@@ -275,6 +292,8 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
           </button>
         </div>
 
+        {errorField === 'oauth' && <FieldError message={formError} className="mt-2" />}
+
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-gray-300" />
@@ -332,43 +351,54 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
                 type="text"
                 required
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={(e) => { setFullName(e.target.value); clearFormError(); }}
                 placeholder={t('auth.full_name')}
                 className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
               />
             </>
           )}
 
-          <input
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder={t('auth.work_email')}
-            className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-            data-testid="login-email"
-          />
-
-          <div className="relative">
+          <div>
             <input
-              type={showPassword ? 'text' : 'password'}
+              type="email"
               required
-              autoComplete={isSignUp ? 'new-password' : 'current-password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={t('auth.password')}
-              className="block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md text-sm"
-              data-testid="login-password"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); clearFormError(); }}
+              placeholder={t('auth.work_email')}
+              data-testid="login-email"
+              aria-invalid={errorField === 'email' && !!formError}
+              className={fieldInputClassName(errorField === 'email' && !!formError)}
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute inset-y-0 right-0 px-3 text-gray-400 text-xs"
-              tabIndex={-1}
-            >
-              {showPassword ? t('auth.hide_password') : t('auth.show_password')}
-            </button>
+            {errorField === 'email' && <FieldError message={formError} />}
+          </div>
+
+          <div>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); clearFormError(); }}
+                placeholder={t('auth.password')}
+                aria-invalid={errorField === 'password' && !!formError}
+                className={fieldInputClassName(
+                  errorField === 'password' && !!formError,
+                  'block w-full px-3 py-2 pr-10 border rounded-md text-sm focus:outline-none focus:ring-2',
+                )}
+                data-testid="login-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-0 top-1/2 -translate-y-1/2 px-3 text-gray-400 text-xs"
+                tabIndex={-1}
+              >
+                {showPassword ? t('auth.hide_password') : t('auth.show_password')}
+              </button>
+            </div>
+            {errorField === 'password' && <FieldError message={formError} />}
           </div>
 
           <button
