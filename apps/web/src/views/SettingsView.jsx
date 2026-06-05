@@ -7,7 +7,7 @@ import EditableProfileAvatar from '../components/EditableProfileAvatar';
 import PermissionGuard from '../components/PermissionGuard';
 import DirectoryManagementModal from '../components/DirectoryManagementModal';
 import RoleManagement from '../components/RoleManagement';
-import packageJson from '../../package.json';
+import packageJson from '../config/version.js';
 import { getStoredCalendarToken } from '../utils/calendarIntegration';
 import { isModerationAdmin } from '@siteweave/core-logic';
 import BlockedUsersPanel from '../components/moderation/BlockedUsersPanel';
