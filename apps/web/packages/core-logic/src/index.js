@@ -49,4 +49,5 @@ export * from './services/moderationService.js';
 export * from './services/progressReportService.js';
 export * from './services/brandingService.js';
 export * from './services/weatherImpactsService.js';
+export * from './services/workStatusService.js';
 

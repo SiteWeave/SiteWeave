@@ -2,7 +2,6 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
 import Avatar from './Avatar';
-
 function ContactCard({
     contact,
     onAction,
@@ -11,17 +10,10 @@ function ContactCard({
     onDelete,
     showActions = false,
     onAssignToProject,
+    variant = 'default',
 }) {
     const { t } = useTranslation();
-
-    const statusColorMap = {
-        Available: 'bg-emerald-400',
-        Busy: 'bg-amber-400',
-        Offline: 'bg-gray-400',
-        Inactive: 'bg-gray-400'
-    };
-
-    const statusColor = statusColorMap[contact.status] || 'bg-gray-300';
+    const isTradePartner = variant === 'trade_partner' || contact.type === 'Subcontractor';
 
     const getRolePillClass = () => {
         const role = (contact.role || '').toLowerCase();
@@ -54,53 +46,55 @@ function ContactCard({
     };
 
     const hasManagementActions = showActions && (onEdit || onDelete || onAssignToProject);
+    const displayName = isTradePartner && contact.company
+        ? contact.company
+        : contact.name;
+    const subtitle = isTradePartner
+        ? [contact.trade, contact.name !== contact.company ? contact.name : null].filter(Boolean).join(' · ')
+        : contact.role;
 
     return (
         <li className="flex flex-col gap-3 p-3 rounded-lg hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3 flex-1 min-w-0">
                 <div className="relative shrink-0">
                     {contact.avatar_url ? (
-                        <img src={contact.avatar_url} alt={contact.name} className="w-10 h-10 rounded-full object-cover" />
+                        <img src={contact.avatar_url} alt={displayName} className="w-10 h-10 rounded-full object-cover" />
                     ) : (
-                        <Avatar name={contact.name} size="lg" />
+                        <Avatar name={displayName} size="lg" />
                     )}
-                    <span className={`absolute -right-0.5 -bottom-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${statusColor}`} aria-hidden="true"></span>
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                        <p className="font-semibold truncate">{contact.name}</p>
+                        <p className="font-semibold truncate">{displayName}</p>
                     </div>
                     <div className="mt-1 flex items-center gap-2 flex-wrap">
-                        {contact.role && (
+                        {subtitle && (
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getRolePillClass()}`}>
-                                {contact.role}
+                                {subtitle}
                             </span>
                         )}
-                        {contact.type === 'Subcontractor' && (
+                        {isTradePartner && (
                             <span
                                 className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                                     contact.email && String(contact.email).includes('@')
                                         ? 'bg-emerald-50 text-emerald-800'
                                         : 'bg-amber-50 text-amber-900'
                                 }`}
-                                title={
-                                    contact.email && String(contact.email).includes('@')
-                                        ? t('contacts.can_receive_emails')
-                                        : t('contacts.add_email_tooltip')
-                                }
                             >
                                 {contact.email && String(contact.email).includes('@')
                                     ? t('contacts.email_ready')
                                     : t('contacts.add_email_for_reminders')}
                             </span>
                         )}
-                        {contact.company && contact.company !== 'SiteWeave' && (
-                            <span className="text-xs text-gray-400">{contact.company}</span>
+                        {contact.workContext?.assignedProjectNames?.length > 0 && (
+                            <span className="text-xs text-gray-500 truncate">
+                                {t('team.assigned_projects', { projects: contact.workContext.assignedProjectNames.join(', ') })}
+                            </span>
                         )}
                     </div>
                 </div>
             </div>
-            
+
             <div className="flex flex-wrap items-center gap-2 shrink-0 sm:justify-end">
                 <ActionButton />
 

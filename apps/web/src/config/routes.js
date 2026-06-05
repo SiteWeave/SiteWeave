@@ -12,6 +12,7 @@ export const ROUTE_PATHS = {
   calendar: '/calendar',
   team: '/team',
   teamDirectory: '/team/directory',
+  tradePartners: '/trade-partners',
   organization: '/organization',
   settings: '/settings',
   notifications: '/settings/notifications',
@@ -26,7 +27,7 @@ export const PRIMARY_NAV_ITEMS = [
   { label: 'Dashboard', to: ROUTE_PATHS.home },
   { label: 'Projects', to: ROUTE_PATHS.projects },
   { label: 'Calendar', to: ROUTE_PATHS.calendar },
-  { label: 'Directory', to: ROUTE_PATHS.teamDirectory },
+  { label: 'Trade Partners', to: ROUTE_PATHS.tradePartners },
   { label: 'Organization', to: ROUTE_PATHS.organization },
   { label: 'Settings', to: ROUTE_PATHS.settings },
 ]

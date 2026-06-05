@@ -18,16 +18,17 @@ export async function peekPendingProjectInviteToken() {
   return AsyncStorage.getItem(PENDING_PROJECT_INVITE_KEY);
 }
 
+let inviteBootstrapInFlight = null;
+let inviteBootstrapDoneForUser = null;
+let autoRedeemDoneForUser = null;
+
 async function invokeEdgeFunction(supabase, functionName, body = {}) {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
     return { success: false, error: 'Not authenticated' };
   }
 
-  const { data, error } = await supabase.functions.invoke(functionName, {
-    body,
-    headers: { Authorization: `Bearer ${session.access_token}` },
-  });
+  const { data, error } = await supabase.functions.invoke(functionName, { body });
 
   if (error) {
     return { success: false, error: error.message };
@@ -40,7 +41,19 @@ export async function redeemProjectInvite(supabase, { token, shortCode }) {
 }
 
 export async function autoRedeemProjectInvites(supabase) {
-  return invokeEdgeFunction(supabase, 'auto-redeem-project-invites', {});
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.email) {
+    return { success: true, redeemedProjectIds: [], skipped: true };
+  }
+  if (autoRedeemDoneForUser === user.id) {
+    return { success: true, skipped: true };
+  }
+
+  const result = await invokeEdgeFunction(supabase, 'auto-redeem-project-invites', {});
+  if (result?.success !== false) {
+    autoRedeemDoneForUser = user.id;
+  }
+  return result;
 }
 
 export function extractProjectInviteTokenFromUrl(urlOrPath) {
@@ -51,9 +64,33 @@ export function extractProjectInviteTokenFromUrl(urlOrPath) {
 }
 
 export async function runInviteBootstrap(supabase) {
-  const pending = await consumePendingProjectInviteToken();
-  if (pending) {
-    await redeemProjectInvite(supabase, { token: pending });
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
+    return { success: false, error: 'Not authenticated' };
   }
-  await autoRedeemProjectInvites(supabase);
+
+  if (inviteBootstrapDoneForUser === user.id) {
+    return { success: true, skipped: true };
+  }
+  if (inviteBootstrapInFlight) {
+    return inviteBootstrapInFlight;
+  }
+
+  inviteBootstrapInFlight = (async () => {
+    try {
+      const pending = await consumePendingProjectInviteToken();
+      if (pending) {
+        await redeemProjectInvite(supabase, { token: pending });
+      }
+      const result = await autoRedeemProjectInvites(supabase);
+      if (result?.success !== false) {
+        inviteBootstrapDoneForUser = user.id;
+      }
+      return result;
+    } finally {
+      inviteBootstrapInFlight = null;
+    }
+  })();
+
+  return inviteBootstrapInFlight;
 }

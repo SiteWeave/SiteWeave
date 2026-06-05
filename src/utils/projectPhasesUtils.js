@@ -11,6 +11,22 @@ export const DEFAULT_CONSTRUCTION_PHASES = [
 export const DEFAULT_CONSTRUCTION_PHASE_NAMES = DEFAULT_CONSTRUCTION_PHASES.map((p) => p.name);
 
 /**
+ * Average task % complete for a phase (uses percent_complete; completed tasks count as 100).
+ * @param {Array<{ completed?: boolean, percent_complete?: number|null }>} taskList
+ * @returns {number} 0–100
+ */
+export function calculatePhaseProgressFromTasks(taskList) {
+    if (!taskList?.length) return 0;
+    const sum = taskList.reduce((acc, task) => {
+        const pct = task.completed
+            ? 100
+            : Math.max(0, Math.min(100, Number(task.percent_complete ?? 0) || 0));
+        return acc + pct;
+    }, 0);
+    return Math.round(sum / taskList.length);
+}
+
+/**
  * Weighted overall progress from phase rows (by schedule duration when dates exist).
  * @param {Array<{ progress?: number, start_date?: string|null, end_date?: string|null }>} phases
  */

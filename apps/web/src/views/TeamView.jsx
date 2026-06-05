@@ -14,7 +14,6 @@ import {
   canEditRolePermissions,
 } from '../utils/roleManagementService';
 import LoadingSpinner from '../components/LoadingSpinner';
-import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
 import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
 import { isCustomRolesLockedError } from '@siteweave/core-logic';
@@ -36,6 +35,7 @@ function TeamView() {
   const [rolePendingDelete, setRolePendingDelete] = useState(null);
   const [roleModalReadOnly, setRoleModalReadOnly] = useState(false);
   const [roleSaveError, setRoleSaveError] = useState(null);
+  const [teamDirectoryRefreshKey, setTeamDirectoryRefreshKey] = useState(0);
 
   const canManageRoles = state.userRole?.permissions?.can_manage_roles === true;
 
@@ -166,25 +166,22 @@ function TeamView() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-1">{t('team.org_directory_title')}</h1>
-          <p className="text-gray-500 text-sm">{t('team.org_directory_subtitle')}</p>
+          <h1 className="text-3xl font-bold text-gray-900">{t('navigation.organization')}</h1>
         </div>
         <PermissionGuard permission="can_manage_team">
           <button type="button"
             onClick={() => setShowDirectoryModal(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-semibold"
-            title={t('team.manage_members_title')}
+            title={t('team.invite_to_app_title')}
           >
-            {t('team.manage_members')}
+            {t('team.invite_to_app')}
           </button>
         </PermissionGuard>
       </div>
 
-      <TeamDirectory />
-
       {/* Roles & Permissions — all members can view; changes require manage + custom tier */}
-      <div className="mt-12 pt-8 border-t border-gray-200">
-        <div className="flex items-center justify-between mb-6">
+      <div className="mb-4 pb-4 border-b border-gray-200">
+        <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">{t('team.roles_permissions_title')}</h2>
             <p className="text-gray-500 text-sm mt-1">
@@ -247,20 +244,18 @@ function TeamView() {
         )}
       </div>
 
-      <PermissionGuard permission="can_view_activity_history">
-        {state.currentOrganization?.id && (
-          <div className="mt-12 pt-8 border-t border-gray-200">
-            <ActivityHistoryPanel
-              mode="organization"
-              organizationId={state.currentOrganization.id}
-            />
-          </div>
-        )}
-      </PermissionGuard>
+      <TeamDirectory
+        refreshKey={teamDirectoryRefreshKey}
+        onStaffChanged={() => loadRolesAndCounts()}
+      />
 
-      <DirectoryManagementModal 
-        show={showDirectoryModal} 
-        onClose={() => setShowDirectoryModal(false)} 
+      <DirectoryManagementModal
+        show={showDirectoryModal}
+        onClose={() => setShowDirectoryModal(false)}
+        onMembersChanged={() => {
+          loadRolesAndCounts();
+          setTeamDirectoryRefreshKey((k) => k + 1);
+        }}
       />
 
       <RoleCreationModal

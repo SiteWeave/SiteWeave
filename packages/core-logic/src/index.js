@@ -19,6 +19,12 @@ export {
 
 export { normalizeAssigneePhone } from './utils/assigneePhone.js';
 
+export {
+  normalizeContactEmail,
+  normalizeContactPhoneDigits,
+  contactPhonesMatch,
+} from './utils/contactIdentity.js';
+
 export { sortProjectsByRecency } from './utils/projectListSort.js';
 
 export { upsertById, removeById, getRealtimeRow } from './utils/realtimeList.js';
@@ -71,4 +77,5 @@ export * from './services/progressReportService.js';
 export * from './services/brandingService.js';
 export * from './services/weatherImpactsService.js';
 export * from './services/profilePhotosService.js';
+export * from './services/workStatusService.js';
 

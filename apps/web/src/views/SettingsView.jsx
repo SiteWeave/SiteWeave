@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EditableProfileAvatar from '../components/EditableProfileAvatar';
 import PermissionGuard from '../components/PermissionGuard';
-import DirectoryManagementModal from '../components/DirectoryManagementModal';
+import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
 import RoleManagement from '../components/RoleManagement';
-import packageJson from '../config/version.js';
+import packageJson from '../../package.json';
 import { getStoredCalendarToken } from '../utils/calendarIntegration';
-import { isModerationAdmin } from '@siteweave/core-logic';
+import { clearStaleSupabaseSession, isModerationAdmin } from '@siteweave/core-logic';
+import ConfirmDialog from '../components/ConfirmDialog';
 import BlockedUsersPanel from '../components/moderation/BlockedUsersPanel';
 import ContentReportsPanel from '../components/moderation/ContentReportsPanel';
 import FeedbackModal from '../components/FeedbackModal';
@@ -22,14 +24,15 @@ import {
   SettingsDangerButton,
 } from '../components/settings/SettingsSection';
 import { deleteAccount } from '../utils/deleteAccountService';
+import { resetInviteBootstrapState } from '../utils/workspaceClient';
 import { FieldError, fieldInputClassName } from '../components/FormAlert';
 
 function SettingsView() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const { state, dispatch } = useAppContext();
   const { addToast } = useToast();
   
-  const [showTeamModal, setShowTeamModal] = useState(false);
   const [showRoleManagement, setShowRoleManagement] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -39,6 +42,7 @@ function SettingsView() {
   const [outlookCalendarSynced, setOutlookCalendarSynced] = useState(false);
   const [isSavingOrgAssignmentEmail, setIsSavingOrgAssignmentEmail] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
   const [profileError, setProfileError] = useState(null);
   const [passwordError, setPasswordError] = useState(null);
   const [deleteAccountError, setDeleteAccountError] = useState(null);
@@ -163,23 +167,22 @@ function SettingsView() {
     setSignOutError(null);
     const { error } = await supabaseClient.auth.signOut();
     if (error) {
-      setSignOutError(t('toast.error_signing_out', { message: error.message }));
-    } else {
-      dispatch({ type: 'SET_USER', payload: null });
-      addToast(t('toast.signed_out_successfully'), 'success');
+      await clearStaleSupabaseSession(supabaseClient);
     }
+    dispatch({ type: 'SET_USER', payload: null });
+    addToast(t('toast.signed_out_successfully'), 'success');
   };
 
-  const handleDeleteAccount = async () => {
-    if (!window.confirm(t('settings.delete_account_confirm'))) {
-      return;
-    }
+  const confirmDeleteAccount = async () => {
+    setShowDeleteAccountConfirm(false);
     setDeleteAccountError(null);
     setIsDeletingAccount(true);
     try {
       await deleteAccount(supabaseClient);
+      resetInviteBootstrapState();
       dispatch({ type: 'SET_USER', payload: null });
       addToast(t('settings.account_deleted'), 'success');
+      navigate('/login', { replace: true });
     } catch (err) {
       setDeleteAccountError(err?.message || t('settings.delete_account_failed'));
     } finally {
@@ -363,8 +366,8 @@ function SettingsView() {
         </SettingsSection>
 
         <SettingsSection
-          title={t('settings.organization')}
-          description={t('settings.organization_section_desc')}
+          title={t('settings.company')}
+          description={t('settings.company_section_desc')}
         >
           <div className="space-y-4 max-w-xl">
             {state.currentOrganization ? (
@@ -401,12 +404,20 @@ function SettingsView() {
                       {t('settings.manage_roles').replace(' →', '')}
                     </SettingsSecondaryButton>
                   </PermissionGuard>
-                  <PermissionGuard permission="can_manage_users">
-                    <SettingsSecondaryButton type="button" onClick={() => setShowTeamModal(true)}>
-                      {t('settings.manage_team_members').replace(' →', '')}
-                    </SettingsSecondaryButton>
-                  </PermissionGuard>
+                  <SettingsSecondaryButton type="button" onClick={() => navigate('/organization')}>
+                    {t('settings.manage_company_staff')}
+                  </SettingsSecondaryButton>
                 </div>
+                <PermissionGuard permission="can_view_activity_history">
+                  {state.currentOrganization?.id && (
+                    <div className="mt-6 pt-6 border-t border-gray-200">
+                      <ActivityHistoryPanel
+                        mode="organization"
+                        organizationId={state.currentOrganization.id}
+                      />
+                    </div>
+                  )}
+                </PermissionGuard>
               </>
             ) : state.isProjectCollaborator ? (
               <div className="space-y-3 text-sm">
@@ -498,7 +509,7 @@ function SettingsView() {
               <FieldError message={deleteAccountError} className="mb-3" />
               <button
                 type="button"
-                onClick={handleDeleteAccount}
+                onClick={() => setShowDeleteAccountConfirm(true)}
                 disabled={isDeletingAccount}
                 className="inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed gap-2"
               >
@@ -554,13 +565,17 @@ function SettingsView() {
         onClose={() => setShowFeedbackModal(false)}
       />
 
-      {/* Team Management Modal */}
-      <DirectoryManagementModal 
-        show={showTeamModal} 
-        onClose={() => setShowTeamModal(false)} 
+      {/* Role Management Modal/View */}
+      <ConfirmDialog
+        isOpen={showDeleteAccountConfirm}
+        onClose={() => setShowDeleteAccountConfirm(false)}
+        onConfirm={confirmDeleteAccount}
+        title={t('settings.delete_account')}
+        message={t('settings.delete_account_confirm')}
+        confirmText={t('settings.delete_account')}
+        cancelText={t('common.cancel')}
       />
 
-      {/* Role Management Modal/View */}
       {showRoleManagement && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">

@@ -277,10 +277,11 @@ export default function AppStandalone() {
         <Route path={ROUTE_PATHS.projectFieldIssues} element={<ProjectWorkspaceRoute routeTab="field-issues" />} />
         <Route path={ROUTE_PATHS.projectActivity} element={<ProjectWorkspaceRoute routeTab="activity" />} />
         <Route path={ROUTE_PATHS.projectStream} element={<ProjectWorkspaceRoute routeTab="stream" />} />
-        <Route path={ROUTE_PATHS.messages} element={<Navigate to={ROUTE_PATHS.teamDirectory} replace />} />
-        <Route path={ROUTE_PATHS.team} element={<Navigate to={ROUTE_PATHS.teamDirectory} replace />} />
+        <Route path={ROUTE_PATHS.messages} element={<Navigate to={ROUTE_PATHS.tradePartners} replace />} />
+        <Route path={ROUTE_PATHS.team} element={<Navigate to={ROUTE_PATHS.tradePartners} replace />} />
+        <Route path={ROUTE_PATHS.teamDirectory} element={<Navigate to={ROUTE_PATHS.tradePartners} replace />} />
         <Route path={ROUTE_PATHS.calendar} element={<RouteStateSync view="Calendar"><CalendarView /></RouteStateSync>} />
-        <Route path={ROUTE_PATHS.teamDirectory} element={<TeamHubView />} />
+        <Route path={ROUTE_PATHS.tradePartners} element={<TeamHubView />} />
         <Route path={ROUTE_PATHS.organization} element={<RouteStateSync view="Organization"><TeamView /></RouteStateSync>} />
         <Route path={ROUTE_PATHS.settings} element={<RouteStateSync view="Settings"><SettingsView /></RouteStateSync>} />
         <Route path={ROUTE_PATHS.notifications} element={<RouteStateSync view="Settings"><SettingsView /></RouteStateSync>} />

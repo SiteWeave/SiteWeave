@@ -1,3 +1,8 @@
+import {
+  getStaffDeploymentContext,
+  normalizeDeploymentStatus,
+} from '@siteweave/core-logic';
+
 /**
  * Virtual Contacts Service
  * Implements the "Corporate Directory" model:
@@ -83,7 +88,7 @@ export async function getVirtualContacts(supabase, userId, organizationId, userP
               role: member.contacts.role,
               phone: member.contacts.phone,
               avatar_url: member.contacts.avatar_url,
-              status: member.contacts.status || 'Available',
+              status: normalizeDeploymentStatus(member.contacts.status, member.contacts.type || 'Team'),
               type: member.contacts.type || 'Team',
               company: member.contacts.company,
               trade: member.contacts.trade,
@@ -95,6 +100,58 @@ export async function getVirtualContacts(supabase, userId, organizationId, userP
               project_contacts: [] // Will be populated separately if needed
             };
             contactMap.set(member.contacts.id, contact);
+          } else {
+            // Profile linked to org but missing contact row — still show as team member
+            const contact = {
+              id: `profile:${member.id}`,
+              name: 'Team member',
+              email: null,
+              role: member.roles?.name || 'Team',
+              phone: null,
+              avatar_url: null,
+              status: 'available',
+              type: 'Team',
+              company: 'SiteWeave',
+              trade: 'Internal',
+              profile_id: member.id,
+              organization_id: member.organization_id,
+              role_id: member.roles?.id,
+              role_name: member.roles?.name,
+              is_internal: true,
+              project_contacts: [],
+            };
+            contactMap.set(contact.id, contact);
+          }
+        });
+      }
+
+      // Org directory contacts not yet linked to a profile (manual add, pending invite metadata, etc.)
+      const { data: orgContacts, error: orgContactsError } = await supabase
+        .from('contacts')
+        .select('id, name, email, role, phone, avatar_url, status, type, company, trade, organization_id')
+        .eq('organization_id', organizationId)
+        .eq('type', 'Team');
+
+      if (orgContactsError) {
+        console.error('Error fetching organization contacts:', orgContactsError);
+      } else if (orgContacts) {
+        orgContacts.forEach((row) => {
+          if (!contactMap.has(row.id)) {
+            contactMap.set(row.id, {
+              id: row.id,
+              name: row.name,
+              email: row.email,
+              role: row.role,
+              phone: row.phone,
+              avatar_url: row.avatar_url,
+              status: normalizeDeploymentStatus(row.status, 'Team'),
+              type: row.type || 'Team',
+              company: row.company,
+              trade: row.trade,
+              organization_id: row.organization_id,
+              is_internal: true,
+              project_contacts: [],
+            });
           }
         });
       }
@@ -178,7 +235,7 @@ export async function getVirtualContacts(supabase, userId, organizationId, userP
                   role: profile.contacts.role,
                   phone: profile.contacts.phone,
                   avatar_url: profile.contacts.avatar_url,
-                  status: profile.contacts.status || 'Available',
+                  status: normalizeDeploymentStatus(profile.contacts.status, profile.contacts.type),
                   type: profile.contacts.type || 'Subcontractor',
                   company: profile.contacts.company,
                   trade: profile.contacts.trade,
@@ -254,7 +311,9 @@ export async function getVirtualContacts(supabase, userId, organizationId, userP
                 role: pc.contacts.role,
                 phone: pc.contacts.phone,
                 avatar_url: pc.contacts.avatar_url,
-                status: pc.contacts.status || 'Available',
+                status: pc.contacts.type === 'Subcontractor'
+                  ? null
+                  : normalizeDeploymentStatus(pc.contacts.status, pc.contacts.type),
                 type: pc.contacts.type || 'Team',
                 company: pc.contacts.company,
                 trade: pc.contacts.trade,
@@ -272,8 +331,42 @@ export async function getVirtualContacts(supabase, userId, organizationId, userP
       }
     }
 
-    // Convert Map to Array
-    return Array.from(contactMap.values());
+    const contacts = Array.from(contactMap.values());
+
+    if (!isGuest && organizationId) {
+      const staffContactIds = contacts
+        .filter((c) => c.type === 'Team' && c.id && !String(c.id).startsWith('profile:'))
+        .map((c) => c.id);
+
+      if (staffContactIds.length > 0) {
+        const { data: projectRows } = await supabase
+          .from('projects')
+          .select('id, name')
+          .eq('organization_id', organizationId);
+        const projectNamesById = {};
+        (projectRows || []).forEach((p) => { projectNamesById[String(p.id)] = p.name; });
+
+        const deploymentContext = await getStaffDeploymentContext(
+          supabase,
+          staffContactIds,
+          organizationId,
+          projectNamesById,
+        );
+
+        contacts.forEach((contact) => {
+          if (contact.type === 'Team') {
+            contact.status = normalizeDeploymentStatus(contact.status, 'Team');
+            if (contact.id && deploymentContext[contact.id]) {
+              contact.workContext = deploymentContext[contact.id];
+            }
+          } else if (contact.type === 'Subcontractor') {
+            contact.status = null;
+          }
+        });
+      }
+    }
+
+    return contacts;
   } catch (error) {
     console.error('Error fetching virtual contacts:', error);
     return [];

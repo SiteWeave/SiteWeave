@@ -10,6 +10,7 @@ import {
   autoRedeemProjectInvites,
   provisionPersonalWorkspace,
 } from '../utils/workspaceClient';
+import { ACCOUNT_DELETED_STORAGE_KEY } from '../utils/deleteAccountService';
 
 function LoginForm({ mode = 'signIn', onAuthSuccess }) {
   const { t } = useTranslation();
@@ -22,6 +23,7 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [accountDeletedNotice, setAccountDeletedNotice] = useState(false);
   /** @type {'email' | 'password' | 'oauth' | 'name'} */
   const [errorField, setErrorField] = useState('password');
   const oauthTimeoutRef = useRef(null);
@@ -41,6 +43,14 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
       setAccountIntent('guest_only');
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof sessionStorage === 'undefined') return;
+    if (!sessionStorage.getItem(ACCOUNT_DELETED_STORAGE_KEY)) return;
+    sessionStorage.removeItem(ACCOUNT_DELETED_STORAGE_KEY);
+    setAccountDeletedNotice(true);
+    addToast(t('settings.account_deleted'), 'success');
+  }, [addToast, t]);
 
   useEffect(() => {
     const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((_event, session) => {
@@ -242,6 +252,14 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
           <h2 className="text-2xl font-bold text-gray-900">
             {isSignUp ? t('auth.welcome_signup') : t('auth.welcome_back')}
           </h2>
+          {accountDeletedNotice && (
+            <p
+              className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
+              role="status"
+            >
+              {t('settings.account_deleted')}
+            </p>
+          )}
           <p className="mt-2 text-sm text-gray-600">
             {isSignUp ? (
               <>

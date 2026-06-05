@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+import { resolveMemberRoleId } from '../_shared/ensureDefaultRoles.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -55,6 +56,11 @@ serve(async (req) => {
       throw new Error('Not authorized - can_manage_team permission required')
     }
 
+    const resolvedRoleId = await resolveMemberRoleId(supabaseAdmin, organizationId, roleId)
+    if (!resolvedRoleId) {
+      throw new Error('No assignable role found for this organization.')
+    }
+
     // Create auth user with username
     const { data: authData, error: authError2 } = await supabaseAdmin.auth.admin.createUser({
       email: email.toLowerCase(),
@@ -69,17 +75,40 @@ serve(async (req) => {
     if (authError2) throw authError2
     if (!authData?.user) throw new Error('Failed to create auth user')
 
-    // Create contact
-    const { data: contact, error: contactError } = await supabaseAdmin
+    const normalizedEmail = email.toLowerCase()
+
+    // Reuse existing org contact when present (avoid duplicate email + nulling contact_id on upsert)
+    let contactId: string | null = null
+    const { data: existingContact } = await supabaseAdmin
       .from('contacts')
-      .insert({
-        name: fullName,
-        email: email.toLowerCase(),
-        type: 'Team',
-        organization_id: organizationId
-      })
-      .select()
-      .single()
+      .select('id')
+      .eq('organization_id', organizationId)
+      .ilike('email', normalizedEmail)
+      .maybeSingle()
+
+    if (existingContact?.id) {
+      contactId = existingContact.id
+    } else {
+      const { data: contact, error: contactError } = await supabaseAdmin
+        .from('contacts')
+        .insert({
+          name: fullName,
+          email: normalizedEmail,
+          type: 'Team',
+          organization_id: organizationId
+        })
+        .select('id')
+        .single()
+
+      if (contactError) throw contactError
+      contactId = contact?.id ?? null
+    }
+
+    const { data: existingProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('contact_id')
+      .eq('id', authData.user.id)
+      .maybeSingle()
 
     // Update profile
     const { error: profileError } = await supabaseAdmin
@@ -87,8 +116,8 @@ serve(async (req) => {
       .upsert({
         id: authData.user.id,
         organization_id: organizationId,
-        role_id: roleId || null,
-        contact_id: contact?.id || null,
+        role_id: resolvedRoleId,
+        contact_id: contactId || existingProfile?.contact_id || null,
         must_change_password: true // Managed accounts must change password on first login
       }, {
         onConflict: 'id'

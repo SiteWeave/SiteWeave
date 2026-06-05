@@ -8,6 +8,7 @@ import {
   sortProjectsByRecency,
 } from '@siteweave/core-logic';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
+import { resetInviteBootstrapState } from '../utils/workspaceClient';
 import { dedupeTasksById } from '../utils/taskDedupe';
 import {
   analyzeSemanticTaskDuplicates,
@@ -481,6 +482,7 @@ export const AppProvider = ({ children }) => {
             dispatch({ type: 'SET_USER', payload: session.user });
             // Do not restore cache here (e.g. on token refresh) so we don't overwrite in-memory state like project tasks
           } else {
+            resetInviteBootstrapState();
             dispatch({ type: 'SET_USER', payload: null });
             // Clear cached data on logout
             sessionStorage.removeItem(STORAGE_KEY);

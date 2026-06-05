@@ -58,14 +58,21 @@ const PRIORITY_I18N_KEYS = {
   Critical: 'fieldIssues.priority_critical',
 };
 
-/** Localized contact availability/status label; DB values stay English. */
+/** Localized staff deployment status; DB values use crew deployment enum. */
 export function getLocalizedContactStatus(status, t) {
   if (!status) return '';
   const keyMap = {
-    Available: 'contacts.status_available',
-    Busy: 'contacts.status_busy',
-    Offline: 'contacts.status_offline',
-    Inactive: 'contacts.status_inactive',
+    assigned: 'team.deployment_assigned',
+    available: 'team.deployment_available',
+    off: 'team.deployment_off',
+    pto: 'team.deployment_pto',
+    Available: 'team.deployment_available',
+    Busy: 'team.deployment_assigned',
+    'On Site': 'team.deployment_assigned',
+    Offline: 'team.deployment_off',
+    Inactive: 'team.deployment_off',
+    Unavailable: 'team.deployment_off',
+    'On Leave': 'team.deployment_pto',
   };
   const key = keyMap[status];
   return key ? t(key) : status;

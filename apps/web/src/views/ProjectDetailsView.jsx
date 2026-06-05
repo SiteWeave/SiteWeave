@@ -25,6 +25,10 @@ import PhasesEmptyState from '../components/phases/PhasesEmptyState';
 import PhaseQuickAdd from '../components/phases/PhaseQuickAdd';
 import PhasesHintBanner from '../components/phases/PhasesHintBanner';
 import useProjectPhases from '../hooks/useProjectPhases';
+import {
+    calculateOverallPhaseProgress,
+    calculatePhaseProgressFromTasks,
+} from '../utils/projectPhasesUtils';
 import ProjectSidebar from '../components/ProjectSidebar';
 import ProjectModal from '../components/ProjectModal';
 import ShareModal from '../components/ShareModal';
@@ -752,11 +756,20 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         return { tasksByPhaseId: byPhase, unassignedTasks: unassigned };
     }, [tasks]);
 
-    const progressPercentForTasks = (taskList) => {
-        if (!taskList.length) return 0;
-        const done = taskList.filter((t) => t.completed).length;
-        return Math.round((100 * done) / taskList.length);
-    };
+    const phasesForSummary = useMemo(() => (
+        projectPhases.map((phase) => {
+            const phaseTasks = tasksByPhaseId.get(phase.id) || [];
+            const progress = phaseTasks.length > 0
+                ? calculatePhaseProgressFromTasks(phaseTasks)
+                : (phase.progress ?? 0);
+            return { ...phase, progress };
+        })
+    ), [projectPhases, tasksByPhaseId]);
+
+    const summaryOverallProgress = useMemo(
+        () => calculateOverallPhaseProgress(phasesForSummary),
+        [phasesForSummary],
+    );
 
     const photoModalTask = useMemo(
         () => (photoModalTaskId ? allTasks.find((t) => t.id === photoModalTaskId) : null),
@@ -2632,8 +2645,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                         <PhasesHintBanner />
                                         <PhasesSummaryStrip
                                             projectId={project.id}
-                                            phases={projectPhases}
-                                            overallProgress={phasesOverallProgress}
+                                            phases={phasesForSummary}
+                                            overallProgress={summaryOverallProgress}
                                             includeUnassigned={unassignedTasks.length > 0}
                                         />
                                     </>
@@ -2661,7 +2674,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                 phaseId={phase.id}
                                                                 title={phase.name}
                                                                 taskCount={phaseTasks.length}
-                                                                progressPercent={progressPercentForTasks(phaseTasks)}
+                                                                progressPercent={calculatePhaseProgressFromTasks(phaseTasks)}
                                                                 onTaskDrop={handleTaskDrop}
                                                                 canManagePhases={canEditProjects}
                                                                 onAddTaskToPhase={openTaskModalForPhase}
@@ -2731,7 +2744,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                             variant="unassigned"
                                                             title={t('tasks.unassigned')}
                                                             taskCount={unassignedTasks.length}
-                                                            progressPercent={progressPercentForTasks(unassignedTasks)}
+                                                            progressPercent={calculatePhaseProgressFromTasks(unassignedTasks)}
                                                             onTaskDrop={handleTaskDrop}
                                                         >
                                                             <ul className="bg-white">

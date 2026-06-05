@@ -1,11 +1,53 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAppContext, supabaseClient } from '../context/AppContext';
+import { useAppContext } from '../context/AppContext';
 import PermissionGuard from './PermissionGuard';
-import DateDropdown from './DateDropdown';
+import DateRangePicker from './DateRangePicker';
+import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 import { hasPermission } from '../utils/permissions';
 import useProjectPhases from '../hooks/useProjectPhases';
 import { calculateOverallPhaseProgress } from '../utils/projectPhasesUtils';
+import { supabaseClient } from '../context/AppContext';
+
+const schedulePresetChipClass =
+    'rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 shadow-xs transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+
+function ScheduleDatePresets({ t, onSelectRange }) {
+    return (
+        <>
+            <button
+                type="button"
+                onClick={() => {
+                    const todayIso = localDateIso();
+                    onSelectRange(todayIso, todayIso);
+                }}
+                className={schedulePresetChipClass}
+            >
+                {t('common.today')}
+            </button>
+            <button
+                type="button"
+                onClick={() => {
+                    const todayIso = localDateIso();
+                    onSelectRange(todayIso || '', addDaysIso(todayIso, 7) || todayIso);
+                }}
+                className={schedulePresetChipClass}
+            >
+                {t('common.plus_one_week')}
+            </button>
+            <button
+                type="button"
+                onClick={() => {
+                    const todayIso = localDateIso();
+                    onSelectRange(todayIso || '', addDaysIso(todayIso, 14) || todayIso);
+                }}
+                className={schedulePresetChipClass}
+            >
+                {t('common.plus_two_weeks')}
+            </button>
+        </>
+    );
+}
 
 function debounce(func, wait) {
     let timeout;
@@ -98,10 +140,6 @@ function BuildPath({ project, phaseControl = null, onPhasesChange, embedded = fa
         }, 1000),
         [],
     );
-
-    const commitPhaseDateField = (phaseId, field, iso) => {
-        handlePhaseUpdate(phaseId, { [field]: iso || null });
-    };
 
     const handleAddPhase = async (phaseData) => {
         const data = await addPhase(phaseData);
@@ -329,25 +367,20 @@ function BuildPath({ project, phaseControl = null, onPhasesChange, embedded = fa
                                 </div>
                                 {isEditing && (
                                     <PermissionGuard permission="can_edit_projects">
-                                        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                            <div>
-                                                <label className="text-xs text-gray-600 block mb-1">{t('projectDetail.phase_start_date')}</label>
-                                                <DateDropdown
-                                                    compact
-                                                    value={phase.start_date || ''}
-                                                    onChange={(v) => commitPhaseDateField(phase.id, 'start_date', v)}
-                                                    className={isLoading ? 'pointer-events-none opacity-60' : ''}
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="text-xs text-gray-600 block mb-1">{t('projectDetail.phase_end_date')}</label>
-                                                <DateDropdown
-                                                    compact
-                                                    value={phase.end_date || ''}
-                                                    onChange={(v) => commitPhaseDateField(phase.id, 'end_date', v)}
-                                                    className={isLoading ? 'pointer-events-none opacity-60' : ''}
-                                                />
-                                            </div>
+                                        <div className={`mt-3 ${isLoading ? 'pointer-events-none opacity-60' : ''}`}>
+                                            <DateRangePicker
+                                                size="sm"
+                                                compact
+                                                label={t('tasks.schedule')}
+                                                startValue={phase.start_date || ''}
+                                                endValue={phase.end_date || ''}
+                                                onChange={({ start, end }) =>
+                                                    handlePhaseUpdate(phase.id, {
+                                                        start_date: start || null,
+                                                        end_date: end || null,
+                                                    })
+                                                }
+                                            />
                                         </div>
                                     </PermissionGuard>
                                 )}
@@ -397,10 +430,14 @@ export function PhaseModal({ phase, onClose, onSave, isLoading }) {
         onClose();
     };
 
+    const applyScheduleRange = (start, end) => {
+        setFormData((prev) => ({ ...prev, start_date: start, end_date: end }));
+    };
+
     return (
         <div className="fixed inset-0 backdrop-blur-[2px] bg-black/40 flex items-center justify-center z-[60] p-4">
             <div
-                className="bg-white rounded-xl p-6 w-96 max-w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl"
+                className="bg-white rounded-xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto shadow-2xl"
                 role="dialog"
                 aria-modal="true"
                 onClick={(e) => e.stopPropagation()}
@@ -421,15 +458,14 @@ export function PhaseModal({ phase, onClose, onSave, isLoading }) {
                             required
                         />
                     </div>
-                    <DateDropdown
-                        label={t('projectDetail.phase_start_date')}
-                        value={formData.start_date}
-                        onChange={(v) => setFormData({ ...formData, start_date: v })}
-                    />
-                    <DateDropdown
-                        label={t('projectDetail.phase_end_date')}
-                        value={formData.end_date}
-                        onChange={(v) => setFormData({ ...formData, end_date: v })}
+                    <DateRangePicker
+                        label={t('tasks.schedule')}
+                        startValue={formData.start_date}
+                        endValue={formData.end_date}
+                        onChange={({ start, end }) => applyScheduleRange(start, end)}
+                        presets={
+                            <ScheduleDatePresets t={t} onSelectRange={applyScheduleRange} />
+                        }
                     />
                     <div className="flex justify-end gap-3">
                         <button

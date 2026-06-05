@@ -18,13 +18,14 @@ import { FieldError } from './FormAlert';
  * Secure frontend component for managing organization's member directory
  * Requires can_manage_team permission
  */
-function DirectoryManagementModal({ show, onClose }) {
+function DirectoryManagementModal({ show, onClose, onMembersChanged }) {
   const { t } = useTranslation();
   const { state } = useAppContext();
   const currentOrganization = state.currentOrganization;
   const user = state.user;
   const { addToast } = useToast();
   const [users, setUsers] = useState([]);
+  const [pendingInvitations, setPendingInvitations] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState(null);
@@ -83,12 +84,29 @@ function DirectoryManagementModal({ show, onClose }) {
     setLoading(true);
     setListError(null);
     try {
-      const [usersData, rolesData] = await Promise.all([
+      const [usersData, rolesData, invitationsResult] = await Promise.all([
         getOrganizationUsers(supabaseClient, currentOrganization.id),
-        getAssignableOrgRoles(supabaseClient, currentOrganization.id)
+        getAssignableOrgRoles(supabaseClient, currentOrganization.id),
+        supabaseClient
+          .from('invitations')
+          .select('id, email, status, created_at, expires_at, metadata, roles(name)')
+          .eq('organization_id', currentOrganization.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false }),
       ]);
       setUsers(usersData);
       setRoles(rolesData);
+      if (invitationsResult.error) {
+        console.error('Error loading pending invitations:', invitationsResult.error);
+        setPendingInvitations([]);
+      } else {
+        const now = Date.now();
+        setPendingInvitations(
+          (invitationsResult.data || []).filter(
+            (inv) => !inv.expires_at || new Date(inv.expires_at).getTime() > now,
+          ),
+        );
+      }
     } catch (error) {
       console.error('Error loading directory data:', error);
       setListError(t('team.failed_load_members'));
@@ -243,7 +261,8 @@ function DirectoryManagementModal({ show, onClose }) {
           phone: '', 
           roleId: memberRole?.id || '' 
         });
-        loadData();
+        await loadData();
+        onMembersChanged?.();
       } else {
         setInviteError(result.error || t('team.failed_send_invite'));
       }
@@ -322,7 +341,8 @@ function DirectoryManagementModal({ show, onClose }) {
           password: generatePIN(), 
           roleId: memberRole?.id || '' 
         });
-        loadData();
+        await loadData();
+        onMembersChanged?.();
       } else {
         setCreateUserError(result.error || t('team.failed_create_user'));
       }
@@ -370,7 +390,8 @@ function DirectoryManagementModal({ show, onClose }) {
         addToast(t('team.role_updated_member'), 'success');
         setEditingUser(null);
         setNewRoleId('');
-        loadData();
+        await loadData();
+        onMembersChanged?.();
       } else {
         setActionError(result.error || t('team.failed_update_role'));
       }
@@ -412,7 +433,8 @@ function DirectoryManagementModal({ show, onClose }) {
 
       if (result.success) {
         addToast(t('team.user_removed'), 'success');
-        loadData();
+        await loadData();
+        onMembersChanged?.();
       } else {
         setActionError(result.error || t('team.failed_remove_user'));
       }
@@ -663,14 +685,40 @@ function DirectoryManagementModal({ show, onClose }) {
             {/* Organization Members List */}
             <div className="bg-white border border-gray-200 rounded-lg">
               <div className="p-4 border-b border-gray-200">
-                <h3 className="font-semibold">{t('team.members_heading', { count: users.length })}</h3>
+                <h3 className="font-semibold">
+                  {t('team.members_heading', { count: users.length + pendingInvitations.length })}
+                </h3>
                 <FieldError message={actionError} className="mt-3" />
               </div>
               <div className="divide-y divide-gray-200">
-                {users.length === 0 ? (
+                {users.length === 0 && pendingInvitations.length === 0 ? (
                   <div className="p-6 text-center text-gray-500">{t('team.no_org_members')}</div>
                 ) : (
-                  users.map(member => (
+                  <>
+                  {pendingInvitations.map((invitation) => {
+                    const meta = invitation.metadata || {};
+                    const displayName = [meta.first_name, meta.last_name].filter(Boolean).join(' ') || invitation.email;
+                    return (
+                      <div key={`invite-${invitation.id}`} className="p-4 flex items-center justify-between bg-amber-50/60 hover:bg-amber-50">
+                        <div className="flex items-center space-x-4 flex-1">
+                          <Avatar name={displayName} size="md" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-gray-900">
+                              {displayName}
+                              <span className="ml-2 text-xs font-medium text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
+                                {t('team.pending_invite')}
+                              </span>
+                            </div>
+                            <div className="text-sm text-gray-500">{invitation.email}</div>
+                            <div className="text-xs text-gray-400">
+                              {t('team.role_label')} {invitation.roles?.name || t('team.no_role_assigned')}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {users.map(member => (
                     <div key={member.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
                       <div className="flex items-center space-x-4 flex-1">
                         <div className="flex-shrink-0">
@@ -758,7 +806,8 @@ function DirectoryManagementModal({ show, onClose }) {
                         )}
                       </div>
                     </div>
-                  ))
+                  ))}
+                  </>
                 )}
               </div>
             </div>
