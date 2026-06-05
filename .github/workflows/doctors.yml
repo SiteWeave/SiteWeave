@@ -54,7 +54,9 @@ jobs:
       - name: Run React Doctor
         uses: millionco/react-doctor@main
         with:
-          diff: main
-          fail-on: none
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          annotations: true
+          project: apps/mobile,apps/web
+          scope: full
+          blocking: none
+          comment: false
+          review-comments: false
+          node-version: "22"
