@@ -118,6 +118,22 @@ USING (
     is_user_admin()
     OR
     (project_manager_id = auth.uid())
+    OR (
+      user_has_permission('can_edit_projects')
+      AND id IN (SELECT get_accessible_project_ids())
+    )
+  )
+)
+WITH CHECK (
+  organization_id = get_user_organization_id()
+  AND (
+    is_user_admin()
+    OR
+    (project_manager_id = auth.uid())
+    OR (
+      user_has_permission('can_edit_projects')
+      AND id IN (SELECT get_accessible_project_ids())
+    )
   )
 );
 

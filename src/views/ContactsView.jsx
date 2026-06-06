@@ -9,6 +9,11 @@ import { logContactCreated, logContactUpdated } from '../utils/activityLogger';
 import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
 import { getContactIdentityDbError, getContactIdentityError } from '../utils/contactValidation';
+import {
+  defaultProjectCrewRoleForContact,
+  ensureContactIdForProjectAssignment,
+} from '@siteweave/core-logic';
+import ProjectCrewRoleSelect from '../components/ProjectCrewRoleSelect';
 
 function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const { t } = useTranslation();
@@ -32,13 +37,8 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const [assignContact, setAssignContact] = useState(null);
     const [selectedAssignProject, setSelectedAssignProject] = useState('');
     const [assignProjectRole, setAssignProjectRole] = useState('Subcontractor');
+    const [assignRoleExpanded, setAssignRoleExpanded] = useState(false);
     const [isAssigningContact, setIsAssigningContact] = useState(false);
-    const assignProjectRoleOptions = useMemo(() => [
-        { value: 'Team', label: t('share.project_role_team') },
-        { value: 'PM', label: t('share.project_role_pm') },
-        { value: 'Subcontractor', label: t('share.project_role_sub') },
-        { value: 'Client', label: t('share.project_role_client') },
-    ], [t]);
 
     useEffect(() => {
         if (defaultProjectFilter) {
@@ -276,6 +276,8 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
         const unassignedProject = projects.find(project => !assignedIds.includes(String(project.id)));
         const defaultProject = unassignedProject || state.projects[0];
         setSelectedAssignProject(defaultProject ? String(defaultProject.id) : '');
+        setAssignProjectRole(defaultProjectCrewRoleForContact({ contactType: contact.type || 'Subcontractor' }));
+        setAssignRoleExpanded(false);
         setShowAssignModal(true);
     };
 
@@ -284,6 +286,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
         setAssignContact(null);
         setSelectedAssignProject('');
         setAssignProjectRole('Subcontractor');
+        setAssignRoleExpanded(false);
         setIsAssigningContact(false);
     };
 
@@ -297,11 +300,22 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
 
         setIsAssigningContact(true);
         try {
+            const contactId = await ensureContactIdForProjectAssignment(supabaseClient, {
+                contactId: assignContact.id,
+                profileId: assignContact.profile_id,
+                organizationId: state.currentOrganization?.id,
+                name: assignContact.name,
+                email: assignContact.email,
+                phone: assignContact.phone,
+                type: assignContact.type || 'Subcontractor',
+                userId: state.user?.id,
+            });
+
             const { error } = await supabaseClient
                 .from('project_contacts')
                 .upsert({
                     project_id: selectedAssignProject,
-                    contact_id: assignContact.id,
+                    contact_id: contactId,
                     organization_id: state.currentOrganization?.id,
                     role: assignProjectRole,
                 }, {
@@ -314,7 +328,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             } else {
                 dispatch({
                     type: 'ADD_PROJECT_CONTACT',
-                    payload: { project_id: selectedAssignProject, contact_id: assignContact.id },
+                    payload: { project_id: selectedAssignProject, contact_id: contactId },
                 });
                 addToast(t('contacts.assigned_to_project', { name: assignContact.name }), 'success');
                 closeAssignModal();
@@ -535,25 +549,28 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
 
                             {unassignedProjects.length > 0 && (
                                 <div className="mb-6">
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1">{t('contacts.project_role_label')}</label>
-                                    <select
-                                        value={assignProjectRole}
-                                        onChange={e => setAssignProjectRole(e.target.value)}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                                    >
-                                        {assignProjectRoleOptions.map(opt => (
-                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                        ))}
-                                    </select>
+                                    {assignRoleExpanded ? (
+                                        <ProjectCrewRoleSelect
+                                            id="contacts-assign-project-role"
+                                            value={assignProjectRole}
+                                            onChange={setAssignProjectRole}
+                                        />
+                                    ) : (
+                                        <ProjectCrewRoleSelect
+                                            value={assignProjectRole}
+                                            collapsed
+                                            onExpand={() => setAssignRoleExpanded(true)}
+                                        />
+                                    )}
                                 </div>
                             )}
 
-                            <div className="flex justify-end gap-3">
-                                <button type="button" onClick={closeAssignModal} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200">
+                            <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+                                <button type="button" onClick={closeAssignModal} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
                                     {t('common.close')}
                                 </button>
-                                <button type="button" onClick={handleConfirmAssign} disabled={isAssigningContact || !selectedAssignProject || unassignedProjects.length === 0} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400">
-                                    {isAssigningContact ? t('contacts.assigning') : t('contacts.assign')}
+                                <button type="button" onClick={handleConfirmAssign} disabled={isAssigningContact || !selectedAssignProject || unassignedProjects.length === 0} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition active:scale-[0.98] hover:bg-blue-700 disabled:opacity-50">
+                                    {isAssigningContact ? t('contacts.assigning') : t('share.add_to_project')}
                                 </button>
                             </div>
                         </div>

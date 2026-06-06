@@ -44,6 +44,12 @@ export { runOptimistic, createOptimisticUpdate } from './utils/optimistic.js';
 export { loadWithFallback } from './utils/loadWithFallback.js';
 
 export {
+  isPersistedContactId,
+  profileIdFromContactRef,
+  ensureContactIdForProjectAssignment,
+} from './utils/ensureContactForProject.js';
+
+export {
   REPORT_REASONS,
   REASON_LABELS,
   REPORT_STATUS_COLORS,
@@ -59,6 +65,15 @@ export {
   ORG_ADMIN_PERMISSIONS,
   getRolePermissionsForDisplay,
 } from './constants/orgAdminPermissions.js';
+
+export {
+  PROJECT_CREW_ROLES,
+  mapOrgRoleToDefaultProjectCrewRole,
+  defaultProjectCrewRoleForContact,
+  projectCrewRoleShortLabel,
+} from './utils/projectCrewRole.js';
+
+export { TRADE_OPTIONS, isKnownTradeOption } from './constants/tradeOptions.js';
 export * from './services/messagesService.js';
 export * from './services/streamService.js';
 export * from './services/taskCommentsService.js';

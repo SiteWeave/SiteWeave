@@ -19,6 +19,7 @@ import {
   jsonResponse,
   requireUser,
 } from '../_shared/auth.ts'
+import { resolveProjectCrewRoleForInvite } from '../_shared/projectCrewRole.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -148,7 +149,12 @@ serve(async (req) => {
 
     for (const entry of entries as Entry[]) {
       const email = normalizeEmail(entry.email || '')
-      const role = entry.role || 'Team'
+      const role = await resolveProjectCrewRoleForInvite(
+        supabaseAdmin,
+        organizationId,
+        email,
+        entry.role,
+      )
       console.log('Processing entry:', { email, role })
       
       if (!email.includes('@')) {

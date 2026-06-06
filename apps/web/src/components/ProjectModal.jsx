@@ -63,6 +63,10 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const actionsMenuRef = useRef(null);
 
     const isEditMode = !!project;
+    const isOrgAdminRole = state.userRole?.name === 'Org Admin' || state.userRole?.name === 'Admin';
+    const canEditProjects = state.userRole?.permissions?.can_edit_projects === true || isOrgAdminRole;
+    const canCreateProjects = state.userRole?.permissions?.can_create_projects === true || isOrgAdminRole;
+    const canChangeProjectType = isEditMode ? canEditProjects : canCreateProjects;
 
     const contacts = state.contacts || [];
     const userEmail = state.user?.email?.trim().toLowerCase() || '';
@@ -178,7 +182,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             name,
             address,
             project_number: project_number || null,
-            project_type: finalProjectType || null,
+            ...(canChangeProjectType ? { project_type: finalProjectType || null } : {}),
             status,
             start_date: start_date || null,
             due_date: due_date || null,
@@ -484,7 +488,12 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                     <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-[3fr_7fr]">
                         <div className="min-w-0">
                             <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.project_type')}</label>
-                            <select value={project_type} onChange={(e) => setProjectType(e.target.value)} className="w-full p-2 border rounded-lg bg-white">
+                            <select
+                                value={project_type}
+                                onChange={(e) => setProjectType(e.target.value)}
+                                disabled={!canChangeProjectType}
+                                className="w-full p-2 border rounded-lg bg-white disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                            >
                                 {PROJECT_TYPE_OPTIONS.map((opt) => (
                                     <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
                                 ))}
@@ -509,7 +518,8 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                 value={project_type_custom}
                                 onChange={(e) => setProjectTypeCustom(e.target.value)}
                                 placeholder={t('projectModal.custom_type_placeholder')}
-                                className="w-full p-2 border rounded-lg"
+                                disabled={!canChangeProjectType}
+                                className="w-full p-2 border rounded-lg disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                             />
                         </div>
                     )}

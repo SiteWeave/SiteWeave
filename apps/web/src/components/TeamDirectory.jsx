@@ -2,7 +2,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { getStaffDeploymentContext } from '@siteweave/core-logic';
+import {
+  ensureContactIdForProjectAssignment,
+  getStaffDeploymentContext,
+  mapOrgRoleToDefaultProjectCrewRole,
+} from '@siteweave/core-logic';
+import ProjectCrewRoleSelect from './ProjectCrewRoleSelect';
 import { getContactIdentityDbError, getContactIdentityError } from '../utils/contactValidation';
 import LoadingSpinner from './LoadingSpinner';
 import Avatar from './Avatar';
@@ -16,7 +21,8 @@ const STAFF_FILTER_OPTIONS = ['All', 'On a project', 'Unassigned', 'Has work tod
 const ASSIGN_ICON = 'M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z';
 
 function StaffCardActions({ member, canManageTeam, canDeleteMember, onAssign, onEdit, onDelete, t }) {
-  if (!canManageTeam || (!member.contactId && !canDeleteMember)) return null;
+  const canAssign = Boolean(member.contactId || member.profileId);
+  if (!canManageTeam || (!canAssign && !member.contactId && !canDeleteMember)) return null;
 
   return (
     <div
@@ -24,7 +30,7 @@ function StaffCardActions({ member, canManageTeam, canDeleteMember, onAssign, on
       role="group"
       aria-label={t('common.actions')}
     >
-      {member.contactId && (
+      {canAssign && (
         <button
           type="button"
           onClick={() => onAssign(member)}
@@ -83,14 +89,8 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
   const [assignMember, setAssignMember] = useState(null);
   const [selectedAssignProject, setSelectedAssignProject] = useState('');
   const [assignProjectRole, setAssignProjectRole] = useState('Team');
+  const [assignRoleExpanded, setAssignRoleExpanded] = useState(false);
   const [isAssigningContact, setIsAssigningContact] = useState(false);
-
-  const assignProjectRoleOptions = useMemo(() => [
-    { value: 'Team', label: t('share.project_role_team') },
-    { value: 'PM', label: t('share.project_role_pm') },
-    { value: 'Subcontractor', label: t('share.project_role_sub') },
-    { value: 'Client', label: t('share.project_role_client') },
-  ], [t]);
 
   const projectNamesById = useMemo(() => {
     const map = {};
@@ -389,14 +389,18 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
   };
 
   const handleAssignToProject = (member) => {
-    if (!member.contactId) return;
+    if (!member.contactId && !member.profileId) return;
     if (projects.length === 0) {
       addToast(t('contacts.no_projects_to_assign'), 'warning');
       return;
     }
     const assignContact = {
-      id: member.contactId,
+      id: member.contactId || `profile:${member.profileId}`,
+      profileId: member.profileId,
+      email: member.email,
+      phone: member.phone,
       name: member.name,
+      appRoleName: member.appRoleName,
       project_contacts: member.project_contacts || [],
     };
     setAssignMember(assignContact);
@@ -404,7 +408,8 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
     const unassignedProject = projects.find((p) => !assignedIds.includes(String(p.id)));
     const defaultProject = unassignedProject || projects[0];
     setSelectedAssignProject(defaultProject ? String(defaultProject.id) : '');
-    setAssignProjectRole('Team');
+    setAssignProjectRole(mapOrgRoleToDefaultProjectCrewRole(member.appRoleName));
+    setAssignRoleExpanded(false);
     setShowAssignModal(true);
   };
 
@@ -413,6 +418,7 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
     setAssignMember(null);
     setSelectedAssignProject('');
     setAssignProjectRole('Team');
+    setAssignRoleExpanded(false);
     setIsAssigningContact(false);
   };
 
@@ -426,11 +432,22 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
 
     setIsAssigningContact(true);
     try {
+      const contactId = await ensureContactIdForProjectAssignment(supabaseClient, {
+        contactId: assignMember.id,
+        profileId: assignMember.profileId,
+        organizationId: currentOrganization?.id,
+        name: assignMember.name,
+        email: assignMember.email,
+        phone: assignMember.phone,
+        type: 'Team',
+        userId: user?.id,
+      });
+
       const { error } = await supabaseClient
         .from('project_contacts')
         .upsert({
           project_id: selectedAssignProject,
-          contact_id: assignMember.id,
+          contact_id: contactId,
           organization_id: currentOrganization?.id,
           role: assignProjectRole,
         }, {
@@ -443,7 +460,7 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
       } else {
         dispatch({
           type: 'ADD_PROJECT_CONTACT',
-          payload: { project_id: selectedAssignProject, contact_id: assignMember.id },
+          payload: { project_id: selectedAssignProject, contact_id: contactId },
         });
         addToast(t('contacts.assigned_to_project', { name: assignMember.name }), 'success');
         closeAssignModal();
@@ -469,8 +486,6 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
 
   return (
     <div>
-      <p className="mb-3 text-xs text-slate-500">{t('team.staff_list_helper')}</p>
-
       <div className="mb-3 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 flex-col gap-3 sm:flex-row">
           <input
@@ -500,9 +515,9 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
             type="button"
             onClick={() => { setEditingContact(null); setShowAddModal(true); }}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-            title={t('team.add_staff_helper')}
+            title={t('team.add_internal_contact_helper')}
           >
-            {t('team.add_staff')}
+            {t('team.add_internal_contact')}
           </button>
         </PermissionGuard>
       </div>
@@ -560,9 +575,11 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
                     </div>
 
                     <p className="mt-0.5 truncate text-xs text-slate-500">
-                      {[member.jobTitle, member.hasAccount
-                        ? (member.appRoleName || t('team.team_member'))
-                        : t('team.no_app_access')].filter(Boolean).join(' · ')}
+                      {member.hasAccount
+                        ? t('team.internal_contact_with_access', {
+                            role: member.appRoleName || t('team.team_member'),
+                          })
+                        : t('team.internal_contact_no_app')}
                     </p>
                   </div>
 
@@ -688,30 +705,35 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
 
             {assignUnassignedProjects.length > 0 && (
               <div className="mb-6">
-                <label className="block text-sm font-semibold text-gray-700 mb-1">{t('contacts.project_role_label')}</label>
-                <select
-                  value={assignProjectRole}
-                  onChange={(e) => setAssignProjectRole(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                >
-                  {assignProjectRoleOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
+                {assignRoleExpanded ? (
+                  <ProjectCrewRoleSelect
+                    id="team-assign-project-role"
+                    value={assignProjectRole}
+                    onChange={setAssignProjectRole}
+                    companyAccessName={assignMember.appRoleName}
+                  />
+                ) : (
+                  <ProjectCrewRoleSelect
+                    value={assignProjectRole}
+                    collapsed
+                    companyAccessName={assignMember.appRoleName}
+                    onExpand={() => setAssignRoleExpanded(true)}
+                  />
+                )}
               </div>
             )}
 
-            <div className="flex justify-end gap-3">
-              <button type="button" onClick={closeAssignModal} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200">
+            <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+              <button type="button" onClick={closeAssignModal} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
                 {t('common.close')}
               </button>
               <button
                 type="button"
                 onClick={handleConfirmAssign}
                 disabled={isAssigningContact || !selectedAssignProject || assignUnassignedProjects.length === 0}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition active:scale-[0.98] hover:bg-blue-700 disabled:opacity-50"
               >
-                {isAssigningContact ? t('contacts.assigning') : t('contacts.assign')}
+                {isAssigningContact ? t('contacts.assigning') : t('share.add_to_project')}
               </button>
             </div>
           </div>

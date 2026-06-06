@@ -68,6 +68,11 @@ function ContactCard({
                         <p className="font-semibold truncate">{displayName}</p>
                     </div>
                     <div className="mt-1 flex items-center gap-2 flex-wrap">
+                        {isTradePartner && (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                                {t('contacts.external_contact_label')}
+                            </span>
+                        )}
                         {subtitle && (
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getRolePillClass()}`}>
                                 {subtitle}

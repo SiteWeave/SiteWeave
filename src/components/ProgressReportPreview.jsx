@@ -1382,30 +1382,21 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
               )}
 
               <div className="pt-4 mt-2 border-t border-gray-200 text-center">
-                {reportSections.show_siteweave_logo !== false ? (
-                  <div className="inline-flex items-center gap-2.5 text-left max-w-full">
-                    <img
-                      src={SITEWEAVE_LOGO_URL}
-                      alt="SiteWeave"
-                      className="w-9 h-9 shrink-0"
-                      width={36}
-                      height={36}
-                    />
-                    <div className="min-w-0">
-                      <p className="text-[11px] text-gray-400 m-0 leading-snug">{p('generated_by')}</p>
-                      <p className="text-[11px] text-gray-400 m-0 mt-0.5 leading-snug">
-                        {state.currentOrganization?.name || t('navigation.organization')}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-[11px] text-gray-400 m-0">{p('generated_by')}</p>
-                    <p className="text-[11px] text-gray-400 m-0 mt-0.5">
+                <div className="inline-flex items-center gap-2.5 text-left max-w-full">
+                  <img
+                    src={SITEWEAVE_LOGO_URL}
+                    alt="SiteWeave"
+                    className="w-9 h-9 shrink-0"
+                    width={36}
+                    height={36}
+                  />
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-gray-400 m-0 leading-snug">{p('generated_by')}</p>
+                    <p className="text-[11px] text-gray-400 m-0 mt-0.5 leading-snug">
                       {state.currentOrganization?.name || t('navigation.organization')}
                     </p>
                   </div>
-                )}
+                </div>
               </div>
             </div>
           </div>

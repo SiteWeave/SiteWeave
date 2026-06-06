@@ -46,6 +46,7 @@ import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
 import { handleApiError } from '../utils/errorHandling';
 import { parseRecurrence } from '../utils/recurrenceService';
 import { buildTaskPhotoDraft, buildTaskCompletionPhotoDetails, revokeTaskPhotoDraftUrls, sortTaskPhotos, canManageTaskPhotos } from '../utils/taskPhotoUtils';
+import { getProjectMemberContacts } from '../utils/projectMemberContacts';
 import {
     logTaskCreated,
     logTaskCompleted,
@@ -547,27 +548,15 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     }, [activeTab, state.selectedProjectId, projectTasksSlice, projectRefreshNonce]);
     
     // Get all project crew members (any contact linked to this project)
-    const crewMembers = contacts.filter(contact => 
-        contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project?.id)
+    const crewMembers = useMemo(
+        () => getProjectMemberContacts(project?.id, contacts),
+        [project?.id, contacts],
     );
 
-    const assignableContactsForTasks = useMemo(() => {
-        if (!project?.id) return [];
-        const projectContacts = contacts.filter(
-            (c) => c.project_contacts && c.project_contacts.some((pc) => pc.project_id === project.id)
-        );
-        const orgAdmins = contacts.filter(
-            (c) =>
-                c.is_internal &&
-                c.organization_id === project.organization_id &&
-                c.role_name &&
-                c.role_name.toLowerCase() === 'org admin'
-        );
-        return [
-            ...projectContacts,
-            ...orgAdmins.filter((admin) => !projectContacts.some((pc) => pc.id === admin.id)),
-        ];
-    }, [contacts, project?.id, project?.organization_id]);
+    const assignableContactsForTasks = useMemo(
+        () => getProjectMemberContacts(project?.id, contacts),
+        [project?.id, contacts],
+    );
 
     /** Keep completion and percent_complete synchronized while allowing 0-100 progress. */
     const normalizeTaskProgressUpdate = (baseTask, updates) => {
@@ -1030,22 +1019,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         }
     };
 
-    const isProjectContactsRecursionError = (error) => {
-        const message = String(error?.message || '').toLowerCase();
-        return message.includes('infinite recursion detected in policy') && message.includes('project_contacts');
-    };
-
-    const formatAssigneePhoneDisplay = (phone) => {
-        const digits = String(phone || '').replace(/\D/g, '');
-        if (digits.length === 11 && digits.startsWith('1')) {
-            return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
-        }
-        if (digits.length === 10) {
-            return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-        }
-        return String(phone || '').trim();
-    };
-
     const resolveAssigneeContact = useCallback(async ({ assigneeId, assigneeEmailInput, assigneePhoneRaw }) => {
         const normalizedEmail = String(assigneeEmailInput || '').trim().toLowerCase();
         const normalizedPhoneResult = normalizeAssigneePhone(String(assigneePhoneRaw || '').trim(), { defaultRegion: 'US' });
@@ -1058,133 +1031,64 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
 
         const hasEmail = normalizedEmail.includes('@');
         const hasPhone = Boolean(normalizedPhone);
-        if (assigneeId || hasEmail || hasPhone) {
-            let primaryContact = null;
-            let secondaryContact = null;
-
-            if (assigneeId) {
-                const { data: existingAssignee, error: existingAssigneeError } = await supabaseClient
-                    .from('contacts')
-                    .select('id, name, email, phone')
-                    .eq('id', assigneeId)
-                    .eq('organization_id', project.organization_id)
-                    .maybeSingle();
-                if (existingAssigneeError) throw existingAssigneeError;
-                primaryContact = existingAssignee || null;
-            }
-
-            if (!primaryContact && hasEmail) {
-                const { data: emailContact, error: emailContactError } = await supabaseClient
-                    .from('contacts')
-                    .select('id, name, email, phone')
-                    .eq('organization_id', project.organization_id)
-                    .ilike('email', normalizedEmail)
-                    .limit(1)
-                    .maybeSingle();
-                if (emailContactError) throw emailContactError;
-                primaryContact = emailContact || null;
-            }
-
-            if (hasPhone) {
-                const { data: phoneRows, error: phoneLookupError } = await supabaseClient
-                    .from('contacts')
-                    .select('id, name, email, phone')
-                    .eq('organization_id', project.organization_id)
-                    .eq('phone', normalizedPhone)
-                    .limit(1);
-                if (phoneLookupError) throw phoneLookupError;
-                const phoneContact = phoneRows?.[0] || null;
-                if (!primaryContact) {
-                    primaryContact = phoneContact;
-                } else if (phoneContact && phoneContact.id !== primaryContact.id) {
-                    secondaryContact = phoneContact;
-                }
-            }
-
-            if (!primaryContact) {
-                const fallbackName = hasEmail
-                    ? (normalizedEmail.split('@')[0] || normalizedEmail)
-                    : formatAssigneePhoneDisplay(normalizedPhone);
-                const { data: createdRows, error: createdContactError } = await supabaseClient
-                    .from('contacts')
-                    .insert({
-                        organization_id: project.organization_id,
-                        name: fallbackName,
-                        email: hasEmail ? normalizedEmail : null,
-                        phone: hasPhone ? normalizedPhone : null,
-                        type: 'Team',
-                        role: 'External Assignee',
-                        status: 'Available',
-                    })
-                    .select('id, email, phone')
-                    .limit(1);
-                if (createdContactError) throw createdContactError;
-                primaryContact = createdRows?.[0] || null;
-                if (!primaryContact) {
-                    throw new Error(
-                        'Contact was saved but could not be read back. Check permissions or try again.',
-                    );
-                }
-            }
-
-            const patch = {};
-            const existingEmail = String(primaryContact.email || '').trim().toLowerCase();
-            const existingPhone = String(primaryContact.phone || '').trim();
-            if (hasEmail && existingEmail !== normalizedEmail) patch.email = normalizedEmail;
-            if (hasPhone && existingPhone !== normalizedPhone) patch.phone = normalizedPhone;
-            const isPlaceholderName = /^(Assignee|Asignado)\s*\(/i.test(String(primaryContact.name || '').trim())
-                || /^external assignee$/i.test(String(primaryContact.name || '').trim());
-            if (isPlaceholderName) {
-                if (!hasEmail && hasPhone) {
-                    patch.name = formatAssigneePhoneDisplay(primaryContact.phone || normalizedPhone);
-                } else if (hasEmail) {
-                    patch.name = normalizedEmail.split('@')[0] || normalizedEmail;
-                }
-            }
-            if (Object.keys(patch).length > 0) {
-                const { error: updatePrimaryError } = await supabaseClient
-                    .from('contacts')
-                    .update(patch)
-                    .eq('id', primaryContact.id);
-                if (updatePrimaryError) throw updatePrimaryError;
-            }
-
-            if (secondaryContact) {
-                const secondaryPatch = {};
-                if (!secondaryContact.email && hasEmail) secondaryPatch.email = normalizedEmail;
-                if (!secondaryContact.phone && hasPhone) secondaryPatch.phone = normalizedPhone;
-                if (Object.keys(secondaryPatch).length > 0) {
-                    const { error: updateSecondaryError } = await supabaseClient
-                        .from('contacts')
-                        .update(secondaryPatch)
-                        .eq('id', secondaryContact.id);
-                    if (updateSecondaryError) throw updateSecondaryError;
-                }
-            }
-
-            const { error: linkError } = await supabaseClient
-                .from('project_contacts')
-                .upsert({
-                    project_id: project.id,
-                    contact_id: primaryContact.id,
-                    organization_id: project.organization_id,
-                }, {
-                    onConflict: 'project_id,contact_id',
-                    ignoreDuplicates: true,
-                });
-            if (linkError && linkError.code !== '23505') {
-                if (isProjectContactsRecursionError(linkError)) {
-                    console.warn('Skipping project_contacts link due to RLS recursion policy:', linkError.message);
-                } else {
-                    throw linkError;
-                }
-            }
-
-            return { assigneeId: primaryContact.id, invalidPhone: false };
+        if (!assigneeId && !hasEmail && !hasPhone) {
+            return { assigneeId: null, invalidPhone: false };
         }
 
-        return { assigneeId: assigneeId || null, invalidPhone: false };
-    }, [project.id, project.organization_id, t]);
+        let primaryContact = null;
+
+        if (assigneeId) {
+            const { data: existingAssignee, error: existingAssigneeError } = await supabaseClient
+                .from('contacts')
+                .select('id, name, email, phone')
+                .eq('id', assigneeId)
+                .eq('organization_id', project.organization_id)
+                .maybeSingle();
+            if (existingAssigneeError) throw existingAssigneeError;
+            primaryContact = existingAssignee || null;
+        }
+
+        if (!primaryContact && hasEmail) {
+            const { data: emailContact, error: emailContactError } = await supabaseClient
+                .from('contacts')
+                .select('id, name, email, phone')
+                .eq('organization_id', project.organization_id)
+                .ilike('email', normalizedEmail)
+                .limit(1)
+                .maybeSingle();
+            if (emailContactError) throw emailContactError;
+            primaryContact = emailContact || null;
+        }
+
+        if (!primaryContact && hasPhone) {
+            const { data: phoneRows, error: phoneLookupError } = await supabaseClient
+                .from('contacts')
+                .select('id, name, email, phone')
+                .eq('organization_id', project.organization_id)
+                .eq('phone', normalizedPhone)
+                .limit(1);
+            if (phoneLookupError) throw phoneLookupError;
+            primaryContact = phoneRows?.[0] || null;
+        }
+
+        if (!primaryContact) {
+            return { assigneeId: null, invalidPhone: false, contactNotFound: Boolean(hasEmail || hasPhone) };
+        }
+
+        const { data: membership, error: membershipError } = await supabaseClient
+            .from('project_contacts')
+            .select('contact_id')
+            .eq('project_id', project.id)
+            .eq('contact_id', primaryContact.id)
+            .maybeSingle();
+        if (membershipError) throw membershipError;
+
+        if (!membership) {
+            return { assigneeId: null, invalidPhone: false, notProjectMember: true };
+        }
+
+        return { assigneeId: primaryContact.id, invalidPhone: false };
+    }, [project.id, project.organization_id]);
 
     const handleAddTask = async (taskData) => {
         setIsCreatingTask(true);
@@ -1215,6 +1119,12 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             });
             if (resolvedAssignee.invalidPhone) {
                 addToast(t('toast.invalid_assignee_phone'), 'warning');
+            }
+            if (resolvedAssignee.notProjectMember) {
+                addToast(t('toast.cannot_assign_non_member'), 'warning');
+            }
+            if (resolvedAssignee.contactNotFound) {
+                addToast(t('toast.cannot_assign_non_member'), 'warning');
             }
             taskPayload.assignee_id = resolvedAssignee.assigneeId;
 
@@ -1662,6 +1572,9 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             });
             if (resolvedAssignee.invalidPhone) {
                 addToast(t('toast.invalid_assignee_phone'), 'warning');
+            }
+            if (resolvedAssignee.notProjectMember || resolvedAssignee.contactNotFound) {
+                addToast(t('toast.cannot_assign_non_member'), 'warning');
             }
             payload.assignee_id = resolvedAssignee.assigneeId;
         } catch (resolveError) {

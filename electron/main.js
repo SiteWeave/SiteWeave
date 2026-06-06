@@ -564,7 +564,7 @@ ipcMain.handle('stop-oauth-server', () => {
 });
 
 // Handle OAuth token exchange from main process (to avoid CORS/origin issues)
-ipcMain.handle('exchange-oauth-token', async (event, { provider, code, clientId, redirectUri, codeVerifier }) => {
+ipcMain.handle('exchange-oauth-token', async (event, { provider, code, clientId, redirectUri, codeVerifier, clientSecret }) => {
   const https = require('https');
   const { URL, URLSearchParams } = require('url');
   
@@ -586,6 +586,10 @@ ipcMain.handle('exchange-oauth-token', async (event, { provider, code, clientId,
       redirect_uri: redirectUri
     });
     
+    if (provider === 'google' && clientSecret) {
+      body.set('client_secret', clientSecret);
+    }
+
     // Add code_verifier for Microsoft PKCE flow
     if (provider === 'microsoft' && codeVerifier) {
       body.set('code_verifier', codeVerifier);

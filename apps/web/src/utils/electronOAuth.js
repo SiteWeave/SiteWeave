@@ -261,6 +261,24 @@ class ElectronOAuth {
 
     console.log('Token exchange body keys:', Array.from(body.keys()));
 
+    // Google in Electron: use main process to avoid CORS and include client_secret securely
+    if (provider === 'google' && this.isElectron && window.electronAPI?.exchangeOAuthToken) {
+      console.log('Attempting Google token exchange via main process...');
+      try {
+        const json = await window.electronAPI.exchangeOAuthToken({
+          provider: 'google',
+          code,
+          clientId: config.clientId,
+          clientSecret: config.clientSecret,
+          redirectUri,
+        });
+        console.log('Google token exchange successful via main process');
+        return json;
+      } catch (mainProcessError) {
+        console.warn('Google token exchange via main process failed, falling back to renderer:', mainProcessError);
+      }
+    }
+
     // For Microsoft in Electron, try using main process to avoid CORS/origin issues
     if (provider === 'microsoft' && this.isElectron && window.electronAPI?.exchangeOAuthToken) {
       console.log('Attempting token exchange via main process (to avoid CORS issues)...');

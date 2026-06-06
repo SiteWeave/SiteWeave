@@ -1,10 +1,16 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabaseClient, useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { canInviteGuestCollaborator, isGuestCollaboratorLimitError } from '@siteweave/core-logic';
+import {
+  canInviteGuestCollaborator,
+  isGuestCollaboratorLimitError,
+  defaultProjectCrewRoleForContact,
+  ensureContactIdForProjectAssignment,
+} from '@siteweave/core-logic';
 import UpgradeRequiredModal from './UpgradeRequiredModal';
 import Avatar from './Avatar';
+import ProjectCrewRoleSelect from './ProjectCrewRoleSelect';
 import {
   getProjectInviteBlockedEmails,
   isBlockedProjectInviteEmail,
@@ -12,41 +18,32 @@ import {
 } from '../utils/projectInviteBlocklist';
 import { FieldError, fieldInputClassName } from './FormAlert';
 
-const DEFAULT_ROLE = 'Team';
-
 function ShareModal({ projectId, onClose }) {
   const { t } = useTranslation();
   const { state, dispatch } = useAppContext();
   const { addToast } = useToast();
+  const directorySectionRef = useRef(null);
   const [input, setInput] = useState('');
-  const [entries, setEntries] = useState([]); // [{ email, role }]
+  const [entries, setEntries] = useState([]);
+  const [expandedQueueEmails, setExpandedQueueEmails] = useState(() => new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [results, setResults] = useState(null);
   const [showContactPicker, setShowContactPicker] = useState(true);
   const [warning, setWarning] = useState(null);
+  const [addingContactId, setAddingContactId] = useState(null);
   const [removingMemberId, setRemovingMemberId] = useState(null);
+  const [updatingRoleMemberId, setUpdatingRoleMemberId] = useState(null);
   const [showGuestLimitUpgrade, setShowGuestLimitUpgrade] = useState(false);
   const [orgRolesByEmail, setOrgRolesByEmail] = useState({});
 
-  const projectRoleOptions = useMemo(() => [
-    { value: 'PM', label: t('share.project_role_pm') },
-    { value: 'Team', label: t('share.project_role_team') },
-    { value: 'Subcontractor', label: t('share.project_role_sub') },
-    { value: 'Client', label: t('share.project_role_client') },
-  ], [t]);
-
-  const projectRoleLabel = (value) =>
-    projectRoleOptions.find((o) => o.value === value)?.label ?? value;
-  
-  // Direct database state for project members (more reliable than context state)
   const [dbProjectMembers, setDbProjectMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
 
-  // Get the project to identify the owner
-  const project = useMemo(() => {
-    return state.projects?.find(p => p.id === projectId);
-  }, [state.projects, projectId]);
+  const project = useMemo(
+    () => state.projects?.find((p) => p.id === projectId),
+    [state.projects, projectId],
+  );
 
   const ownerContactId = useMemo(
     () => resolveOwnerContactId({
@@ -75,59 +72,65 @@ function ShareModal({ projectId, onClose }) {
 
   const userEmail = state.user?.email?.trim().toLowerCase() || '';
 
-  // Load project members directly from database
+  const resolveDefaultRole = useCallback((email, contactType = null) => {
+    const normalized = email?.trim().toLowerCase();
+    const orgRoleName = normalized ? orgRolesByEmail[normalized] : null;
+    return defaultProjectCrewRoleForContact({
+      orgRoleName,
+      contactType,
+      hasOrgAccount: Boolean(orgRoleName),
+    });
+  }, [orgRolesByEmail]);
+
   const loadProjectMembers = async () => {
     if (!projectId) return;
-    
+
     setLoadingMembers(true);
     try {
-      // Directly query project_contacts for this project
-      const { data: projectContacts, error } = await supabaseClient
+      const { data: projectContactRows, error: loadError } = await supabaseClient
         .from('project_contacts')
-        .select(`
-          contact_id,
-          role,
-          contacts (
-            id,
-            name,
-            email,
-            role,
-            phone,
-            avatar_url,
-            status,
-            type
-          )
-        `)
+        .select('contact_id, role')
         .eq('project_id', projectId);
-      
-      if (error) {
-        console.error('Error loading project members:', error);
+
+      if (loadError) {
+        console.error('Error loading project members:', loadError);
         setDbProjectMembers([]);
         return;
       }
-      
-      if (projectContacts && projectContacts.length > 0) {
-        console.log('Loaded project members from DB:', projectContacts.length);
-        // Transform to contact objects with project_contacts
-        const members = projectContacts
-          .filter(pc => pc.contacts)
-          .map(pc => ({
-            ...pc.contacts,
-            project_contacts: [{ project_id: projectId, role: pc.role }]
-          }));
-        setDbProjectMembers(members);
-        
-        // Also update global state for consistency
-        members.forEach(member => {
-          dispatch({
-            type: 'ADD_CONTACT',
-            payload: member
-          });
-        });
-      } else {
-        console.log('No project contacts found for project:', projectId);
+
+      if (!projectContactRows?.length) {
         setDbProjectMembers([]);
+        return;
       }
+
+      const contactIds = [...new Set(projectContactRows.map((row) => row.contact_id).filter(Boolean))];
+      const { data: contactsData, error: contactsError } = await supabaseClient
+        .from('contacts')
+        .select('id, name, email, role, phone, avatar_url, status, type')
+        .in('id', contactIds);
+
+      if (contactsError) {
+        console.error('Error loading contacts for project members:', contactsError);
+        setDbProjectMembers([]);
+        return;
+      }
+
+      const contactById = new Map((contactsData || []).map((c) => [c.id, c]));
+      const members = [];
+
+      for (const row of projectContactRows) {
+        const contact = contactById.get(row.contact_id);
+        if (!contact) continue;
+        members.push({
+          ...contact,
+          project_contacts: [{ project_id: projectId, role: row.role }],
+        });
+      }
+
+      setDbProjectMembers(members);
+      members.forEach((member) => {
+        dispatch({ type: 'ADD_CONTACT', payload: member });
+      });
     } catch (err) {
       console.error('Error in loadProjectMembers:', err);
       setDbProjectMembers([]);
@@ -136,7 +139,6 @@ function ShareModal({ projectId, onClose }) {
     }
   };
 
-  // Load project members when modal opens
   useEffect(() => {
     loadProjectMembers();
   }, [projectId]);
@@ -158,37 +160,31 @@ function ShareModal({ projectId, onClose }) {
     })();
   }, [state.currentOrganization?.id, project?.organization_id, dbProjectMembers.length, entries.length]);
 
-  const projectMemberEmails = useMemo(() => {
-    return new Set(
-      projectMembers
-        .map(member => member.email?.toLowerCase())
-        .filter(Boolean)
-    );
-  }, [projectMembers]);
+  const projectMemberEmails = useMemo(
+    () => new Set(projectMembers.map((m) => m.email?.toLowerCase()).filter(Boolean)),
+    [projectMembers],
+  );
 
-  const projectMemberIds = useMemo(() => {
-    return new Set(projectMembers.map(member => member.id).filter(Boolean));
-  }, [projectMembers]);
+  const projectMemberIds = useMemo(
+    () => new Set(projectMembers.map((m) => m.id).filter(Boolean)),
+    [projectMembers],
+  );
 
-  // Get contacts not already in the project
   const availableContacts = useMemo(() => {
-    // Get all contacts with email addresses from global state
-    const contactsWithEmail = state.contacts.filter(c => c.email);
-    
-    // Filter out contacts already assigned to this project (using dbProjectMembers)
-    const notInProject = contactsWithEmail.filter(contact => 
-      !projectMemberIds.has(contact.id)
-    );
-    
+    const contactsWithEmail = state.contacts.filter((c) => c.email);
+    const notInProject = contactsWithEmail.filter((contact) => !projectMemberIds.has(contact.id));
     return notInProject.filter((contact) => {
       if (isBlockedProjectInviteEmail(contact.email, blockedInviteEmails)) return false;
-      return !entries.some(
-        (entry) => entry.email.toLowerCase() === contact.email.toLowerCase(),
-      );
+      return !entries.some((entry) => entry.email.toLowerCase() === contact.email.toLowerCase());
     });
   }, [state.contacts, projectMemberIds, entries, blockedInviteEmails]);
 
-  const addContact = (contact) => {
+  const scrollToDirectory = () => {
+    setShowContactPicker(true);
+    directorySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const addContact = async (contact) => {
     if (!contact.email) return;
     if (isBlockedProjectInviteEmail(contact.email, blockedInviteEmails)) {
       const isSelf = contact.email.trim().toLowerCase() === userEmail;
@@ -198,56 +194,122 @@ function ShareModal({ projectId, onClose }) {
       );
       return;
     }
-    const newEntry = { email: contact.email.toLowerCase(), role: DEFAULT_ROLE };
-    setEntries(prev => [...prev, newEntry]);
+    const email = contact.email.toLowerCase();
+    const role = resolveDefaultRole(email, contact.type);
+    setAddingContactId(contact.id);
+    setError(null);
+    try {
+      const organizationId = state.currentOrganization?.id || project?.organization_id;
+      const contactId = await ensureContactIdForProjectAssignment(supabaseClient, {
+        contactId: contact.id,
+        profileId: contact.profile_id,
+        organizationId,
+        name: contact.name,
+        email: contact.email,
+        phone: contact.phone,
+        type: contact.type || 'Team',
+        userId: state.user?.id,
+      });
+
+      const { error: assignError } = await supabaseClient
+        .from('project_contacts')
+        .upsert({
+          project_id: projectId,
+          contact_id: contactId,
+          organization_id: organizationId,
+          role,
+        }, {
+          onConflict: 'project_id,contact_id',
+          ignoreDuplicates: true,
+        });
+
+      if (assignError && assignError.code !== '23505') throw assignError;
+
+      dispatch({
+        type: 'ADD_PROJECT_CONTACT',
+        payload: { project_id: projectId, contact_id: contactId },
+      });
+      addToast(t('contacts.assigned_to_project', { name: contact.name || contact.email }), 'success');
+      await loadProjectMembers();
+    } catch (err) {
+      console.error('Error adding project contact:', err);
+      setError(err?.message || 'Could not add this person to the project. Try again.');
+    } finally {
+      setAddingContactId(null);
+    }
   };
 
   const handleRemoveMember = async (member) => {
     if (!projectId || !member?.id || removingMemberId) return;
-    
-    // Prevent removing the owner
     if (member.id === ownerContactId) {
-      setError('Cannot remove the project owner from the team');
+      setError(t('share.cannot_invite_owner'));
       return;
     }
-    
+
     const confirmed = window.confirm(`Remove ${member.name || member.email} from this project?`);
     if (!confirmed) return;
 
     setRemovingMemberId(member.id);
     try {
-      const { error } = await supabaseClient
+      const { error: deleteError } = await supabaseClient
         .from('project_contacts')
         .delete()
         .eq('project_id', projectId)
         .eq('contact_id', member.id);
 
-      if (error) {
-        throw error;
-      }
+      if (deleteError) throw deleteError;
 
-      // Update local state immediately
-      setDbProjectMembers(prev => prev.filter(m => m.id !== member.id));
-      
-      // Also update global state
+      setDbProjectMembers((prev) => prev.filter((m) => m.id !== member.id));
       dispatch({
         type: 'REMOVE_PROJECT_CONTACT',
-        payload: { project_id: projectId, contact_id: member.id }
+        payload: { project_id: projectId, contact_id: member.id },
       });
-
       addToast(`${member.name || member.email} removed from project`, 'success');
     } catch (err) {
       console.error('Error removing member:', err);
-      setError(err?.message || 'Failed to remove member');
+      setError(err?.message || 'Could not remove this person. Try again.');
     } finally {
       setRemovingMemberId(null);
+    }
+  };
+
+  const handleUpdateMemberRole = async (member, newRole) => {
+    if (!projectId || !member?.id || updatingRoleMemberId) return;
+    const currentRole = member.project_contacts?.find(
+      (pc) => String(pc.project_id) === String(projectId),
+    )?.role || 'Team';
+    if (currentRole === newRole) return;
+
+    setUpdatingRoleMemberId(member.id);
+    try {
+      const { error: updateError } = await supabaseClient
+        .from('project_contacts')
+        .update({ role: newRole })
+        .eq('project_id', projectId)
+        .eq('contact_id', member.id);
+
+      if (updateError) throw updateError;
+
+      setDbProjectMembers((prev) => prev.map((m) => {
+        if (m.id !== member.id) return m;
+        return {
+          ...m,
+          project_contacts: [{ project_id: projectId, role: newRole }],
+        };
+      }));
+      addToast(t('share.role_updated'), 'success');
+    } catch (err) {
+      console.error('Error updating project role:', err);
+      setError(err?.message || 'Could not save the role. Try again.');
+    } finally {
+      setUpdatingRoleMemberId(null);
     }
   };
 
   const addEmails = () => {
     const parts = input
       .split(/[\s,;]+/)
-      .map(e => e.trim().toLowerCase())
+      .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
     const deduped = Array.from(new Set(parts));
 
@@ -259,23 +321,23 @@ function ShareModal({ projectId, onClose }) {
       .filter((e) => !isBlockedProjectInviteEmail(e, blockedInviteEmails))
       .filter((e) => !projectMemberEmails.has(e))
       .filter((e) => !entries.some((en) => en.email === e))
-      .map((e) => ({ email: e, role: DEFAULT_ROLE }));
+      .map((email) => ({
+        email,
+        role: resolveDefaultRole(email),
+        isOrgMember: false,
+      }));
 
     if (newEntries.length) {
-      setEntries(prev => [...prev, ...newEntries]);
+      setEntries((prev) => [...prev, ...newEntries]);
     }
 
     const messages = [];
     if (blocked.length) {
       const selfBlocked = blocked.filter((e) => e === userEmail);
       const ownerBlocked = blocked.filter((e) => e !== userEmail);
-      if (selfBlocked.length) {
-        messages.push(t('share.cannot_invite_self'));
-      }
+      if (selfBlocked.length) messages.push(t('share.cannot_invite_self'));
       if (ownerBlocked.length) {
-        messages.push(
-          t('share.cannot_invite_owner_emails', { emails: ownerBlocked.join(', ') }),
-        );
+        messages.push(t('share.cannot_invite_owner_emails', { emails: ownerBlocked.join(', ') }));
       }
     }
     if (alreadyInProject.length) {
@@ -285,16 +347,20 @@ function ShareModal({ projectId, onClose }) {
       messages.push(t('share.already_selected', { emails: alreadyQueued.join(', ') }));
     }
     setWarning(messages.length ? messages.join(' • ') : null);
-
     setInput('');
   };
 
-  const updateRole = (idx, role) => {
-    setEntries(prev => prev.map((en, i) => i === idx ? { ...en, role } : en));
+  const updateRole = (email, role) => {
+    setEntries((prev) => prev.map((en) => (en.email === email ? { ...en, role } : en)));
   };
 
-  const removeEntry = (idx) => {
-    setEntries(prev => prev.filter((_, i) => i !== idx));
+  const removeEntry = (email) => {
+    setEntries((prev) => prev.filter((en) => en.email !== email));
+    setExpandedQueueEmails((prev) => {
+      const next = new Set(prev);
+      next.delete(email);
+      return next;
+    });
   };
 
   const onSubmit = async (e) => {
@@ -312,84 +378,92 @@ function ShareModal({ projectId, onClose }) {
           return;
         }
       }
-      const safeEntries = entries.filter(
-        (en) => !isBlockedProjectInviteEmail(en.email, blockedInviteEmails),
-      );
+      const safeEntries = entries
+        .filter((en) => !isBlockedProjectInviteEmail(en.email, blockedInviteEmails))
+        .map(({ email, role }) => ({ email, role }));
       if (safeEntries.length === 0) {
         setError(t('share.no_valid_invites'));
         setSubmitting(false);
         return;
       }
-      const payload = { projectId, entries: safeEntries, addedByUserId: state.user?.id };
-      console.log('Invoking invite_or_add_member with:', JSON.stringify(payload, null, 2));
-      
+
       const { data, error: fnError } = await supabaseClient.functions.invoke('invite_or_add_member', {
-        body: payload
+        body: { projectId, entries: safeEntries, addedByUserId: state.user?.id },
       });
-      console.log('Edge function response:', JSON.stringify({ data, error: fnError }, null, 2));
-      
-      if (fnError) {
-        console.error('Edge function error:', fnError);
-        throw new Error(fnError.message || 'Edge function failed');
-      }
-      
+
+      if (fnError) throw new Error(fnError.message || 'Could not add crew members. Try again.');
+
       setResults(data?.results || []);
-      
-      // Reload project members from database
       await loadProjectMembers();
-      
-      // Clear entries after successful addition
       setEntries([]);
+      setExpandedQueueEmails(new Set());
       addToast('Members added successfully!', 'success');
     } catch (err) {
       console.error('Full error:', err);
       if (isGuestCollaboratorLimitError(err) || err?.message?.includes('GUEST_COLLABORATOR_LIMIT')) {
         setShowGuestLimitUpgrade(true);
       } else {
-        setError(err?.message || 'Failed to add members. Please check console for details.');
+        setError(err?.message || 'Could not add crew members. Try again.');
       }
     } finally {
       setSubmitting(false);
     }
   };
 
+  const memberProjectRole = (member) =>
+    member.project_contacts?.find((pc) => String(pc.project_id) === String(projectId))?.role
+    || member.type
+    || 'Team';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] bg-white/20">
-      <div className="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-900">{t('projectDetail.manage_project_crew')}</h2>
-          <button type="button" onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
+      <div className="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl ring-1 ring-slate-200/80 max-h-[90vh] overflow-y-auto">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">{t('projectDetail.manage_project_crew')}</h2>
+            <p className="mt-1 text-sm text-slate-500">{t('share.role_on_project_helper')}</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-700">✕</button>
         </div>
 
         <form onSubmit={onSubmit}>
-          {/* Current Crew Section */}
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-sm font-semibold text-gray-700">
+            <div className="mb-3 flex items-center justify-between">
+              <label className="text-sm font-semibold text-slate-800">
                 Current Crew {!loadingMembers && `(${projectMembers.length})`}
               </label>
-              {loadingMembers && (
-                <span className="text-xs text-gray-400">Loading...</span>
-              )}
+              {loadingMembers && <span className="text-xs text-slate-400">Loading...</span>}
             </div>
-            
+
             {loadingMembers ? (
-              <div className="text-center py-4 text-gray-500 text-sm">Loading project members...</div>
+              <div className="py-4 text-center text-sm text-slate-500">Loading project members...</div>
             ) : projectMembers.length === 0 ? (
-              <div className="text-center py-4 text-gray-500 text-sm border border-dashed border-gray-300 rounded-lg">
-                No crew members assigned yet. Add members below.
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-8 text-center">
+                <p className="text-sm font-semibold text-slate-800">{t('share.crew_empty_title')}</p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">{t('share.crew_empty_body')}</p>
+                {availableContacts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={scrollToDirectory}
+                    className="mt-4 inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition active:scale-[0.98] hover:bg-blue-700"
+                  >
+                    {t('share.crew_empty_cta')}
+                  </button>
+                )}
               </div>
             ) : (
-              <div className="flex flex-wrap gap-3">
-                {projectMembers.map(member => {
+              <div className="space-y-3">
+                {projectMembers.map((member) => {
                   const isOwner = member.id === ownerContactId;
+                  const emailKey = member.email?.toLowerCase();
+                  const companyAccess = emailKey ? orgRolesByEmail[emailKey] : null;
+                  const currentRole = memberProjectRole(member);
+
                   return (
                     <div
                       key={member.id}
-                      className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${
-                        isOwner 
-                          ? 'border-blue-300 bg-blue-50' 
-                          : 'border-gray-200 bg-gray-50'
+                      className={`flex flex-wrap items-start gap-3 rounded-lg border px-3 py-3 ${
+                        isOwner ? 'border-blue-200 bg-blue-50/60' : 'border-slate-200 bg-slate-50/50'
                       }`}
                     >
                       <Avatar
@@ -398,34 +472,45 @@ function ShareModal({ projectId, onClose }) {
                         size="md"
                         className="shrink-0"
                       />
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-gray-900 truncate">{member.name || member.email}</div>
-                        <div className="text-xs text-gray-500 truncate">{member.email}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-slate-900 truncate">
+                          {member.name || member.email}
+                        </div>
+                        <div className="text-xs text-slate-500 truncate">{member.email}</div>
+                        {companyAccess && (
+                          <p className="mt-1 text-xs text-slate-500">
+                            {t('share.company_access', { role: companyAccess })}
+                          </p>
+                        )}
                       </div>
-                      <span className={`text-xs font-medium rounded-full px-2 py-0.5 ${
-                        isOwner
-                          ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                          : 'bg-white text-gray-600 border border-gray-200'
-                      }`}>
-                        {isOwner ? 'Owner' : projectRoleLabel(member.project_contacts?.find(pc => String(pc.project_id) === String(projectId))?.role || member.type || 'Team')}
-                      </span>
-                      {member.email && orgRolesByEmail[member.email.toLowerCase()] && (
-                        <span className="text-xs text-gray-500" title={t('share.org_role_hint')}>
-                          {t('share.org_app_role', { role: orgRolesByEmail[member.email.toLowerCase()] })}
+
+                      {isOwner ? (
+                        <span className="rounded-full border border-blue-200 bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                          Owner
                         </span>
+                      ) : (
+                        <div className="w-full sm:w-auto sm:min-w-[11rem]">
+                          <ProjectCrewRoleSelect
+                            id={`crew-role-${member.id}`}
+                            value={currentRole}
+                            onChange={(role) => handleUpdateMemberRole(member, role)}
+                            companyAccessName={null}
+                            showHelper={false}
+                            compact
+                            disabled={updatingRoleMemberId === member.id}
+                          />
+                        </div>
                       )}
+
                       {!isOwner && (
                         <button
                           type="button"
                           onClick={() => handleRemoveMember(member)}
                           disabled={removingMemberId === member.id}
-                          className="ml-auto text-xs font-semibold text-red-600 hover:text-red-700 disabled:text-gray-400"
+                          className="text-xs font-semibold text-red-600 hover:text-red-700 disabled:text-slate-400"
                         >
                           {removingMemberId === member.id ? 'Removing…' : 'Remove'}
                         </button>
-                      )}
-                      {isOwner && (
-                        <span className="ml-auto text-xs text-gray-400 italic">Cannot remove</span>
                       )}
                     </div>
                   );
@@ -434,60 +519,69 @@ function ShareModal({ projectId, onClose }) {
             )}
           </div>
 
-          {/* Assign from Directory Section */}
           {availableContacts.length > 0 && (
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <label className="text-sm font-medium text-gray-700">Assign from Directory</label>
-                <button 
+            <div ref={directorySectionRef} className="mb-6">
+              <div className="mb-2 flex items-center justify-between">
+                <div>
+                  <label className="text-sm font-semibold text-slate-800">{t('share.add_org_member_section')}</label>
+                  <p className="mt-0.5 text-xs text-slate-500">{t('share.add_org_member_hint')}</p>
+                </div>
+                <button
                   type="button"
                   onClick={() => setShowContactPicker(!showContactPicker)}
-                  className="text-xs text-blue-600 hover:text-blue-700"
+                  className="text-xs font-medium text-blue-600 hover:text-blue-700"
                 >
                   {showContactPicker ? 'Hide' : 'Show'} ({availableContacts.length})
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mb-2">Select existing organization members to add to this project</p>
-              
+
               {showContactPicker && (
-                <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg">
-                  <div className="divide-y divide-gray-100">
-                    {availableContacts.map(contact => (
-                      <button
-                        key={contact.id}
-                        type="button"
-                        onClick={() => addContact(contact)}
-                        className="w-full px-4 py-3 flex items-center gap-3 hover:bg-blue-50 transition-colors text-left"
-                      >
-                        <Avatar
-                          name={contact.name}
-                          avatarUrl={contact.avatar_url}
-                          size="md"
-                          className="shrink-0"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900">{contact.name}</div>
-                          <div className="text-xs text-gray-500">{contact.email}</div>
-                        </div>
-                        <div className="shrink-0">
-                          <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700">
-                            {contact.type}
+                <div className="max-h-60 overflow-y-auto rounded-lg border border-slate-200">
+                  <div className="divide-y divide-slate-100">
+                    {availableContacts.map((contact) => {
+                      const orgRole = contact.email
+                        ? orgRolesByEmail[contact.email.toLowerCase()]
+                        : null;
+                      return (
+                        <button
+                          key={contact.id}
+                          type="button"
+                          onClick={() => addContact(contact)}
+                          disabled={addingContactId === contact.id}
+                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-blue-50/80"
+                        >
+                          <Avatar
+                            name={contact.name}
+                            avatarUrl={contact.avatar_url}
+                            size="md"
+                            className="shrink-0"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium text-slate-900">{contact.name}</div>
+                            <div className="text-xs text-slate-500">{contact.email}</div>
+                            {orgRole && (
+                              <div className="mt-0.5 text-xs text-slate-500">
+                                {t('share.company_access', { role: orgRole })}
+                              </div>
+                            )}
+                          </div>
+                          <span className="shrink-0 text-xs font-medium text-blue-600">
+                            {addingContactId === contact.id ? 'Adding...' : '+ Add'}
                           </span>
-                        </div>
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* Invite Guest/Sub Section */}
           <div className="mb-4">
-            <label className="mb-2 block text-sm font-medium text-gray-700">
-              Invite Guest/Sub
+            <label className="mb-1 block text-sm font-semibold text-slate-800">
+              {t('share.invite_guest_section')}
             </label>
-            <p className="text-xs text-gray-500 mb-2">Invite external users (trade partners, guests) to this project only</p>
+            <p className="mb-2 text-xs text-slate-500">{t('share.invite_guest_hint')}</p>
             <div className="flex gap-2">
               <input
                 value={input}
@@ -499,125 +593,107 @@ function ShareModal({ projectId, onClose }) {
                 aria-invalid={!!error}
                 className={fieldInputClassName(
                   !!error,
-                  'flex-1 rounded-md border px-3 py-2 shadow-xs focus:outline-hidden focus:ring-2',
+                  'flex-1 rounded-lg border px-3 py-2 shadow-xs focus:outline-hidden focus:ring-2',
                 )}
               />
-              <button type="button" onClick={addEmails} className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Add</button>
+              <button
+                type="button"
+                onClick={addEmails}
+                className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition active:scale-[0.98] hover:bg-slate-200"
+              >
+                Add
+              </button>
             </div>
             <FieldError message={error} />
-            {warning && (
-              <p className="mt-1.5 text-xs text-amber-700">{warning}</p>
-            )}
+            {warning && <p className="mt-1.5 text-xs text-amber-700">{warning}</p>}
           </div>
 
           {entries.length > 0 && (
             <div className="mt-4">
-              <label className="mb-2 block text-sm font-medium text-gray-700">
-                Selected to Add ({entries.length})
+              <label className="mb-2 block text-sm font-semibold text-slate-800">
+                {t('share.selected_to_add', { count: entries.length })}
               </label>
               <div className="space-y-2">
-                {entries.map((en, idx) => (
-                  <div key={en.email} className="flex items-center gap-3 rounded-md border border-gray-200 p-3 bg-blue-50">
-                    <span className="flex-1 text-sm text-gray-800 font-medium">{en.email}</span>
-                    <div className="flex flex-col items-end gap-1">
-                      <select
-                        value={en.role}
-                        onChange={e => updateRole(idx, e.target.value)}
-                        className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-hidden focus:ring-blue-500 bg-white"
-                        aria-label={t('share.project_access_role')}
-                      >
-                        {projectRoleOptions.map((r) => (
-                          <option key={r.value} value={r.value}>{r.label}</option>
-                        ))}
-                      </select>
-                      {orgRolesByEmail[en.email] && (
-                        <span className="text-xs text-gray-500">{t('share.org_app_role', { role: orgRolesByEmail[en.email] })}</span>
+                {entries.map((en) => {
+                  const companyAccess = orgRolesByEmail[en.email];
+                  const isExpanded = expandedQueueEmails.has(en.email);
+                  const isGuest = !en.isOrgMember && !companyAccess;
+
+                  return (
+                    <div
+                      key={en.email}
+                      className="flex flex-wrap items-start gap-3 rounded-lg border border-slate-200 bg-blue-50/50 p-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-slate-900">{en.name || en.email}</div>
+                        {en.name && <div className="text-xs text-slate-500">{en.email}</div>}
+                        {companyAccess && !en.isOrgMember && (
+                          <p className="mt-1 text-xs text-amber-700">{t('share.already_in_org_use_directory')}</p>
+                        )}
+                      </div>
+
+                      {isGuest || isExpanded ? (
+                        <div className="w-full sm:w-56">
+                          <ProjectCrewRoleSelect
+                            id={`queue-role-${en.email}`}
+                            value={en.role}
+                            onChange={(role) => updateRole(en.email, role)}
+                            companyAccessName={companyAccess}
+                            showHelper={isExpanded}
+                          />
+                        </div>
+                      ) : (
+                        <ProjectCrewRoleSelect
+                          value={en.role}
+                          collapsed
+                          companyAccessName={companyAccess}
+                          onExpand={() => setExpandedQueueEmails((prev) => new Set(prev).add(en.email))}
+                          compact
+                        />
                       )}
+
+                      <button
+                        type="button"
+                        onClick={() => removeEntry(en.email)}
+                        className="text-sm text-slate-500 hover:text-red-600"
+                      >
+                        Remove
+                      </button>
                     </div>
-                    <button type="button" onClick={() => removeEntry(idx)} className="text-sm text-gray-500 hover:text-red-600">Remove</button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
 
           {results && (
-            <div className="mt-4 rounded-md border border-gray-200 p-3">
-              <div className="mb-2 text-sm font-semibold text-gray-700">Results</div>
+            <div className="mt-4 rounded-lg border border-slate-200 p-3">
+              <div className="mb-2 text-sm font-semibold text-slate-700">Results</div>
               <ul className="space-y-2 text-sm">
-                {results.map((r) => {
-                  let statusText = '';
-                  let statusColor = 'text-gray-500';
-                  let statusIcon = '';
-                  
-                  if (r.action === 'added') {
-                    if (r.reason === 'email_failed') {
-                      statusText = 'Added (email failed)';
-                      statusColor = 'text-yellow-600';
-                      statusIcon = '⚠️';
-                    } else {
-                      statusText = 'Added & Emailed';
-                      statusColor = 'text-green-600';
-                      statusIcon = '✅';
-                    }
-                  } else if (r.action === 'invited') {
-                    statusText = 'Invitation sent';
-                    statusColor = 'text-blue-600';
-                    statusIcon = '📧';
-                  } else {
-                    statusText = `Failed: ${r.reason || 'unknown'}`;
-                    statusColor = 'text-red-600';
-                    statusIcon = '❌';
-                  }
-                  
-                  return (
-                    <li key={r.email} className="flex flex-col gap-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-800 font-medium">{r.email}</span>
-                        <span className={statusColor + ' font-semibold flex items-center gap-1'}>
-                          {statusIcon} {statusText}
-                        </span>
-                      </div>
-                      {r.reason && (r.action === 'skipped' || r.reason === 'email_failed') && (
-                        <div className="text-xs text-yellow-600 pl-2 border-l-2 border-yellow-200">
-                          {r.action === 'added' && r.reason === 'email_failed' 
-                            ? 'Added to project successfully, but email notification could not be sent.' 
-                            : r.reason}
-                        </div>
-                      )}
-                      {r.inviteUrl && (
-                        <div className="flex flex-wrap items-center gap-2 text-xs pl-2">
-                          <span className="text-gray-500">Invite link:</span>
-                          <button
-                            type="button"
-                            className="text-blue-600 hover:underline"
-                            onClick={() => {
-                              navigator.clipboard.writeText(r.inviteUrl);
-                              addToast('Invite link copied', 'success');
-                            }}
-                          >
-                            Copy link
-                          </button>
-                          {r.shortCode && (
-                            <span className="font-mono text-gray-700">Code: {r.shortCode}</span>
-                          )}
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
+                {results.map((r) => (
+                  <li key={r.email} className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-slate-800">{r.email}</span>
+                    <span className="text-slate-600">{r.action}</span>
+                  </li>
+                ))}
               </ul>
             </div>
           )}
 
-          <div className="mt-6 flex justify-end gap-3">
-            <button type="button" onClick={onClose} className="rounded-md px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100">Cancel</button>
+          <div className="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
             <button
               type="submit"
               disabled={submitting || entries.length === 0}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition active:scale-[0.98] hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitting ? 'Adding…' : `Add ${entries.length} to Crew`}
+              {submitting ? 'Adding…' : t('share.add_count_to_crew', { count: entries.length })}
             </button>
           </div>
         </form>
@@ -632,5 +708,3 @@ function ShareModal({ projectId, onClose }) {
 }
 
 export default ShareModal;
-
-

@@ -244,6 +244,11 @@ function TeamView() {
         )}
       </div>
 
+      <div className="mb-4">
+        <h2 className="text-2xl font-bold text-gray-900">{t('team.internal_contacts_title')}</h2>
+        <p className="mt-1 text-sm text-gray-500">{t('team.internal_contacts_subtitle')}</p>
+      </div>
+
       <TeamDirectory
         refreshKey={teamDirectoryRefreshKey}
         onStaffChanged={() => loadRolesAndCounts()}

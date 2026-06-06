@@ -200,19 +200,34 @@ export async function deleteTask(supabase, taskId) {
   if (error) throw error;
 }
 
+function scopedProjectIds(projectIds) {
+  if (projectIds == null) return null;
+  if (!Array.isArray(projectIds)) return null;
+  return projectIds.filter(Boolean);
+}
+
 /**
  * Fetch completed tasks count for a user
  * Uses RLS policies to automatically filter tasks based on user role
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} userId - User ID (not used but kept for API consistency)
+ * @param {{ projectIds?: string[] | null }} [options] - When set, limit to these projects (empty = 0)
  * @returns {Promise<number>} Count of completed tasks
  */
-export async function fetchCompletedTasksCount(supabase, userId) {
-  const { count, error } = await supabase
+export async function fetchCompletedTasksCount(supabase, userId, options = {}) {
+  const projectIds = scopedProjectIds(options.projectIds);
+  if (projectIds && projectIds.length === 0) return 0;
+
+  let query = supabase
     .from('tasks')
     .select('*', { count: 'exact', head: true })
     .eq('completed', true);
-  
+
+  if (projectIds?.length) {
+    query = query.in('project_id', projectIds);
+  }
+
+  const { count, error } = await query;
   if (error) throw error;
   return count || 0;
 }
@@ -222,19 +237,28 @@ export async function fetchCompletedTasksCount(supabase, userId) {
  * Uses RLS policies to automatically filter tasks based on user role
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} userId - User ID (not used but kept for API consistency)
+ * @param {{ projectIds?: string[] | null }} [options] - When set, limit to these projects (empty = 0)
  * @returns {Promise<number>} Count of overdue incomplete tasks
  */
-export async function fetchOverdueTasksCount(supabase, userId) {
+export async function fetchOverdueTasksCount(supabase, userId, options = {}) {
+  const projectIds = scopedProjectIds(options.projectIds);
+  if (projectIds && projectIds.length === 0) return 0;
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayStr = today.toISOString().split('T')[0];
-  
-  const { count, error } = await supabase
+
+  let query = supabase
     .from('tasks')
     .select('*', { count: 'exact', head: true })
     .eq('completed', false)
     .lt('due_date', todayStr);
-  
+
+  if (projectIds?.length) {
+    query = query.in('project_id', projectIds);
+  }
+
+  const { count, error } = await query;
   if (error) throw error;
   return count || 0;
 }
@@ -242,14 +266,18 @@ export async function fetchOverdueTasksCount(supabase, userId) {
 /**
  * Fetch overdue incomplete tasks for dashboard modals (RLS-scoped).
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
- * @param {number} [limit]
+ * @param {{ limit?: number, projectIds?: string[] | null }} [options]
  */
-export async function fetchOverdueTasksList(supabase, limit = 100) {
+export async function fetchOverdueTasksList(supabase, options = {}) {
+  const { limit = 100, projectIds: rawProjectIds } = options;
+  const projectIds = scopedProjectIds(rawProjectIds);
+  if (projectIds && projectIds.length === 0) return [];
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayStr = today.toISOString().split('T')[0];
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('tasks')
     .select(TASK_LIST_COLUMNS)
     .eq('completed', false)
@@ -257,6 +285,11 @@ export async function fetchOverdueTasksList(supabase, limit = 100) {
     .order('due_date', { ascending: true })
     .limit(limit);
 
+  if (projectIds?.length) {
+    query = query.in('project_id', projectIds);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   return data || [];
 }
@@ -264,16 +297,25 @@ export async function fetchOverdueTasksList(supabase, limit = 100) {
 /**
  * Fetch recently completed tasks for dashboard modals (RLS-scoped).
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
- * @param {number} [limit]
+ * @param {{ limit?: number, projectIds?: string[] | null }} [options]
  */
-export async function fetchCompletedTasksList(supabase, limit = 100) {
-  const { data, error } = await supabase
+export async function fetchCompletedTasksList(supabase, options = {}) {
+  const { limit = 100, projectIds: rawProjectIds } = options;
+  const projectIds = scopedProjectIds(rawProjectIds);
+  if (projectIds && projectIds.length === 0) return [];
+
+  let query = supabase
     .from('tasks')
     .select(TASK_LIST_COLUMNS)
     .eq('completed', true)
     .order('created_at', { ascending: false })
     .limit(limit);
 
+  if (projectIds?.length) {
+    query = query.in('project_id', projectIds);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   return data || [];
 }

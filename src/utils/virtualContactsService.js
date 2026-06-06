@@ -125,18 +125,19 @@ export async function getVirtualContacts(supabase, userId, organizationId, userP
         });
       }
 
-      // Org directory contacts not yet linked to a profile (manual add, pending invite metadata, etc.)
+      // Org directory contacts not yet linked to a profile (staff, trade partners, pending invites, etc.)
       const { data: orgContacts, error: orgContactsError } = await supabase
         .from('contacts')
         .select('id, name, email, role, phone, avatar_url, status, type, company, trade, organization_id')
         .eq('organization_id', organizationId)
-        .eq('type', 'Team');
+        .in('type', ['Team', 'Subcontractor']);
 
       if (orgContactsError) {
         console.error('Error fetching organization contacts:', orgContactsError);
       } else if (orgContacts) {
         orgContacts.forEach((row) => {
           if (!contactMap.has(row.id)) {
+            const contactType = row.type || 'Team';
             contactMap.set(row.id, {
               id: row.id,
               name: row.name,
@@ -144,8 +145,10 @@ export async function getVirtualContacts(supabase, userId, organizationId, userP
               role: row.role,
               phone: row.phone,
               avatar_url: row.avatar_url,
-              status: normalizeDeploymentStatus(row.status, 'Team'),
-              type: row.type || 'Team',
+              status: contactType === 'Subcontractor'
+                ? null
+                : normalizeDeploymentStatus(row.status, 'Team'),
+              type: contactType,
               company: row.company,
               trade: row.trade,
               organization_id: row.organization_id,

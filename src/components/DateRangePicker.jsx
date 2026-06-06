@@ -39,6 +39,7 @@ function DateRangePicker({
   className = '',
   compact = false,
   size = 'default',
+  elevated = false,
 }) {
   const [open, setOpen] = useState(false);
   const [numberOfMonths, setNumberOfMonths] = useState(1);
@@ -100,6 +101,7 @@ function DateRangePicker({
   };
 
   const sm = size === 'sm';
+  const popoverZ = elevated ? 'z-[60]' : 'z-30';
 
   return (
     <div className={`relative ${sm ? 'text-[11px]' : ''} ${className}`} ref={rootRef}>
@@ -143,7 +145,7 @@ function DateRangePicker({
 
       {open && (
         <div
-          className={`absolute top-full z-30 overflow-visible border border-gray-200 bg-white shadow-xl ${
+          className={`absolute top-full ${popoverZ} overflow-visible border border-gray-200 bg-white shadow-xl ${
             sm
               ? 'left-0 mt-1.5 w-full min-w-[240px] max-w-[min(100vw-1rem,320px)] rounded-lg p-2'
               : compact

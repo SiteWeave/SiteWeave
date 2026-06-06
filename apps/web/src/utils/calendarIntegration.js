@@ -201,17 +201,49 @@ const exchangeGoogleToken = async (code) => {
 };
 
 const fetchGoogleCalendarEvents = async (accessToken) => {
-    const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-        headers: {
-            'Authorization': `Bearer ${accessToken}`,
-        },
+    const now = new Date();
+    const timeMin = new Date(now);
+    timeMin.setMonth(timeMin.getMonth() - 3);
+    const timeMax = new Date(now);
+    timeMax.setMonth(timeMax.getMonth() + 12);
+
+    const baseParams = new URLSearchParams({
+        singleEvents: 'true',
+        orderBy: 'startTime',
+        timeMin: timeMin.toISOString(),
+        timeMax: timeMax.toISOString(),
+        maxResults: '250',
     });
 
-    if (!response.ok) {
-        throw new Error('Failed to fetch Google Calendar events');
-    }
+    const allItems = [];
+    let pageToken = null;
+    let pageCount = 0;
 
-    return await response.json();
+    do {
+        const params = new URLSearchParams(baseParams);
+        if (pageToken) params.set('pageToken', pageToken);
+
+        const response = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            },
+        );
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to fetch Google Calendar events: ${text}`);
+        }
+
+        const data = await response.json();
+        if (Array.isArray(data.items)) allItems.push(...data.items);
+        pageToken = data.nextPageToken || null;
+        pageCount += 1;
+    } while (pageToken && pageCount < 20);
+
+    return { items: allItems };
 };
 
 // Microsoft Graph API Integration
@@ -362,8 +394,47 @@ export const prepareCalendarEventsForInsert = (events, userId = null) => {
         color: e.color || '#6B7280',
         is_all_day: !!e.is_all_day,
         recurrence: e.recurrence || null,
-        user_id: userId
+        external_id: e.external_id || null,
+        external_source: e.external_source || null,
+        user_id: userId,
     }));
+};
+
+/** Skip calendar events already imported for this user + external provider. */
+export const filterNewCalendarImports = async (supabaseClient, events, userId) => {
+    if (!userId || !Array.isArray(events) || events.length === 0) return events || [];
+
+    const bySource = events.reduce((acc, event) => {
+        if (event.external_id && event.external_source) {
+            if (!acc[event.external_source]) acc[event.external_source] = [];
+            acc[event.external_source].push(event.external_id);
+        }
+        return acc;
+    }, {});
+
+    const existingIds = new Set();
+    for (const [source, ids] of Object.entries(bySource)) {
+        const uniqueIds = [...new Set(ids)];
+        if (!uniqueIds.length) continue;
+        const { data, error } = await supabaseClient
+            .from('calendar_events')
+            .select('external_id')
+            .eq('user_id', userId)
+            .eq('external_source', source)
+            .in('external_id', uniqueIds);
+        if (error) {
+            console.warn('Could not check existing imported events:', error.message);
+            continue;
+        }
+        (data || []).forEach((row) => {
+            if (row.external_id) existingIds.add(`${source}:${row.external_id}`);
+        });
+    }
+
+    return events.filter((event) => {
+        if (!event.external_id || !event.external_source) return true;
+        return !existingIds.has(`${event.external_source}:${event.external_id}`);
+    });
 };
 
 // ============================================================================

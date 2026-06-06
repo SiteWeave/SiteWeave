@@ -12,6 +12,7 @@ import {
     handleGoogleCalendarCallback, 
     handleOutlookCalendarCallback, 
     prepareCalendarEventsForInsert,
+    filterNewCalendarImports,
     createGoogleCalendarEvent,
     createOutlookCalendarEvent,
     updateGoogleCalendarEvent,
@@ -363,7 +364,19 @@ function CalendarView() {
             }
 
             if (events.length > 0) {
-                const prepared = prepareCalendarEventsForInsert(events, state.user?.id || null);
+                const userId = state.user?.id || null;
+                const newEvents = userId
+                    ? await filterNewCalendarImports(supabaseClient, events, userId)
+                    : events;
+
+                if (!newEvents.length) {
+                    addToast(t('calendar.no_events_to_import'), 'info');
+                    localStorage.removeItem('oauth_state');
+                    clearOAuthParams();
+                    return;
+                }
+
+                const prepared = prepareCalendarEventsForInsert(newEvents, userId);
                 const { data, error } = await supabaseClient
                     .from('calendar_events')
                     .insert(prepared)

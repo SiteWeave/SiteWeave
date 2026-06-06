@@ -8,6 +8,7 @@ import TaskDependencyCombobox from './TaskDependencyCombobox';
 import { validateRecurrence } from '../utils/recurrenceService';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 import PermissionGuard from './PermissionGuard';
+import { getProjectMemberContacts } from '../utils/projectMemberContacts';
 
 const fieldClass =
     'w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 shadow-xs transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
@@ -62,21 +63,10 @@ function TaskModal({
 
     const contacts = state.contacts || [];
 
-    const projectContacts = contacts.filter(contact =>
-        contact.project_contacts && contact.project_contacts.some(pc => pc.project_id === project.id)
+    const allAssignableContacts = useMemo(
+        () => getProjectMemberContacts(project?.id, contacts),
+        [project?.id, contacts],
     );
-    
-    const orgAdmins = contacts.filter(contact =>
-        contact.is_internal &&
-        contact.organization_id === project.organization_id &&
-        contact.role_name &&
-        contact.role_name.toLowerCase() === 'org admin'
-    );
-    
-    const allAssignableContacts = [
-        ...projectContacts,
-        ...orgAdmins.filter(admin => !projectContacts.some(pc => pc.id === admin.id))
-    ];
 
     const assigneeHasEmail = useMemo(() => {
         if (assigneeId && String(assigneeId).trim()) {
@@ -274,7 +264,6 @@ function TaskModal({
                                             allAssignableContacts.map(contact => (
                                                 <option key={contact.id} value={contact.id}>
                                                     {contact.name}
-                                                    {orgAdmins.some(admin => admin.id === contact.id) && !projectContacts.some(pc => pc.id === contact.id) && t('taskModal.admin_suffix')}
                                                 </option>
                                             ))
                                         ) : (

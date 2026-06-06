@@ -49,7 +49,6 @@ const SECTION_DEFS = [
 ];
 
 const DETAIL_TOGGLE_DEFS = [
-  { key: 'show_siteweave_logo', labelKey: 'toggle_logo', default: true },
   { key: 'show_assignees', labelKey: 'toggle_assignees', default: false },
   { key: 'show_dates', labelKey: 'toggle_dates', default: false },
   { key: 'show_who_changed', labelKey: 'toggle_who_changed', default: false },
@@ -67,7 +66,6 @@ const DEFAULT_SECTIONS = {
   phase_changes: true,
   vitals: true,
   weekly_plan: true,
-  show_siteweave_logo: true,
   show_assignees: false,
   show_dates: false,
   show_who_changed: false,
@@ -683,7 +681,7 @@ function ProgressReportBuilder({
                     <label key={key} className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={key === 'show_siteweave_logo' ? formData.report_sections.show_siteweave_logo !== false : !!formData.report_sections[key]}
+                        checked={!!formData.report_sections[key]}
                         onChange={(e) => updateSection(key, e.target.checked)}
                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />

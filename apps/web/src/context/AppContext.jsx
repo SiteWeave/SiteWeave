@@ -224,17 +224,25 @@ function appReducer(state, action) {
     case 'ADD_CONTACT': {
       // Ensure project_contacts is always an array and prevent duplicates
       const newContact = { ...action.payload, project_contacts: Array.isArray(action.payload.project_contacts) ? action.payload.project_contacts : [] };
-      
+
       // Check if contact already exists (to prevent duplicates from real-time subscription)
       const exists = state.contacts.some(c => c.id === newContact.id);
       if (exists) {
-        // Update existing contact instead of adding duplicate
+        const existing = state.contacts.find(c => c.id === newContact.id);
+        const mergedProjectContacts = [...(Array.isArray(existing?.project_contacts) ? existing.project_contacts : [])];
+        for (const pc of newContact.project_contacts) {
+          if (!mergedProjectContacts.some((p) => String(p.project_id) === String(pc.project_id))) {
+            mergedProjectContacts.push(pc);
+          }
+        }
         return {
           ...state,
-          contacts: state.contacts.map(c => c.id === newContact.id ? newContact : c)
+          contacts: state.contacts.map(c => c.id === newContact.id
+            ? { ...newContact, project_contacts: mergedProjectContacts }
+            : c),
         };
       }
-      
+
       return { ...state, contacts: [...state.contacts, newContact] };
     }
     case 'UPDATE_CONTACT': return { 
@@ -247,19 +255,30 @@ function appReducer(state, action) {
       ...state, 
       contacts: state.contacts.filter(contact => contact.id !== action.payload) 
     };
-    case 'ADD_PROJECT_CONTACT': return { 
-      ...state, 
-      contacts: state.contacts.map(c => c.id === action.payload.contact_id 
-        ? { ...c, project_contacts: [...(Array.isArray(c.project_contacts) ? c.project_contacts : []), { project_id: action.payload.project_id }] } 
-        : c
-      ) 
+    case 'ADD_PROJECT_CONTACT': return {
+      ...state,
+      contacts: state.contacts.map(c => {
+        if (c.id !== action.payload.contact_id) return c;
+        const existing = Array.isArray(c.project_contacts) ? c.project_contacts : [];
+        const alreadyLinked = existing.some(
+          (pc) => String(pc.project_id) === String(action.payload.project_id),
+        );
+        if (alreadyLinked) return c;
+        return {
+          ...c,
+          project_contacts: [...existing, {
+            project_id: action.payload.project_id,
+            role: action.payload.role,
+          }],
+        };
+      }),
     };
-    case 'REMOVE_PROJECT_CONTACT': return { 
-      ...state, 
-      contacts: state.contacts.map(c => c.id === action.payload.contact_id 
-        ? { ...c, project_contacts: (Array.isArray(c.project_contacts) ? c.project_contacts : []).filter(pc => pc.project_id !== action.payload.project_id) } 
+    case 'REMOVE_PROJECT_CONTACT': return {
+      ...state,
+      contacts: state.contacts.map(c => c.id === action.payload.contact_id
+        ? { ...c, project_contacts: (Array.isArray(c.project_contacts) ? c.project_contacts : []).filter(pc => String(pc.project_id) !== String(action.payload.project_id)) }
         : c
-      ) 
+      )
     };
     case 'SET_USER_PREFERENCES': return { ...state, userPreferences: action.payload };
     case 'UPDATE_USER_PREFERENCES': return { ...state, userPreferences: { ...state.userPreferences, ...action.payload } };
@@ -1156,8 +1175,37 @@ export const AppProvider = ({ children }) => {
       .subscribe(() => {}); // Silently handle subscription status
 
     const projectContactsSubscription = supabaseClient.channel('public:project_contacts')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_contacts' }, (payload) => {
-        dispatch({ type: 'ADD_PROJECT_CONTACT', payload: payload.new });
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_contacts' }, async (payload) => {
+        try {
+          dispatch({ type: 'ADD_PROJECT_CONTACT', payload: payload.new });
+
+          const contactId = payload.new?.contact_id;
+          if (!contactId) return;
+
+          const contactExists = state.contacts?.some((c) => c.id === contactId);
+          if (contactExists) return;
+
+          const { data: fullContact } = await supabaseClient
+            .from('contacts')
+            .select('id, name, email, role, phone, avatar_url, status, type, organization_id, company, trade')
+            .eq('id', contactId)
+            .single();
+
+          if (fullContact) {
+            dispatch({
+              type: 'ADD_CONTACT',
+              payload: {
+                ...fullContact,
+                project_contacts: [{
+                  project_id: payload.new.project_id,
+                  role: payload.new.role,
+                }],
+              },
+            });
+          }
+        } catch (error) {
+          console.error('Error processing project_contacts INSERT in subscription:', error);
+        }
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'project_contacts' }, (payload) => {
         dispatch({ type: 'REMOVE_PROJECT_CONTACT', payload: payload.old });

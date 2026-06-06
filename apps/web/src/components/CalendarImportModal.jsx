@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
-import { startGoogleCalendarOAuth, startOutlookCalendarOAuth, prepareCalendarEventsForInsert } from '../utils/calendarIntegration';
+import { startGoogleCalendarOAuth, startOutlookCalendarOAuth, prepareCalendarEventsForInsert, filterNewCalendarImports } from '../utils/calendarIntegration';
 
 const CalendarImportModal = ({ onClose, importType = 'file' }) => {
     const { t, i18n } = useTranslation();
@@ -126,7 +126,9 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
         if (window.electronAPI?.isElectron) {
             const clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
             if (!clientSecret) {
-                addToast(t('calendar.import_failed', { message: 'Google Calendar desktop import requires VITE_GOOGLE_CLIENT_SECRET.' }), 'error');
+                addToast(t('calendar.import_failed', {
+                    message: 'Google Calendar desktop import requires VITE_GOOGLE_CLIENT_SECRET. Add it to your .env and register http://127.0.0.1:5000/google-callback in Google Cloud Console.',
+                }), 'error');
                 return;
             }
             setIsImporting(true);
@@ -137,7 +139,13 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
                     return;
                 }
                 if (events && events.length > 0) {
-                    const prepared = prepareCalendarEventsForInsert(events, state.user.id);
+                    const newEvents = await filterNewCalendarImports(supabaseClient, events, state.user.id);
+                    if (!newEvents.length) {
+                        addToast(t('calendar.no_events_to_import'), 'info');
+                        onClose();
+                        return;
+                    }
+                    const prepared = prepareCalendarEventsForInsert(newEvents, state.user.id);
                     const { data, error } = await supabaseClient
                         .from('calendar_events')
                         .insert(prepared)

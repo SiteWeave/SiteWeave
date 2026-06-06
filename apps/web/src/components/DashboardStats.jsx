@@ -78,18 +78,25 @@ const DashboardStats = memo(function DashboardStats() {
     const [completedModalTasks, setCompletedModalTasks] = useState([]);
     const [modalLoading, setModalLoading] = useState(false);
 
+    const projects = state.projects || [];
+    const accessibleProjectIds = useMemo(
+        () => projects.map((project) => project.id).filter(Boolean),
+        [projects],
+    );
+
     useEffect(() => {
         if (!state.user || state.authLoading) return;
         let cancelled = false;
         (async () => {
             setStatsLoading(true);
+            const scope = { projectIds: accessibleProjectIds };
             const [completed, overdue] = await Promise.all([
                 loadWithFallback(
-                    () => fetchCompletedTasksCount(supabaseClient, state.user.id),
+                    () => fetchCompletedTasksCount(supabaseClient, state.user.id, scope),
                     null,
                 ),
                 loadWithFallback(
-                    () => fetchOverdueTasksCount(supabaseClient, state.user.id),
+                    () => fetchOverdueTasksCount(supabaseClient, state.user.id, scope),
                     null,
                 ),
             ]);
@@ -100,7 +107,7 @@ const DashboardStats = memo(function DashboardStats() {
             }
         })();
         return () => { cancelled = true; };
-    }, [state.user, state.authLoading]);
+    }, [state.user, state.authLoading, accessibleProjectIds]);
 
     useEffect(() => {
         if (!showOverdueModal) return;
@@ -108,7 +115,9 @@ const DashboardStats = memo(function DashboardStats() {
         (async () => {
             setModalLoading(true);
             try {
-                const rows = await fetchOverdueTasksList(supabaseClient);
+                const rows = await fetchOverdueTasksList(supabaseClient, {
+                    projectIds: accessibleProjectIds,
+                });
                 if (!cancelled) setOverdueModalTasks(rows);
             } catch (e) {
                 console.error(e);
@@ -118,7 +127,7 @@ const DashboardStats = memo(function DashboardStats() {
             }
         })();
         return () => { cancelled = true; };
-    }, [showOverdueModal]);
+    }, [showOverdueModal, accessibleProjectIds]);
 
     useEffect(() => {
         if (!showCompletedModal) return;
@@ -126,7 +135,9 @@ const DashboardStats = memo(function DashboardStats() {
         (async () => {
             setModalLoading(true);
             try {
-                const rows = await fetchCompletedTasksList(supabaseClient);
+                const rows = await fetchCompletedTasksList(supabaseClient, {
+                    projectIds: accessibleProjectIds,
+                });
                 if (!cancelled) setCompletedModalTasks(rows);
             } catch (e) {
                 console.error(e);
@@ -136,9 +147,7 @@ const DashboardStats = memo(function DashboardStats() {
             }
         })();
         return () => { cancelled = true; };
-    }, [showCompletedModal]);
-
-    const projects = state.projects || [];
+    }, [showCompletedModal, accessibleProjectIds]);
     const contacts = state.contacts || [];
     const contactById = useMemo(() => {
         const m = new Map();

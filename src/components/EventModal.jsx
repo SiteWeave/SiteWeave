@@ -35,6 +35,27 @@ const generateTimeOptions = (locale = 'en') => {
     return options;
 };
 
+const compareTimeValues = (a, b) => {
+    const [ah = 0, am = 0] = String(a || '00:00').split(':').map(Number);
+    const [bh = 0, bm = 0] = String(b || '00:00').split(':').map(Number);
+    return ah * 60 + am - (bh * 60 + bm);
+};
+
+const addMinutesToTimeValue = (timeValue, minutes) => {
+    const [h = 0, m = 0] = String(timeValue || '00:00').split(':').map(Number);
+    const total = h * 60 + m + minutes;
+    const nh = Math.floor(total / 60) % 24;
+    const nm = total % 60;
+    return `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`;
+};
+
+const ensureEndTimeAfterStart = (start, end, gapMinutes = 60) => {
+    if (compareTimeValues(end, start) <= 0) {
+        return addMinutesToTimeValue(start, gapMinutes);
+    }
+    return end;
+};
+
 function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading = false }) {
     const { t, i18n } = useTranslation();
     const TIME_OPTIONS = useMemo(() => generateTimeOptions(i18n.language || 'en'), [i18n.language]);
@@ -172,6 +193,11 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
             }
         }
     }, [event, date, t]);
+
+    const handleStartTimeChange = (nextStart) => {
+        setStartTime(nextStart);
+        setEndTime((prev) => ensureEndTimeAfterStart(nextStart, prev));
+    };
 
     const loadCategories = async () => {
         try {
@@ -469,68 +495,71 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                         </div>
                     </div>
 
-                    {/* Date and Time - Horizontal Layout */}
-                    <div className="pt-3 border-t">
-                        <div className="flex items-center gap-3 flex-wrap">
-                            <div className="flex min-w-[260px] flex-1 flex-col gap-1.5">
-                                <DateRangePicker
-                                    label={t('calendar.schedule')}
-                                    startValue={startDate}
-                                    endValue={endDate}
-                                    onChange={({ start, end }) => {
-                                        setStartDate(start);
-                                        setEndDate(end || start);
-                                    }}
-                                    presets={datePresets}
-                                />
+                    {/* Schedule — date, time, and options */}
+                    <div className="space-y-4 border-t pt-4">
+                        <DateRangePicker
+                            label={t('calendar.schedule')}
+                            startValue={startDate}
+                            endValue={endDate}
+                            onChange={({ start, end }) => {
+                                setStartDate(start);
+                                setEndDate(end || start);
+                            }}
+                            presets={datePresets}
+                            elevated
+                        />
+
+                        {!isAllDay && (
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
+                                <div className="relative min-w-0">
+                                    <label className="mb-1.5 block text-xs font-medium text-gray-600">
+                                        {t('calendar.start_time', { defaultValue: 'Start time' })}
+                                    </label>
+                                    <select
+                                        value={startTime}
+                                        onChange={(e) => handleStartTimeChange(e.target.value)}
+                                        className="w-full appearance-none rounded-lg border bg-white p-2.5 pr-8 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                                    >
+                                        {TIME_OPTIONS.map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <Icon
+                                        path="M19.5 8.25l-7.5 7.5-7.5-7.5"
+                                        className="pointer-events-none absolute right-2 top-[2.125rem] h-4 w-4 -translate-y-1/2 text-gray-400"
+                                    />
+                                </div>
+
+                                <span className="hidden pb-2.5 text-sm text-gray-500 sm:block">
+                                    {t('calendar.time_to')}
+                                </span>
+
+                                <div className="relative min-w-0">
+                                    <label className="mb-1.5 block text-xs font-medium text-gray-600">
+                                        {t('calendar.end_time', { defaultValue: 'End time' })}
+                                    </label>
+                                    <select
+                                        value={endTime}
+                                        onChange={(e) => setEndTime(e.target.value)}
+                                        className="w-full appearance-none rounded-lg border bg-white p-2.5 pr-8 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                                    >
+                                        {TIME_OPTIONS.map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <Icon
+                                        path="M19.5 8.25l-7.5 7.5-7.5-7.5"
+                                        className="pointer-events-none absolute right-2 top-[2.125rem] h-4 w-4 -translate-y-1/2 text-gray-400"
+                                    />
+                                </div>
                             </div>
-                            
-                            {/* Start Time Dropdown */}
-                            {!isAllDay && (
-                                <>
-                                    <div className="relative flex-1 min-w-[120px]">
-                                        <select 
-                                            value={startTime} 
-                                            onChange={e => setStartTime(e.target.value)} 
-                                            className="w-full p-2 pr-8 text-sm border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
-                                        >
-                                            {TIME_OPTIONS.map(option => (
-                                                <option key={option.value} value={option.value}>
-                                                    {option.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <Icon 
-                                            path="M19.5 8.25l-7.5 7.5-7.5-7.5"
-                                            className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
-                                        />
-                                    </div>
-                                    
-                                    {/* "to" Label */}
-                                    <span className="text-sm text-gray-600">{t('calendar.time_to')}</span>
-                                    
-                                    {/* End Time Dropdown */}
-                                    <div className="relative flex-1 min-w-[120px]">
-                                        <select 
-                                            value={endTime} 
-                                            onChange={e => setEndTime(e.target.value)} 
-                                            className="w-full p-2 pr-8 text-sm border rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none"
-                                        >
-                                            {TIME_OPTIONS.map(option => (
-                                                <option key={option.value} value={option.value}>
-                                                    {option.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <Icon 
-                                            path="M19.5 8.25l-7.5 7.5-7.5-7.5"
-                                            className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
-                                        />
-                                    </div>
-                                </>
-                            )}
-                            
-                            {/* All Day Toggle Switch - Inline with date/time */}
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-4">
                             <div className="flex items-center gap-2">
                                 <span className="text-sm text-gray-700">{t('calendar.all_day')}</span>
                                 <button
@@ -547,8 +576,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                     />
                                 </button>
                             </div>
-                            
-                            {/* Make Recurring Link */}
+
                             <button
                                 type="button"
                                 onClick={() => {
@@ -557,11 +585,11 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                         setShowOptionalFields(true);
                                     }
                                 }}
-                                className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+                                className="flex items-center gap-1.5 text-sm text-blue-600 transition-colors hover:text-blue-700"
                             >
-                                <Icon 
+                                <Icon
                                     path="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-                                    className="w-4 h-4"
+                                    className="h-4 w-4"
                                 />
                                 <span>{t('calendar.make_recurring')}</span>
                             </button>
