@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { resolveMemberRoleId } from '../_shared/ensureDefaultRoles.ts'
+import { buildTeamInviteEmail, sendTransactionalEmail } from '../_shared/transactionalEmailLayout.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -161,245 +162,27 @@ serve(async (req) => {
 
     if (RESEND_API_KEY) {
       try {
-        // Use metadata for personalized greeting
-        const firstName = metadata?.first_name || email.split('@')[0]
         const greeting = metadata?.first_name ? `Hi ${metadata.first_name},` : 'Hi there,'
-        
-        const emailSubject = `Join ${organizationName} on SiteWeave`
-        const emailHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
-            line-height: 1.6; 
-            color: #1a1a1a; 
-            background: #f6f9fc; 
-            padding: 40px 20px; 
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-        }
-        .email-wrapper { 
-            max-width: 600px; 
-            margin: 0 auto; 
-        }
-        .card { 
-            background: #ffffff; 
-            border-radius: 8px; 
-            border: 1px solid #e6ebf1;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-            overflow: hidden;
-        }
-        .header { 
-            background: #ffffff; 
-            padding: 48px 40px 40px 40px; 
-            text-align: center; 
-            border-bottom: 1px solid #e5e7eb;
-        }
-        .logo-img {
-            height: 120px;
-            width: auto;
-            margin: 0 auto 32px auto;
-            display: block;
-        }
-        .content { 
-            padding: 40px; 
-        }
-        .headline { 
-            font-size: 24px; 
-            font-weight: 600; 
-            color: #1a1a1a; 
-            margin: 0 0 16px 0;
-            line-height: 1.3;
-        }
-        .greeting {
-            font-size: 18px;
-            font-weight: 500;
-            color: #1a1a1a;
-            margin: 0 0 16px 0;
-        }
-        .body-text { 
-            font-size: 16px; 
-            color: #4b5563; 
-            margin: 0 0 24px 0;
-            line-height: 1.6;
-        }
-        .body-text strong {
-            color: #1a1a1a;
-            font-weight: 600;
-        }
-        .cta-container {
-            text-align: center;
-            margin: 32px 0;
-        }
-        .cta-button { 
-            display: inline-block; 
-            padding: 12px 24px; 
-            background: #1a1a1a; 
-            color: #ffffff !important; 
-            text-decoration: none; 
-            border-radius: 6px; 
-            font-weight: 500; 
-            font-size: 15px; 
-            letter-spacing: -0.2px;
-            transition: background-color 0.2s;
-        }
-        .cta-button:hover {
-            background: #2d2d2d;
-            color: #ffffff !important;
-        }
-        .link-fallback {
-            margin-top: 24px;
-            padding-top: 24px;
-            border-top: 1px solid #e5e7eb;
-        }
-        .link-fallback-text {
-            font-size: 13px;
-            color: #6b7280;
-            margin: 0 0 8px 0;
-        }
-        .link-url {
-            font-size: 13px;
-            color: #2563EB;
-            word-break: break-all;
-            text-decoration: underline;
-            display: inline-block;
-            max-width: 100%;
-        }
-        .link-url:hover {
-            color: #1d4ed8;
-        }
-        .expiry-notice {
-            font-size: 13px;
-            color: #6b7280;
-            margin: 24px 0 0 0;
-            text-align: center;
-        }
-        .footer { 
-            background: #f9fafb; 
-            padding: 32px 40px; 
-            text-align: center; 
-            border-top: 1px solid #e5e7eb;
-        }
-        .footer-text {
-            font-size: 12px; 
-            color: #6b7280; 
-            line-height: 1.6;
-            margin: 0 0 8px 0;
-        }
-        .footer-text:last-child {
-            margin: 0;
-        }
-        .footer-compliance {
-            font-size: 11px;
-            color: #9ca3af;
-            line-height: 1.5;
-            margin: 16px 0 0 0;
-            padding-top: 16px;
-            border-top: 1px solid #e5e7eb;
-        }
-        .footer-compliance p {
-            margin: 0 0 4px 0;
-        }
-        .footer-compliance p:last-child {
-            margin: 0;
-        }
-        .footer-link {
-            color: #4b5563;
-            text-decoration: none;
-        }
-        .footer-link:hover {
-            text-decoration: underline;
-        }
-        @media only screen and (max-width: 600px) {
-            body { padding: 20px 12px; }
-            .header { padding: 32px 24px 24px 24px; }
-            .content { padding: 32px 24px; }
-            .footer { padding: 24px; }
-            .headline { font-size: 20px; }
-        }
-    </style>
-</head>
-<body>
-    <div class="email-wrapper">
-        <div class="card">
-            <div class="header">
-                <img src="https://app.siteweave.org/logo.svg" alt="SiteWeave" class="logo-img" />
-            </div>
-            <div class="content">
-                <h2 class="headline">Join ${organizationName} on SiteWeave</h2>
-                <p class="greeting">${greeting}</p>
-                <p class="body-text"><strong>${inviterName}</strong> has invited you to collaborate with <strong>${organizationName}</strong> on SiteWeave.</p>
-                <p class="body-text">Click the button below to accept your invitation and get started:</p>
-                <div class="cta-container">
-                    <a href="${setupUrl}" class="cta-button">Accept Invitation</a>
-                </div>
-                <div class="link-fallback">
-                    <p class="link-fallback-text">Button not working? Copy and paste this link into your browser:</p>
-                    <a href="${setupUrl}" class="link-url">${setupUrl}</a>
-                </div>
-                <p class="expiry-notice">This invitation will expire in 7 days.</p>
-            </div>
-            <div class="footer">
-                <p class="footer-text">
-                    <a href="https://siteweave.org" class="footer-link">siteweave.org</a>
-                </p>
-                <div class="footer-compliance">
-                    <p>© 2026 SiteWeave. All rights reserved.</p>
-                    <p>2965 Hero Way Ste 100 Leander, TX 78641</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</body>
-</html>
-        `.trim()
-
-        const emailText = `
-Join ${organizationName} on SiteWeave
-
-${inviterName} has invited you to collaborate with ${organizationName} on SiteWeave.
-
-Accept your invitation by clicking this link:
-${setupUrl}
-
-This invitation will expire in 7 days.
-
----
-© 2026 SiteWeave. All rights reserved.
-SiteWeave, Inc. | 123 Business Street, Suite 100, City, State 12345
-siteweave.org
-        `.trim()
-
-        const resendResponse = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${RESEND_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            from: 'SiteWeave Invitations <invitations@siteweave.org>',
-            to: [email.toLowerCase()],
-            subject: emailSubject,
-            html: emailHtml,
-            text: emailText
-          })
+        const template = buildTeamInviteEmail({
+          inviterName,
+          organizationName,
+          setupUrl,
+          greeting,
         })
 
-        const resendData = await resendResponse.json()
-        console.log('Resend API response status:', resendResponse.status)
-        console.log('Resend API response data:', JSON.stringify(resendData))
+        const sendResult = await sendTransactionalEmail({
+          to: email.toLowerCase(),
+          subject: template.subject,
+          html: template.html,
+          text: template.text,
+          replyTo: user.email ?? null,
+        })
 
-        if (!resendResponse.ok) {
-          console.error('Resend error:', resendData)
-          emailError = resendData.message || resendData.error?.message || 'Failed to send email'
+        if (!sendResult.success) {
+          emailError = sendResult.error || 'Failed to send email'
         } else {
           emailSent = true
-          console.log('Invitation email sent successfully to:', email, 'Email ID:', resendData.id)
+          console.log('Invitation email sent successfully to:', email, 'Email ID:', sendResult.id)
         }
       } catch (emailErr) {
         console.error('Error sending invitation email:', emailErr)

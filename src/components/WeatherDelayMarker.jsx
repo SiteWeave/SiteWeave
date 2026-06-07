@@ -1,18 +1,13 @@
 import React from 'react';
+import { formatLocalDateOnly } from '../utils/dateHelpers';
 
 /**
  * Inline row showing a logged weather / schedule impact in the task list.
  */
 function WeatherDelayMarker({ impact, onClick }) {
     if (!impact) return null;
-    const formatDate = (dateValue) => {
-        if (!dateValue) return '';
-        const parsed = new Date(`${dateValue}T00:00:00`);
-        if (Number.isNaN(parsed.getTime())) return dateValue;
-        return parsed.toLocaleDateString();
-    };
-    const startLabel = formatDate(impact.start_date);
-    const endLabel = formatDate(impact.end_date);
+    const startLabel = formatLocalDateOnly(impact.start_date);
+    const endLabel = formatLocalDateOnly(impact.end_date);
     const range =
         startLabel && endLabel
             ? `${startLabel} → ${endLabel}`

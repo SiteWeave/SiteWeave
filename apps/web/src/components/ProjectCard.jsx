@@ -7,7 +7,7 @@ import Avatar from './Avatar';
 import ProjectProgressCard from './ProjectProgressCard';
 import PermissionGuard from './PermissionGuard';
 
-const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
+const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete, progressData }) {
     const { i18n, t } = useTranslation();
     const navigate = useNavigate();
     const { dispatch, state } = useAppContext();
@@ -82,7 +82,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete }) {
             </div>
             
             {/* Progress Status */}
-            <ProjectProgressCard project={project} />
+            <ProjectProgressCard project={project} progressData={progressData} />
             
             <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100">
                 <div className="min-w-0">

@@ -69,7 +69,11 @@ function ProjectBoardView({ projects, onEdit, onDelete, onProjectClick }) {
                 const progressMap = await calculateProjectsProgressMap(activeProjects, supabaseClient);
                 const data = {};
                 activeProjects.forEach((project) => {
-                    data[project.id] = { progress: progressMap[project.id] || 0, loading: false };
+                    const entry = progressMap[project.id];
+                    data[project.id] = {
+                        progress: entry?.progress ?? 0,
+                        loading: false,
+                    };
                 });
                 setProjectData(data);
             } catch (error) {

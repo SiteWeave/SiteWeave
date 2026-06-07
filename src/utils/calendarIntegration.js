@@ -441,6 +441,14 @@ export const filterNewCalendarImports = async (supabaseClient, events, userId) =
 // BIDIRECTIONAL SYNC FUNCTIONS
 // ============================================================================
 
+function getLocalTimeZone() {
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 // Create event in Google Calendar
 export const createGoogleCalendarEvent = async (event, accessToken) => {
     if (!accessToken) {
@@ -453,12 +461,12 @@ export const createGoogleCalendarEvent = async (event, accessToken) => {
             start: {
                 dateTime: event.is_all_day ? undefined : event.start_time,
                 date: event.is_all_day ? event.start_time.split('T')[0] : undefined,
-                timeZone: 'UTC'
+                timeZone: getLocalTimeZone()
             },
             end: {
                 dateTime: event.is_all_day ? undefined : event.end_time,
                 date: event.is_all_day ? event.end_time.split('T')[0] : undefined,
-                timeZone: 'UTC'
+                timeZone: getLocalTimeZone()
             },
             location: event.location || '',
             attendees: event.attendees ? event.attendees.split(',').map(email => ({ email: email.trim() })) : []
@@ -509,11 +517,11 @@ export const createOutlookCalendarEvent = async (event, accessToken) => {
             },
             start: {
                 dateTime: event.start_time,
-                timeZone: 'UTC'
+                timeZone: getLocalTimeZone()
             },
             end: {
                 dateTime: event.end_time,
-                timeZone: 'UTC'
+                timeZone: getLocalTimeZone()
             },
             location: event.location ? {
                 displayName: event.location
@@ -571,12 +579,12 @@ export const updateGoogleCalendarEvent = async (event, externalId, accessToken) 
             start: {
                 dateTime: event.is_all_day ? undefined : event.start_time,
                 date: event.is_all_day ? event.start_time.split('T')[0] : undefined,
-                timeZone: 'UTC'
+                timeZone: getLocalTimeZone()
             },
             end: {
                 dateTime: event.is_all_day ? undefined : event.end_time,
                 date: event.is_all_day ? event.end_time.split('T')[0] : undefined,
-                timeZone: 'UTC'
+                timeZone: getLocalTimeZone()
             },
             location: event.location || '',
             attendees: event.attendees ? event.attendees.split(',').map(email => ({ email: email.trim() })) : []
@@ -625,11 +633,11 @@ export const updateOutlookCalendarEvent = async (event, externalId, accessToken)
             },
             start: {
                 dateTime: event.start_time,
-                timeZone: 'UTC'
+                timeZone: getLocalTimeZone()
             },
             end: {
                 dateTime: event.end_time,
-                timeZone: 'UTC'
+                timeZone: getLocalTimeZone()
             },
             location: event.location ? {
                 displayName: event.location

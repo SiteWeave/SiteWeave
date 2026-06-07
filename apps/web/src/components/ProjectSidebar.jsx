@@ -1,9 +1,11 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import BuildPath from './BuildPath';
+import useProjectPhases from '../hooks/useProjectPhases';
+import ProjectSidebarPhases from './phases/ProjectSidebarPhases';
 
 function ProjectSidebar({ project, showProjectPhases = true }) {
     const { t, i18n } = useTranslation();
+    const { phases } = useProjectPhases(showProjectPhases ? project?.id : null, project);
 
     if (!project) return null;
 
@@ -31,8 +33,9 @@ function ProjectSidebar({ project, showProjectPhases = true }) {
             )}
 
             {showProjectPhases && (
-                <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 h-[600px] overflow-hidden">
-                    <BuildPath project={project} />
+                <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
+                    <h3 className="font-bold mb-3">{t('projectDetail.phases_heading', { defaultValue: 'Phases' })}</h3>
+                    <ProjectSidebarPhases phases={phases} locale={i18n.language} />
                 </div>
             )}
         </div>

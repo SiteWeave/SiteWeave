@@ -1,12 +1,13 @@
 import React, { useState, memo, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
+import InlineEditableText from './InlineEditableText';
 import PermissionGuard from './PermissionGuard';
 import DateRangePicker from './DateRangePicker';
-import { addDaysIso, localDateIso } from '../utils/dateHelpers';
+import { addDaysIso, localDateIso, formatLocalDateOnly } from '../utils/dateHelpers';
 import { normalizeAssigneePhone } from '@siteweave/core-logic';
 
-/** @typedef {null | 'dates' | 'assign' | 'title'} TaskPanel */
+/** @typedef {null | 'dates' | 'assign'} TaskPanel */
 
 
 const TaskItem = memo(function TaskItem({
@@ -22,6 +23,7 @@ const TaskItem = memo(function TaskItem({
     dependencyMeta = null,
     onOpenDependencyDrawer,
     onPingAssignee = null,
+    pingLocked = false,
     onRequestAssigneeSmsConsent = null,
     pingingTaskId = null,
     project = null,
@@ -31,7 +33,6 @@ const TaskItem = memo(function TaskItem({
     const [panel, setPanel] = useState(null);
     const [draftStart, setDraftStart] = useState(task.start_date || '');
     const [draftDue, setDraftDue] = useState(task.due_date || '');
-    const [editTitle, setEditTitle] = useState(task.text);
     const [editPhaseId, setEditPhaseId] = useState(task.project_phase_id || '');
     const [editAssigneeId, setEditAssigneeId] = useState(task.assignee_id || '');
     const [editAssigneeEmail, setEditAssigneeEmail] = useState(task.contacts?.email || '');
@@ -45,7 +46,6 @@ const TaskItem = memo(function TaskItem({
     const syncDraftsFromTask = useCallback(() => {
         setDraftStart(task.start_date || '');
         setDraftDue(task.due_date || '');
-        setEditTitle(task.text);
         setEditPhaseId(task.project_phase_id || '');
         setEditAssigneeId(task.assignee_id || '');
         setEditAssigneeEmail(task.contacts?.email || '');
@@ -85,10 +85,8 @@ const TaskItem = memo(function TaskItem({
         Low: 'bg-blue-100 text-blue-700',
     };
 
-    const formatDateShort = (dateString) => {
-        if (!dateString) return '';
-        return new Date(dateString).toLocaleDateString(i18n.language, { month: 'short', day: 'numeric' });
-    };
+    const formatDateShort = (dateString) =>
+        formatLocalDateOnly(dateString, i18n.language, { month: 'short' });
 
     const dateLine = () => {
         if (task.start_date && task.due_date) {
@@ -221,13 +219,6 @@ const TaskItem = memo(function TaskItem({
 
     const clearDates = () => {
         onEdit(task.id, { start_date: null, due_date: null });
-        setPanel(null);
-    };
-
-    const saveTitle = () => {
-        const trimmed = editTitle.trim();
-        if (!trimmed) return;
-        onEdit(task.id, { text: trimmed });
         setPanel(null);
     };
 
@@ -419,16 +410,16 @@ const TaskItem = memo(function TaskItem({
                                 </span>
                             }
                         >
-                            <button
-                                type="button"
-                                onClick={openPanel('title')}
-                                className={`ui-clamp-2 text-left font-semibold text-sm sm:text-base leading-snug hover:text-blue-700 focus:outline-none ${
+                            <InlineEditableText
+                                value={task.text}
+                                canEdit
+                                onSave={(text) => onEdit(task.id, { text })}
+                                className={`ui-clamp-2 font-semibold text-sm sm:text-base leading-snug ${
                                     isComplete ? 'line-through text-gray-400' : 'text-gray-900'
                                 }`}
-                                title={t('tasks.click_to_rename')}
-                            >
-                                {task.text}
-                            </button>
+                                inputClassName="font-semibold text-sm sm:text-base"
+                                ariaLabel={t('tasks.click_to_rename')}
+                            />
                         </PermissionGuard>
                     </div>
 
@@ -656,14 +647,25 @@ const TaskItem = memo(function TaskItem({
                                                 onPingAssignee(task);
                                             }}
                                             disabled={pingingTaskId === task.id}
-                                            className="relative flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-500 shadow-xs hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                            className={`relative flex shrink-0 items-center gap-1 rounded-md border bg-white px-1.5 py-1 text-xs shadow-xs disabled:cursor-not-allowed disabled:opacity-50 ${
+                                                pingLocked
+                                                    ? 'border-amber-200 text-amber-700 hover:border-amber-300'
+                                                    : 'border-gray-200 text-gray-500 hover:border-blue-200 hover:text-blue-600'
+                                            }`}
                                             title={
-                                                assigneePhoneOkPing && smsConsent !== 'confirmed' && !smsConsentBlocked
-                                                    ? t('tasks.ping_title_sms')
-                                                    : t('tasks.ping_title_email')
+                                                pingLocked
+                                                    ? 'Business plan'
+                                                    : assigneePhoneOkPing && smsConsent !== 'confirmed' && !smsConsentBlocked
+                                                      ? t('tasks.ping_title_sms')
+                                                      : t('tasks.ping_title_email')
                                             }
                                             aria-label={t('tasks.ping_assignee_aria', { task: task.text })}
                                         >
+                                            {pingLocked && (
+                                                <svg className="h-3 w-3 shrink-0 text-amber-600" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
+                                                    <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                                                </svg>
+                                            )}
                                             <Icon
                                                 path="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405z"
                                                 className="h-3.5 w-3.5 shrink-0"
@@ -887,44 +889,6 @@ const TaskItem = memo(function TaskItem({
                     </PermissionGuard>
                 )}
 
-                {/* ── Title rename panel ── */}
-                {panel === 'title' && (
-                    <PermissionGuard permission="can_edit_tasks">
-                        <div
-                            className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm select-text"
-                            onClick={stop}
-                            onMouseDown={suppressRowDrag}
-                            onTouchStart={suppressRowDrag}
-                            onDragStart={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                            }}
-                        >
-                            <input
-                                type="text"
-                                value={editTitle}
-                                onChange={(e) => setEditTitle(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') saveTitle(); }}
-                                className="min-w-[12rem] flex-1 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                autoFocus
-                            />
-                            <button
-                                type="button"
-                                onClick={saveTitle}
-                                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                            >
-                                Save
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setPanel(null)}
-                                className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </PermissionGuard>
-                )}
             </div>
         </li>
     );

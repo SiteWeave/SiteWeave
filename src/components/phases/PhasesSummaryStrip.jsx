@@ -1,18 +1,23 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { setAllPhaseSectionsExpanded } from '../../utils/projectPhasesUtils';
+import { formatPhaseDateRange } from '../../utils/projectPhasesUtils';
 
-function PhaseChip({ phase, onJump }) {
+function PhaseChip({ phase, onJump, locale }) {
     const pct = Math.max(0, Math.min(100, Math.round(Number(phase.progress) || 0)));
     const complete = pct >= 100;
+    const dateLabel = formatPhaseDateRange(phase.start_date, phase.end_date, locale);
 
     return (
         <button
             type="button"
             onClick={() => onJump(phase.id)}
-            className="shrink-0 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-left text-xs hover:border-blue-300 hover:bg-blue-50/50 transition-colors max-w-[200px]"
+            className="shrink-0 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-left text-xs hover:border-blue-300 hover:bg-blue-50/50 transition-colors max-w-[240px]"
         >
             <span className="font-medium text-gray-900 truncate">{phase.name}</span>
+            {dateLabel && (
+                <span className="text-gray-500 tabular-nums truncate hidden sm:inline">{dateLabel}</span>
+            )}
             <span className="flex items-center gap-1 shrink-0">
                 <span className="w-12 h-1.5 rounded-full bg-gray-200 overflow-hidden">
                     <span
@@ -35,13 +40,13 @@ function PhasesSummaryStrip({
     overallProgress,
     includeUnassigned = false,
 }) {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
 
-    const phaseKeys = useCallback(() => {
+    const phaseKeys = () => {
         const keys = phases.map((p) => p.id);
         if (includeUnassigned) keys.push('unassigned');
         return keys;
-    }, [phases, includeUnassigned]);
+    };
 
     const scrollToPhase = (phaseId) => {
         const el = document.getElementById(
@@ -80,7 +85,7 @@ function PhasesSummaryStrip({
             </div>
             <div className="flex-1 min-w-0 overflow-x-auto flex gap-2 py-0.5 md:mx-2">
                 {phases.map((phase) => (
-                    <PhaseChip key={phase.id} phase={phase} onJump={scrollToPhase} />
+                    <PhaseChip key={phase.id} phase={phase} onJump={scrollToPhase} locale={i18n.language} />
                 ))}
             </div>
             <div className="flex shrink-0 gap-2 text-xs">

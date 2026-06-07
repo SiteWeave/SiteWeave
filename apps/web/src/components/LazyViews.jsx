@@ -1,19 +1,14 @@
-import React, { Suspense, lazy } from 'react';
-import LoadingSpinner from '../components/LoadingSpinner';
-import { ErrorBoundary } from './ErrorBoundary';
+import React, { Suspense, lazy } from 'react'
+import LoadingSpinner from './LoadingSpinner'
+import { ErrorBoundary } from './ErrorBoundary'
 
-// Lazy load main views
-export const DashboardView = lazy(() => import('../views/DashboardView'));
-export const ProjectDetailsView = lazy(() => import('../views/ProjectDetailsView'));
-export const CalendarView = lazy(() => import('../views/CalendarView'));
-export const ContactsView = lazy(() => import('../views/ContactsView'));
-export const TeamHubView = lazy(() => import('../views/TeamHubView'));
-/** @deprecated Legacy route; prefer TeamHubView */
-export const MessagesView = lazy(() => import('../views/MessagesView'));
-export const TeamView = lazy(() => import('../views/TeamView'));
-export const SettingsView = lazy(() => import('../views/SettingsView'));
+export const DashboardView = lazy(() => import('../views/DashboardView'))
+export const ProjectWorkspaceView = lazy(() => import('../views/ProjectWorkspaceView'))
+export const CalendarView = lazy(() => import('../views/CalendarView'))
+export const TeamHubView = lazy(() => import('../views/TeamHubView'))
+export const TeamView = lazy(() => import('../views/TeamView'))
+export const SettingsView = lazy(() => import('../views/SettingsView'))
 
-// View-level error component
 const ViewErrorFallback = ({ error, resetError }) => (
   <div className="flex items-center justify-center h-full p-8">
     <div className="max-w-md w-full">
@@ -27,7 +22,8 @@ const ViewErrorFallback = ({ error, resetError }) => (
         <p className="text-sm text-gray-600 mb-4">
           {error?.message || 'An error occurred while loading this section.'}
         </p>
-        <button type="button"
+        <button
+          type="button"
           onClick={resetError}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
         >
@@ -36,9 +32,8 @@ const ViewErrorFallback = ({ error, resetError }) => (
       </div>
     </div>
   </div>
-);
+)
 
-// View-level error boundary class
 class ViewErrorBoundary extends ErrorBoundary {
   render() {
     if (this.state.hasError) {
@@ -48,15 +43,18 @@ class ViewErrorBoundary extends ErrorBoundary {
   }
 }
 
-// Loading wrapper component with error boundary
-export const LazyViewWrapper = ({ children }) => (
-  <ViewErrorBoundary onReset={() => window.location.reload()}>
-    <Suspense fallback={
-        <div className="flex items-center justify-center h-full">
+export function LazyViewWrapper({ children }) {
+  return (
+    <ViewErrorBoundary onReset={() => window.location.reload()}>
+      <Suspense
+        fallback={(
+          <div className="flex items-center justify-center h-full min-h-[40vh]">
             <LoadingSpinner variant="spinner" size="lg" />
-        </div>
-    }>
+          </div>
+        )}
+      >
         {children}
-    </Suspense>
-  </ViewErrorBoundary>
-);
+      </Suspense>
+    </ViewErrorBoundary>
+  )
+}

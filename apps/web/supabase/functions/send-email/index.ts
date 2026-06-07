@@ -3,20 +3,25 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
+import {
+  assertSendEmailAllowed,
+  createServiceClient,
+  jsonResponse,
+  requireUser,
+} from '../_shared/auth.ts'
+import { parseSendEmailBody } from '../_shared/schemas/sendEmail.ts'
+import { sendTransactionalEmail } from '../_shared/transactionalEmailLayout.ts'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
-
-// CORS headers for browser requests
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
+const MAX_SUBJECT_LEN = 200
+const MAX_BODY_LEN = 50_000
 
 serve(async (req) => {
-  // Handle CORS preflight requests
+  const corsHeaders = corsHeadersFor(req)
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return corsPreflightResponse(req)
   }
 
   // Only allow POST requests
@@ -28,67 +33,46 @@ serve(async (req) => {
   }
 
   try {
-    const { to, subject, html, text } = await req.json()
+    const authResult = await requireUser(req, corsHeaders)
+    if (authResult instanceof Response) return authResult
+    const { user } = authResult
 
-    // Validate input
-    if (!to || !subject || (!html && !text)) {
-      return new Response(
-        JSON.stringify({ error: 'Missing required fields: to, subject, and html or text' }),
-        { 
-          status: 400, 
-          headers: { 
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          } 
-        }
+    const parsed = parseSendEmailBody(await req.json())
+    if (!parsed.success) {
+      return jsonResponse(
+        { error: parsed.error.issues[0]?.message ?? 'Invalid request' },
+        400,
+        corsHeaders,
       )
     }
 
-    // Normalize to field - handle both string and array
-    const toArray = Array.isArray(to) ? to : [to]
+    const { to, subject, html, text } = parsed.data
+    const toArray = (Array.isArray(to) ? to : [to]).map((e) => e.trim().toLowerCase())
+
+    const supabaseAdmin = createServiceClient()
+    const sendDenied = await assertSendEmailAllowed(supabaseAdmin, user.id, toArray, corsHeaders)
+    if (sendDenied) return sendDenied
 
     // Option 1: Use Resend (recommended for production)
     if (RESEND_API_KEY) {
-      const resendResponse = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${RESEND_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: 'SiteWeave Notifications <notifications@siteweave.org>',
-          to: toArray,
-          subject: subject,
-          html: html,
-          text: text
-        })
+      const sendResult = await sendTransactionalEmail({
+        to: toArray,
+        subject,
+        html: html ?? '',
+        text: text ?? html ?? '',
       })
 
-      const resendData = await resendResponse.json()
-
-      if (!resendResponse.ok) {
-        console.error('Resend error:', resendData)
+      if (!sendResult.success) {
+        console.error('Resend error:', sendResult.error)
         return new Response(
-          JSON.stringify({ error: 'Failed to send email via Resend', details: resendData }),
-          { 
-            status: 500, 
-            headers: { 
-              'Content-Type': 'application/json',
-              ...corsHeaders
-            } 
-          }
+          JSON.stringify({ error: 'Failed to send email via Resend', details: sendResult.error }),
+          { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
         )
       }
 
       return new Response(
-        JSON.stringify({ success: true, id: resendData.id }),
-        { 
-          status: 200, 
-          headers: { 
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          } 
-        }
+        JSON.stringify({ success: true, id: sendResult.id }),
+        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
       )
     }
 

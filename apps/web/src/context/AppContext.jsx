@@ -81,8 +81,8 @@ const loadStateFromStorage = (currentUserId) => {
     if (!saved) return null;
     
     const parsed = JSON.parse(saved);
-    // Only use cached data if it's less than 5 minutes old
-    const maxAge = 5 * 60 * 1000; // 5 minutes
+    // Only use cached data if it's less than 10 minutes old
+    const maxAge = 10 * 60 * 1000; // 10 minutes
     if (Date.now() - parsed.timestamp > maxAge) {
       return null;
     }
@@ -126,6 +126,9 @@ const getInitialState = () => {
     tasksLoaded: false,
     filesLoaded: false,
     calendarEventsLoaded: false,
+    myDayTasksLoaded: false,
+    projectPhasesByProjectId: {},
+    projectPhasesLoadingByProjectId: {},
   };
   
   // Try to restore from sessionStorage (will be null if no user or different user)
@@ -294,6 +297,35 @@ function appReducer(state, action) {
     };
     case 'SET_ACCOUNT_INTENT':
       return { ...state, accountIntent: action.payload };
+    case 'SET_CONTACTS': {
+      newState = { ...state, contacts: action.payload };
+      saveStateToStorage(newState);
+      return newState;
+    }
+    case 'SET_PROJECT_PHASES': {
+      newState = {
+        ...state,
+        projectPhasesByProjectId: {
+          ...state.projectPhasesByProjectId,
+          [action.payload.projectId]: action.payload.phases,
+        },
+        projectPhasesLoadingByProjectId: {
+          ...state.projectPhasesLoadingByProjectId,
+          [action.payload.projectId]: false,
+        },
+      };
+      return newState;
+    }
+    case 'SET_PROJECT_PHASES_LOADING':
+      return {
+        ...state,
+        projectPhasesLoadingByProjectId: {
+          ...state.projectPhasesLoadingByProjectId,
+          [action.payload.projectId]: action.payload.loading,
+        },
+      };
+    case 'SET_MY_DAY_TASKS_LOADED':
+      return { ...state, myDayTasksLoaded: action.payload };
     case 'RESET_LAZY_DATA': {
       newState = {
         ...state,
@@ -303,6 +335,9 @@ function appReducer(state, action) {
         tasksLoaded: false,
         filesLoaded: false,
         calendarEventsLoaded: false,
+        myDayTasksLoaded: false,
+        projectPhasesByProjectId: {},
+        projectPhasesLoadingByProjectId: {},
       };
       saveStateToStorage(newState);
       return newState;
@@ -322,7 +357,12 @@ export const AppProvider = ({ children }) => {
   const currentActiveViewRef = useRef(state.activeView);
   /** Last org id after a successful fetch — used to reset lazy-loaded data on org / user context change */
   const lastOrgIdForLazyRef = useRef(undefined);
+  const currentOrganizationIdRef = useRef(state.currentOrganization?.id ?? null);
   const taskDupWatchSigRef = useRef('');
+
+  useEffect(() => {
+    currentOrganizationIdRef.current = state.currentOrganization?.id ?? null;
+  }, [state.currentOrganization?.id]);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -618,6 +658,23 @@ export const AppProvider = ({ children }) => {
       // Only fetch data if user is authenticated
       async function fetchInitialData() {
         const startTime = performance.now();
+
+        // Start projects fetch immediately so the UI can render while profile/org work continues.
+        const projectsFetchPromise = (async () => {
+          try {
+            const { data: projects, error: projectsError } = await supabaseClient
+              .from('projects')
+              .select(PROJECT_LIST_COLUMNS)
+              .order('updated_at', { ascending: false });
+            if (projectsError) throw projectsError;
+            return projects || [];
+          } catch (projectsErr) {
+            console.error('Error loading projects on boot:', projectsErr);
+            return appStateRefForLazy.current?.projects?.length
+              ? appStateRefForLazy.current.projects
+              : [];
+          }
+        })();
         
         try {
           // First, check if user has a profile
@@ -767,6 +824,71 @@ export const AppProvider = ({ children }) => {
           // Store the user's contact_id in global state so components can match against assignee_id
           if (contactId) {
             dispatch({ type: 'SET_USER_CONTACT_ID', payload: contactId });
+          }
+
+          // Returning-user fast path: existing profile + org, no pending invite/signup flows.
+          const {
+            isReturningUserFastPath,
+            runBackgroundBoot,
+          } = await import('../utils/bootBackground');
+
+          if (isReturningUserFastPath(profile, finalProfile, state.user)) {
+            const [profileWithOrgResult, orgResult, finalProjects] = await Promise.all([
+              supabaseClient
+                .from('profiles')
+                .select(`
+                  organization_id,
+                  role_id,
+                  account_intent,
+                  roles (
+                    id,
+                    name,
+                    permissions,
+                    is_system_role
+                  )
+                `)
+                .eq('id', state.user.id)
+                .single(),
+              supabaseClient
+                .from('organizations')
+                .select('*')
+                .eq('id', finalProfile.organization_id)
+                .single(),
+              projectsFetchPromise,
+            ]);
+
+            const profileWithOrg = profileWithOrgResult.data;
+            const organization = orgResult.data;
+
+            if (profileWithOrg && organization && !profileWithOrgResult.error && !orgResult.error) {
+              if (profileWithOrg.account_intent) {
+                dispatch({ type: 'SET_ACCOUNT_INTENT', payload: profileWithOrg.account_intent });
+              }
+              dispatch({ type: 'SET_ORGANIZATION', payload: organization });
+              dispatch({ type: 'SET_USER_ROLE', payload: profileWithOrg.roles ?? null });
+              dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: null });
+              dispatch({ type: 'SET_COLLABORATOR_STATUS', payload: { isCollaborator: false, projects: [] } });
+
+              lastOrgIdForLazyRef.current = organization.id ?? null;
+
+              dispatch({ type: 'SET_DATA', payload: {
+                projects: finalProjects || [],
+                activeView: currentActiveViewRef.current || state.activeView,
+              }});
+
+              runBackgroundBoot({
+                supabaseClient,
+                dispatch,
+                user: state.user,
+                organization,
+                finalProjects: finalProjects || [],
+                finalProfile,
+                profileWithOrg,
+                currentActiveView: currentActiveViewRef.current || state.activeView,
+              });
+
+              return;
+            }
           }
 
           if (state.user?.id) {
@@ -971,25 +1093,12 @@ export const AppProvider = ({ children }) => {
             dispatch({ type: 'RESET_LAZY_DATA' });
           }
 
-          // === PHASE 1: Critical Data (Projects) - Load first for fast UI render ===
-          let finalProjects = [];
-          try {
-            const { data: projects, error: projectsError } = await supabaseClient
-              .from('projects')
-              .select(PROJECT_LIST_COLUMNS)
-              .order('updated_at', { ascending: false });
-            if (projectsError) throw projectsError;
-            finalProjects = projects || [];
-            dispatch({ type: 'SET_DATA', payload: {
-              projects: finalProjects,
-              activeView: currentActiveViewRef.current || state.activeView,
-            }});
-          } catch (projectsErr) {
-            console.error('Error loading projects on boot:', projectsErr);
-            finalProjects = appStateRefForLazy.current?.projects?.length
-              ? appStateRefForLazy.current.projects
-              : [];
-          }
+          // === PHASE 1: Critical Data (Projects) - unblock UI as soon as list is ready ===
+          let finalProjects = await projectsFetchPromise;
+          dispatch({ type: 'SET_DATA', payload: {
+            projects: finalProjects,
+            activeView: currentActiveViewRef.current || state.activeView,
+          }});
           
           // === PHASE 2: Essential Secondary Data (NOT tasks/files/events - loaded on demand) ===
           const fetchActivityLog = async () => {
@@ -1024,272 +1133,205 @@ export const AppProvider = ({ children }) => {
           
           // Tasks, Files, and Calendar Events will be loaded on-demand when user navigates to those views
           
-          // === PHASE 3: Contacts (slower query) - Load last ===
-          const { getVirtualContacts, getProjectContactsForContacts } = await import('../utils/virtualContactsService');
+          // Contacts directory loads after shell paint (do not block on getVirtualContacts).
+          const { scheduleDeferredContactsLoad } = await import('../utils/bootBackground');
           const userProjectIds = finalProjects.map(p => p.id);
           const organizationId = organization?.id || null;
           
-          let finalContacts = [];
-          try {
-            finalContacts = await getVirtualContacts(
-              supabaseClient,
-              state.user.id,
-              organizationId,
-              userProjectIds
-            );
-            
-            // Populate project_contacts for internal members who might have project assignments
-            const internalContactIds = finalContacts
-              .filter(c => c.is_internal && c.id)
-              .map(c => c.id);
-            
-            if (internalContactIds.length > 0) {
-              const projectContacts = await getProjectContactsForContacts(supabaseClient, internalContactIds);
-              
-              // Attach project_contacts to internal contacts
-              finalContacts = finalContacts.map(contact => {
-                if (contact.is_internal) {
-                  const contactProjectContacts = projectContacts
-                    .filter(pc => pc.contact_id === contact.id)
-                    .map(pc => ({ project_id: pc.project_id }));
-                  
-                  // Merge with existing project_contacts from collaborators
-                  const existingProjectContacts = contact.project_contacts || [];
-                  const mergedProjectContacts = [...existingProjectContacts];
-                  
-                  contactProjectContacts.forEach(pc => {
-                    if (!mergedProjectContacts.some(epc => epc.project_id === pc.project_id)) {
-                      mergedProjectContacts.push(pc);
-                    }
-                  });
-                  
-                  return {
-                    ...contact,
-                    project_contacts: mergedProjectContacts
-                  };
-                }
-                return contact;
-              });
-            }
-          } catch (error) {
-            console.error('Error fetching virtual contacts:', error);
-            finalContacts = [];
-          }
-          
-          // Final dispatch with critical data. Do not set tasks/files/calendarEvents here — they are
-          // lazy-loaded (see lazyDataLoader). Including empty arrays would race with loadTasksIfNeeded
-          // and wipe the full task list after the dashboard briefly showed correct stats.
-          const endTime = performance.now();
-          
           dispatch({ type: 'SET_DATA', payload: { 
             projects: finalProjects, 
-            contacts: finalContacts, 
             activityLog: activityLog || [],
             activeView: currentActiveViewRef.current || state.activeView
           } });
+
+          scheduleDeferredContactsLoad({
+            supabaseClient,
+            dispatch,
+            userId: state.user.id,
+            organizationId,
+            projectIds: userProjectIds,
+          });
 
           lastOrgIdForLazyRef.current = orgIdForLazy;
           
           dispatch({ type: 'SET_USER_PREFERENCES', payload: userPreferences });
         } catch (error) {
           console.error('Error fetching initial data:', error);
+        } finally {
+          // Never leave the app on an infinite "Loading workspace..." spinner if boot partially fails.
+          dispatch({ type: 'SET_DATA', payload: {} });
         }
       }
     fetchInitialData();
+    }
+  }, [state.authLoading, state.user?.id]);
 
-    // --- REAL-TIME SUBSCRIPTIONS ---
-    // Note: Subscriptions will fail silently if realtime is not enabled for a table
-    // This is expected behavior - WebSocket errors can be ignored
-    const projectsSubscription = supabaseClient.channel('public:projects')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          dispatch({ type: 'ADD_PROJECT', payload: payload.new });
-        } else if (payload.eventType === 'UPDATE') {
-          dispatch({ type: 'UPDATE_PROJECT', payload: payload.new });
-        } else if (payload.eventType === 'DELETE') {
-          dispatch({ type: 'DELETE_PROJECT', payload: payload.old.id });
-        }
-      })
-      .subscribe((status) => {
-        // Silently handle subscription status - errors are expected if realtime is disabled
-      });
+  useEffect(() => {
+    if (state.authLoading || !state.user) return undefined;
 
-    const filesSubscription = supabaseClient.channel('public:files')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'files' }, (payload) => {
-        dispatch({ type: 'ADD_FILE', payload: payload.new });
-      })
-      .subscribe(() => {}); // Silently handle subscription status
+    let cancelled = false;
+    let channel = null;
 
-    const calendarEventsSubscription = supabaseClient.channel('public:calendar_events')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'calendar_events' }, (payload) => {
-        dispatch({ type: 'ADD_EVENT', payload: payload.new });
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calendar_events' }, (payload) => {
-        dispatch({ type: 'UPDATE_EVENT', payload: payload.new });
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'calendar_events' }, (payload) => {
-        dispatch({ type: 'DELETE_EVENT', payload: payload.old.id });
-      })
-      .subscribe(() => {}); // Silently handle subscription status
+    const timer = setTimeout(() => {
+      if (cancelled) return;
 
-    const contactsSubscription = supabaseClient.channel('public:contacts')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contacts' }, async (payload) => {
-        try {
-          // Re-fetch the contact with relationships to match initial load structure
-          const { data: fullContact } = await supabaseClient
-            .from('contacts')
-            .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
-            .eq('id', payload.new.id)
-            .single();
-          if (fullContact) {
-            dispatch({ type: 'ADD_CONTACT', payload: fullContact });
-          } else {
-            // Fallback to payload.new if re-fetch fails
-            dispatch({ type: 'ADD_CONTACT', payload: payload.new });
-          }
-        } catch (error) {
-          console.error('Error processing contact INSERT in subscription:', error);
-        }
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'contacts' }, async (payload) => {
-        try {
-          // Re-fetch the contact with relationships
-          const { data: fullContact } = await supabaseClient
-            .from('contacts')
-            .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
-            .eq('id', payload.new.id)
-            .single();
-          if (fullContact) {
-            dispatch({ type: 'UPDATE_CONTACT', payload: fullContact });
-          } else {
-            // Fallback to payload.new if re-fetch fails
-            dispatch({ type: 'UPDATE_CONTACT', payload: payload.new });
-          }
-        } catch (error) {
-          console.error('Error processing contact UPDATE in subscription:', error);
-        }
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'contacts' }, (payload) => {
-        dispatch({ type: 'DELETE_CONTACT', payload: payload.old.id });
-      })
-      .subscribe(() => {}); // Silently handle subscription status
-
-    const projectContactsSubscription = supabaseClient.channel('public:project_contacts')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_contacts' }, async (payload) => {
-        try {
-          dispatch({ type: 'ADD_PROJECT_CONTACT', payload: payload.new });
-
-          const contactId = payload.new?.contact_id;
-          if (!contactId) return;
-
-          const contactExists = state.contacts?.some((c) => c.id === contactId);
-          if (contactExists) return;
-
-          const { data: fullContact } = await supabaseClient
-            .from('contacts')
-            .select('id, name, email, role, phone, avatar_url, status, type, organization_id, company, trade')
-            .eq('id', contactId)
-            .single();
-
-          if (fullContact) {
-            dispatch({
-              type: 'ADD_CONTACT',
-              payload: {
-                ...fullContact,
-                project_contacts: [{
-                  project_id: payload.new.project_id,
-                  role: payload.new.role,
-                }],
-              },
-            });
-          }
-        } catch (error) {
-          console.error('Error processing project_contacts INSERT in subscription:', error);
-        }
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'project_contacts' }, (payload) => {
-        dispatch({ type: 'REMOVE_PROJECT_CONTACT', payload: payload.old });
-      })
-      .subscribe(() => {}); // Silently handle subscription status
-    
-    const tasksSubscription = supabaseClient.channel('public:tasks')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
-        try {
+      // Single multiplexed channel — avoids opening many parallel websocket subscriptions on boot.
+      channel = supabaseClient
+        .channel('app-db-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, (payload) => {
           if (payload.eventType === 'INSERT') {
-          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url, email, phone)').eq('id', payload.new.id).single();
-          if (updatedTask) dispatch({ type: 'ADD_TASK', payload: updatedTask });
-        } else if (payload.eventType === 'UPDATE') {
-          const { data: updatedTask } = await supabaseClient.from('tasks').select('*, contacts(name, avatar_url, email, phone)').eq('id', payload.new.id).single();
-            if (updatedTask) dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
+            dispatch({ type: 'ADD_PROJECT', payload: payload.new });
+          } else if (payload.eventType === 'UPDATE') {
+            dispatch({ type: 'UPDATE_PROJECT', payload: payload.new });
           } else if (payload.eventType === 'DELETE') {
-            dispatch({ type: 'DELETE_TASK', payload: payload.old.id });
+            dispatch({ type: 'DELETE_PROJECT', payload: payload.old.id });
           }
-        } catch (error) {
-          console.error('Error processing task change in subscription:', error);
-        }
-      })
-      .subscribe(() => {}); // Silently handle subscription status
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'files' }, (payload) => {
+          dispatch({ type: 'ADD_FILE', payload: payload.new });
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'calendar_events' }, (payload) => {
+          dispatch({ type: 'ADD_EVENT', payload: payload.new });
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'calendar_events' }, (payload) => {
+          dispatch({ type: 'UPDATE_EVENT', payload: payload.new });
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'calendar_events' }, (payload) => {
+          dispatch({ type: 'DELETE_EVENT', payload: payload.old.id });
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contacts' }, async (payload) => {
+          try {
+            const { data: fullContact } = await supabaseClient
+              .from('contacts')
+              .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
+              .eq('id', payload.new.id)
+              .single();
+            dispatch({ type: 'ADD_CONTACT', payload: fullContact || payload.new });
+          } catch (error) {
+            console.error('Error processing contact INSERT in subscription:', error);
+          }
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'contacts' }, async (payload) => {
+          try {
+            const { data: fullContact } = await supabaseClient
+              .from('contacts')
+              .select('*, project_contacts!fk_project_contacts_contact_id(project_id)')
+              .eq('id', payload.new.id)
+              .single();
+            dispatch({ type: 'UPDATE_CONTACT', payload: fullContact || payload.new });
+          } catch (error) {
+            console.error('Error processing contact UPDATE in subscription:', error);
+          }
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'contacts' }, (payload) => {
+          dispatch({ type: 'DELETE_CONTACT', payload: payload.old.id });
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_contacts' }, async (payload) => {
+          try {
+            dispatch({ type: 'ADD_PROJECT_CONTACT', payload: payload.new });
 
-    const userPreferencesSubscription = supabaseClient.channel('public:user_preferences')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_preferences' }, (payload) => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          dispatch({ type: 'SET_USER_PREFERENCES', payload: payload.new });
-        }
-      })
-      .subscribe(() => {}); // Silently handle subscription status
+            const contactId = payload.new?.contact_id;
+            if (!contactId) return;
 
-    const activityLogSubscription = supabaseClient.channel('public:activity_log')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_log' }, (payload) => {
-        dispatch({ type: 'ADD_ACTIVITY', payload: payload.new });
-      })
-      .subscribe(() => {}); // Silently handle subscription status
+            const liveState = appStateRefForLazy.current;
+            const contactExists = liveState?.contacts?.some((c) => c.id === contactId);
+            if (contactExists) return;
 
-    // CRITICAL: Subscribe to profiles table for organization member updates
-    // This ensures the UI updates immediately when users are added/removed/updated
-    const profilesSubscription = supabaseClient.channel('public:profiles')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async (payload) => {
-        try {
-          // Only process if it's related to the current organization
-          const profileOrgId = payload.new?.organization_id || payload.old?.organization_id;
-          if (profileOrgId && profileOrgId === state.currentOrganization?.id) {
-            // Refresh contacts list to include new org members
+            const { data: fullContact } = await supabaseClient
+              .from('contacts')
+              .select('id, name, email, role, phone, avatar_url, status, type, organization_id, company, trade')
+              .eq('id', contactId)
+              .single();
+
+            if (fullContact) {
+              dispatch({
+                type: 'ADD_CONTACT',
+                payload: {
+                  ...fullContact,
+                  project_contacts: [{
+                    project_id: payload.new.project_id,
+                    role: payload.new.role,
+                  }],
+                },
+              });
+            }
+          } catch (error) {
+            console.error('Error processing project_contacts INSERT in subscription:', error);
+          }
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'project_contacts' }, (payload) => {
+          dispatch({ type: 'REMOVE_PROJECT_CONTACT', payload: payload.old });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
+          try {
+            if (payload.eventType === 'INSERT') {
+              const { data: updatedTask } = await supabaseClient
+                .from('tasks')
+                .select('*, contacts(name, avatar_url, email, phone)')
+                .eq('id', payload.new.id)
+                .single();
+              if (updatedTask) dispatch({ type: 'ADD_TASK', payload: updatedTask });
+            } else if (payload.eventType === 'UPDATE') {
+              const { data: updatedTask } = await supabaseClient
+                .from('tasks')
+                .select('*, contacts(name, avatar_url, email, phone)')
+                .eq('id', payload.new.id)
+                .single();
+              if (updatedTask) dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
+            } else if (payload.eventType === 'DELETE') {
+              dispatch({ type: 'DELETE_TASK', payload: payload.old.id });
+            }
+          } catch (error) {
+            console.error('Error processing task change in subscription:', error);
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'user_preferences' }, (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            dispatch({ type: 'SET_USER_PREFERENCES', payload: payload.new });
+          }
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity_log' }, (payload) => {
+          dispatch({ type: 'ADD_ACTIVITY', payload: payload.new });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async (payload) => {
+          try {
+            const profileOrgId = payload.new?.organization_id || payload.old?.organization_id;
+            const organizationId = currentOrganizationIdRef.current;
+            if (!profileOrgId || profileOrgId !== organizationId) return;
+
+            const liveState = appStateRefForLazy.current;
             const { getVirtualContacts } = await import('../utils/virtualContactsService');
-            const projects = state.projects || [];
-            const userProjectIds = projects.map(p => p.id);
-            const organizationId = state.currentOrganization?.id || null;
+            const projects = liveState?.projects || [];
+            const userProjectIds = projects.map((p) => p.id);
 
             const updatedContacts = await getVirtualContacts(
               supabaseClient,
-              state.user?.id,
+              liveState?.user?.id,
               organizationId,
-              userProjectIds
+              userProjectIds,
             );
 
-            // Update contacts in state
-            dispatch({ type: 'SET_DATA', payload: {
-              contacts: updatedContacts,
-              activeView: state.activeView // Preserve current view
-            }});
+            dispatch({
+              type: 'SET_DATA',
+              payload: {
+                contacts: updatedContacts,
+                activeView: liveState?.activeView,
+              },
+            });
+          } catch (error) {
+            console.error('Error processing profiles subscription:', error);
           }
-        } catch (error) {
-          console.error('Error processing profiles subscription:', error);
-        }
-      })
-      .subscribe((status) => {
-        // Handle subscription status changes silently
-        if (status === 'SUBSCRIBED') {
-          // Successfully subscribed
-        } else if (status === 'CHANNEL_ERROR') {
-          // Channel error - realtime may not be enabled for this table
-          // Silently fail - this is expected if realtime is not enabled
-        }
-      });
+        })
+        .subscribe();
+    }, 300);
 
-      return () => {
-        // Clean up subscriptions
-        supabaseClient.removeAllChannels();
-      };
-    }
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (channel) {
+        supabaseClient.removeChannel(channel);
+      }
+    };
   }, [state.authLoading, state.user?.id, state.currentOrganization?.id]);
 
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>;
@@ -1326,14 +1368,21 @@ export const useLazyDataLoader = () => {
     [dispatch, getState],
   );
 
+  const loadMyDayTasksIfNeeded = useCallback(async () => {
+    const { loadMyDayTasksIfNeeded: loadMyDay } = await import('../utils/lazyDataLoader');
+    await loadMyDay(supabaseClient, dispatch, getState);
+  }, [dispatch, getState]);
+
   return {
     loadTasksIfNeeded,
     loadFilesIfNeeded,
     loadCalendarEventsIfNeeded,
     loadProjectTasks,
+    loadMyDayTasksIfNeeded,
     tasksLoaded: state.tasksLoaded,
     filesLoaded: state.filesLoaded,
-    calendarEventsLoaded: state.calendarEventsLoaded
+    calendarEventsLoaded: state.calendarEventsLoaded,
+    myDayTasksLoaded: state.myDayTasksLoaded,
   };
 };
 

@@ -1,12 +1,14 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildMinimalDigestEmail } from '../_shared/notificationEmailTemplates.ts'
+import { sendTransactionalEmail } from '../_shared/transactionalEmailLayout.ts'
 import { sendTwilioSms } from '../_shared/twilioSms.ts'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { createGuestShare } from '../_shared/guestShare.ts'
 import { gateOrSendOptInForSubstantiveSms, sendOptInIfEligible } from '../_shared/smsConsent.ts'
 import { withTransactionalSmsFooter } from '../_shared/smsCompliance.ts'
 import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
+import { assertHasFullTierAccess } from '../_shared/workspaceTier.ts'
 import {
   assertCanManageProject,
   assertOrgMember,
@@ -16,8 +18,6 @@ import {
 } from '../_shared/auth.ts'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
-const RESEND_FROM =
-  Deno.env.get('RESEND_FROM') ?? 'SiteWeave Notifications <notifications@siteweave.org>'
 
 function buildAppUrl(projectId?: string | null): string {
   const base = Deno.env.get('DESKTOP_APP_URL') || Deno.env.get('PUBLIC_APP_URL') || 'https://app.siteweave.org'
@@ -129,24 +129,16 @@ serve(async (req) => {
 
       let status: 'sent' | 'failed' = 'sent'
       let errorMessage: string | null = null
-      if (RESEND_API_KEY) {
-        const response = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${RESEND_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: RESEND_FROM,
-            to: [recipientEmail],
-            subject: `Task unlocked: ${successorTaskText || 'Task'}`,
-            html: template.html,
-            text: template.text,
-          }),
+      if (RESEND_API_KEY && recipientEmail) {
+        const sendResult = await sendTransactionalEmail({
+          to: recipientEmail,
+          subject: `Task unlocked: ${successorTaskText || 'Task'}`,
+          html: template.html,
+          text: template.text,
         })
-        if (!response.ok) {
+        if (!sendResult.success) {
           status = 'failed'
-          errorMessage = `Resend error (${response.status})`
+          errorMessage = sendResult.error || `Resend error`
         }
       }
 
@@ -295,6 +287,14 @@ serve(async (req) => {
       const reminderAuthz = await assertCanManageProject(supabase, user.id, projectId, corsHeaders)
       if (reminderAuthz instanceof Response) return reminderAuthz
 
+      const tierCheck = await assertHasFullTierAccess(supabase, organizationId)
+      if (!tierCheck.ok) {
+        return new Response(JSON.stringify({ error: tierCheck.error }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+
       const normalizedEmail = recipientEmail ? String(recipientEmail).trim().toLowerCase() : null
       const normalizedPhone = normalizeAssigneePhone(recipientPhone || '')
       const smsPhone = normalizedPhone.isValid ? normalizedPhone.e164 : null
@@ -415,22 +415,15 @@ serve(async (req) => {
       const sendSms = channels.includes('sms')
 
       if (RESEND_API_KEY && normalizedEmail && sendEmail) {
-        const response = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${RESEND_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: RESEND_FROM,
-            to: [normalizedEmail],
-            subject: `Reminder: ${taskText || 'Task'}`,
-            html: template.html,
-            text: template.text,
-          }),
+        const sendResult = await sendTransactionalEmail({
+          to: normalizedEmail,
+          subject: `Reminder: ${taskText || 'Task'}`,
+          html: template.html,
+          text: template.text,
+          replyTo: null,
         })
-        if (!response.ok) {
-          errorMessage = `Resend error (${response.status})`
+        if (!sendResult.success) {
+          errorMessage = sendResult.error || `Resend error`
         } else {
           emailDelivered = true
         }

@@ -8,22 +8,15 @@ const fnBase = () => {
   return `${url.replace(/\/$/, '')}/functions/v1/guest-task-share`
 }
 
-function parseDateOnly(iso) {
-  if (!iso) return null
-  const s = String(iso).slice(0, 10)
-  const [y, m, d] = s.split('-').map(Number)
-  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null
-  return new Date(Date.UTC(y, m - 1, d))
-}
+import { parseLocalDateOnly, formatLocalDateOnly } from '@siteweave/core-logic';
 
-/** Whole calendar days from today (local) until startDate (date-only) */
 function daysUntilOnSite(startDate) {
-  const start = parseDateOnly(startDate)
-  if (!start) return null
-  const now = new Date()
-  const utcToday = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
-  const utcStart = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())
-  return Math.round((utcStart - utcToday) / (24 * 60 * 60 * 1000))
+  const start = parseLocalDateOnly(startDate);
+  if (!start) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.round((start.getTime() - today.getTime()) / msPerDay);
 }
 
 /**
@@ -94,19 +87,12 @@ function cardBorderClass(task, notice, interactive) {
   return 'border-2 border-sky-300'
 }
 
-/** e.g. "May 12, 2026" for task cards */
 function formatLongMonthDate(iso) {
-  if (!iso) return ''
-  const d = parseDateOnly(iso)
-  if (!d) return ''
-  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+  return formatLocalDateOnly(iso, 'en-US', { month: 'long', year: 'numeric' });
 }
 
 function formatShortDate(iso) {
-  if (!iso) return ''
-  const d = parseDateOnly(iso)
-  if (!d) return ''
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+  return formatLocalDateOnly(iso, 'en-US', { month: 'short', year: 'numeric' });
 }
 
 function buildDepIndex(taskIds, dependencies) {

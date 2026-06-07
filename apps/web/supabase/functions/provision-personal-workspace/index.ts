@@ -131,6 +131,7 @@ serve(async (req) => {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
     const slug = `${baseSlug}-${user.id.slice(0, 8)}`
+    const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
 
     const { data: org, error: orgError } = await supabaseAdmin
       .from('organizations')
@@ -141,6 +142,7 @@ serve(async (req) => {
         max_projects: 2,
         max_guest_collaborators_per_project: 5,
         created_by_user_id: user.id,
+        trial_ends_at: trialEndsAt,
       })
       .select()
       .single()

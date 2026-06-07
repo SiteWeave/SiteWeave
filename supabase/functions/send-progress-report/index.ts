@@ -11,6 +11,7 @@ import {
   GenerateProgressReportError,
 } from '../_shared/generateProgressReportClient.ts'
 import { deepSanitizeForJson } from '../_shared/jsonSafe.ts'
+import { assertHasFullTierAccess } from '../_shared/workspaceTier.ts'
 
 // RESEND_API_KEY required to send. RESEND_FROM optional (verified domain in Resend). See docs/email-deliverability-resend.md (SPF/DKIM/DMARC).
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
@@ -139,6 +140,14 @@ serve(async (req) => {
           } 
         }
       )
+    }
+
+    const tierCheck = await assertHasFullTierAccess(supabase, schedule.organization_id)
+    if (!tierCheck.ok) {
+      return new Response(JSON.stringify({ error: tierCheck.error }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      })
     }
 
     // User-initiated calls: must belong to the schedule's org and have permission
@@ -583,7 +592,6 @@ function injectProgressReportExportButton(html: string, reportExportUrl: string)
 <div style="margin:0 0 22px;padding:16px;border:1px solid #dbeafe;border-radius:8px;background:#eff6ff;">
   <p style="margin:0 0 10px;font-size:13px;color:#1e3a8a;font-weight:600;">Need the PDF version?</p>
   <a href="${safeUrl}" target="_blank" rel="noreferrer" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 14px;border-radius:6px;">Open PDF report</a>
-  <p style="margin:10px 0 0;font-size:11px;color:#6b7280;">Opens a signed PDF file hosted in secure report storage.</p>
 </div>`
   const anchor = '<div style="padding:8px 0 20px;">'
   if (html.includes(anchor)) return html.replace(anchor, `${anchor}${cta}`)

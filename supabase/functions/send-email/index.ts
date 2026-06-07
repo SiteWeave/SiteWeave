@@ -11,6 +11,7 @@ import {
   requireUser,
 } from '../_shared/auth.ts'
 import { parseSendEmailBody } from '../_shared/schemas/sendEmail.ts'
+import { sendTransactionalEmail } from '../_shared/transactionalEmailLayout.ts'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const MAX_SUBJECT_LEN = 200
@@ -54,46 +55,24 @@ serve(async (req) => {
 
     // Option 1: Use Resend (recommended for production)
     if (RESEND_API_KEY) {
-      const resendResponse = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${RESEND_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: 'SiteWeave Notifications <notifications@siteweave.org>',
-          to: toArray,
-          subject: subject,
-          html: html,
-          text: text
-        })
+      const sendResult = await sendTransactionalEmail({
+        to: toArray,
+        subject,
+        html: html ?? '',
+        text: text ?? html ?? '',
       })
 
-      const resendData = await resendResponse.json()
-
-      if (!resendResponse.ok) {
-        console.error('Resend error:', resendData)
+      if (!sendResult.success) {
+        console.error('Resend error:', sendResult.error)
         return new Response(
-          JSON.stringify({ error: 'Failed to send email via Resend', details: resendData }),
-          { 
-            status: 500, 
-            headers: { 
-              'Content-Type': 'application/json',
-              ...corsHeaders
-            } 
-          }
+          JSON.stringify({ error: 'Failed to send email via Resend', details: sendResult.error }),
+          { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
         )
       }
 
       return new Response(
-        JSON.stringify({ success: true, id: resendData.id }),
-        { 
-          status: 200, 
-          headers: { 
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          } 
-        }
+        JSON.stringify({ success: true, id: sendResult.id }),
+        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
       )
     }
 

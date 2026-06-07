@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import { ensureDefaultRoles, ORG_ADMIN_PERMISSIONS } from '../_shared/ensureDefaultRoles.ts'
+import { buildOrgWelcomeEmail, sendTransactionalEmail } from '../_shared/transactionalEmailLayout.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -153,40 +154,23 @@ serve(async (req) => {
 
     console.log(`Setup URL: ${setupUrl}`)
 
-    // Optional: Send email here using Resend
-    const resendApiKey = Deno.env.get('RESEND_API_KEY')
-    if (resendApiKey) {
+    // Optional: Send welcome email via Resend
+    if (Deno.env.get('RESEND_API_KEY')) {
       try {
-        const emailResponse = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${resendApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            from: 'SiteWeave <onboarding@yourdomain.com>',
-            to: [ownerEmail],
-            subject: `Welcome to SiteWeave - ${companyName}`,
-            html: `
-              <h2>Welcome to SiteWeave!</h2>
-              <p>Your organization <strong>${companyName}</strong> has been created.</p>
-              <p>Click the link below to set your password and get started:</p>
-              <p><a href="${setupUrl}">${setupUrl}</a></p>
-              <p>This link will expire in 7 days.</p>
-              <br/>
-              <p>Best regards,<br/>The SiteWeave Team</p>
-            `
-          })
+        const template = buildOrgWelcomeEmail({ companyName, setupUrl })
+        const sendResult = await sendTransactionalEmail({
+          to: ownerEmail,
+          subject: template.subject,
+          html: template.html,
+          text: template.text,
         })
-
-        if (emailResponse.ok) {
-          console.log('Invitation email sent successfully')
+        if (sendResult.success) {
+          console.log('Welcome email sent successfully')
         } else {
-          console.error('Failed to send invitation email:', await emailResponse.text())
+          console.error('Failed to send welcome email:', sendResult.error)
         }
       } catch (emailError) {
         console.error('Error sending email:', emailError)
-        // Don't fail the whole request if email fails
       }
     }
 

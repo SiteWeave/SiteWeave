@@ -2,6 +2,7 @@ import i18n from '../i18n/config';
 import {
     computeWeightedProjectProgressPercent,
     groupPhasesByProjectId,
+    formatDateForDisplay,
 } from '@siteweave/core-logic';
 
 export const calculateProjectProgress = async (projectId, supabaseClient) => {
@@ -44,9 +45,13 @@ export const calculateProjectsProgressMap = async (projects, supabaseClient) => 
         const phasesByProject = groupPhasesByProjectId(allPhases || []);
         return projectList.reduce((acc, project) => {
             const phases = phasesByProject[project.id] || [];
-            acc[project.id] = phases.length > 0
-                ? computeWeightedProjectProgressPercent(phases, project?.due_date)
-                : 0;
+            acc[project.id] = {
+                progress: phases.length > 0
+                    ? computeWeightedProjectProgressPercent(phases, project?.due_date)
+                    : 0,
+                phaseCount: phases.length,
+                completeCount: phases.filter((p) => p.progress === 100).length,
+            };
             return acc;
         }, {});
     } catch (error) {
@@ -57,14 +62,15 @@ export const calculateProjectsProgressMap = async (projects, supabaseClient) => 
 
 export const formatDate = (dateString) => {
     if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString(i18n.language || 'en', { month: 'long', day: 'numeric', year: 'numeric' });
+    return formatDateForDisplay(dateString, i18n.language || 'en', {
+        month: 'long',
+        year: 'numeric',
+    });
 };
 
 export const formatDateShort = (dateString) => {
     if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString(i18n.language || 'en', { month: 'short', day: 'numeric', year: 'numeric' });
+    return formatDateForDisplay(dateString, i18n.language || 'en', { month: 'short' });
 };
 
 export { normalizeStatusDisplay, getLocalizedProjectStatus } from '@siteweave/i18n';

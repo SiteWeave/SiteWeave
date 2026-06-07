@@ -85,9 +85,11 @@ const DashboardStats = memo(function DashboardStats() {
     );
 
     useEffect(() => {
-        if (!state.user || state.authLoading) return;
+        if (!state.user || state.authLoading) return undefined;
+
         let cancelled = false;
-        (async () => {
+
+        const loadStats = async () => {
             setStatsLoading(true);
             const scope = { projectIds: accessibleProjectIds };
             const [completed, overdue] = await Promise.all([
@@ -105,8 +107,25 @@ const DashboardStats = memo(function DashboardStats() {
                 setOverdueCount(overdue);
                 setStatsLoading(false);
             }
-        })();
-        return () => { cancelled = true; };
+        };
+
+        if (typeof requestIdleCallback === 'function') {
+            const idleId = requestIdleCallback(() => {
+                if (!cancelled) loadStats();
+            }, { timeout: 500 });
+            return () => {
+                cancelled = true;
+                cancelIdleCallback(idleId);
+            };
+        }
+
+        const timerId = setTimeout(() => {
+            if (!cancelled) loadStats();
+        }, 100);
+        return () => {
+            cancelled = true;
+            clearTimeout(timerId);
+        };
     }, [state.user, state.authLoading, accessibleProjectIds]);
 
     useEffect(() => {

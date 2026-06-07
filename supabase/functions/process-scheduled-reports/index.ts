@@ -3,6 +3,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createServiceClient } from '../_shared/auth.ts'
+import { hasFullTierAccess } from '../_shared/workspaceTier.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -59,8 +60,18 @@ serve(async (req) => {
       )
     }
 
+    const scheduleOrgIds = [...new Set(dueSchedules.map((s) => s.organization_id).filter(Boolean))]
+    const { data: scheduleOrgs } = await supabase
+      .from('organizations')
+      .select('id, workspace_type, trial_ends_at')
+      .in('id', scheduleOrgIds)
+    const allowedScheduleOrgIds = new Set(
+      (scheduleOrgs || []).filter((o) => hasFullTierAccess(o)).map((o) => o.id),
+    )
+    const tierEligibleSchedules = dueSchedules.filter((s) => allowedScheduleOrgIds.has(s.organization_id))
+
     const settledResults = await Promise.allSettled(
-      dueSchedules.map((schedule) =>
+      tierEligibleSchedules.map((schedule) =>
         supabase.functions.invoke('send-progress-report', {
           body: { schedule_id: schedule.id, is_manual: false },
         })
@@ -71,7 +82,7 @@ serve(async (req) => {
     const errors = []
 
     for (const [i, result] of settledResults.entries()) {
-      const schedule = dueSchedules[i]
+      const schedule = tierEligibleSchedules[i]
       if (result.status === 'fulfilled' && !result.value.error) {
         results.push({
           schedule_id: schedule.id,

@@ -9,13 +9,16 @@ import AppShell from './layouts/AppShell'
 import LoginView from './views/LoginView'
 import SignUpView from './views/SignUpView'
 import ProjectInviteAcceptPage from './components/ProjectInviteAcceptPage'
-import ProjectWorkspaceView from './views/ProjectWorkspaceView'
-import DashboardView from './views/DashboardView'
-import CalendarView from './views/CalendarView'
-import TeamView from './views/TeamView'
-import TeamHubView from './views/TeamHubView'
-import SettingsView from './views/SettingsView'
 import NoOrganizationView from './views/NoOrganizationView'
+import {
+  DashboardView,
+  ProjectWorkspaceView,
+  CalendarView,
+  TeamHubView,
+  TeamView,
+  SettingsView,
+  LazyViewWrapper,
+} from './components/LazyViews'
 import { ROUTE_PATHS } from './config/routes'
 import { parseLegacyProjectQuery } from './utils/deepLinking'
 import { useSession } from './hooks/useSession'
@@ -78,7 +81,9 @@ function WorkspaceLayout({ session }) {
     setShowSetupWizard(false)
   }
 
-  if (state.authLoading || state.isLoading) {
+  const hasCachedShellData = (state.projects?.length ?? 0) > 0
+
+  if (state.authLoading || (state.isLoading && !hasCachedShellData)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <LoadingSpinner size="lg" text="Loading workspace..." />
@@ -86,7 +91,7 @@ function WorkspaceLayout({ session }) {
     )
   }
 
-  if (state.organizationLoading) {
+  if (state.organizationLoading && !hasCachedShellData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <LoadingSpinner size="lg" text="Checking organization access..." />
@@ -120,7 +125,9 @@ function ProtectedRoute({ session, children }) {
 function ProjectWorkspaceRoute({ routeTab }) {
   return (
     <RouteStateSync view="Projects">
-      <ProjectWorkspaceView routeTab={routeTab} />
+      <LazyViewWrapper>
+        <ProjectWorkspaceView routeTab={routeTab} />
+      </LazyViewWrapper>
     </RouteStateSync>
   )
 }
@@ -134,7 +141,9 @@ function DashboardRoute() {
 
   return (
     <RouteStateSync view="Dashboard">
-      <DashboardView />
+      <LazyViewWrapper>
+        <DashboardView />
+      </LazyViewWrapper>
     </RouteStateSync>
   )
 }
@@ -142,7 +151,9 @@ function DashboardRoute() {
 function ProjectsRoute() {
   return (
     <RouteStateSync view="Projects">
-      <DashboardView />
+      <LazyViewWrapper>
+        <DashboardView />
+      </LazyViewWrapper>
     </RouteStateSync>
   )
 }
@@ -280,11 +291,11 @@ export default function AppStandalone() {
         <Route path={ROUTE_PATHS.messages} element={<Navigate to={ROUTE_PATHS.tradePartners} replace />} />
         <Route path={ROUTE_PATHS.team} element={<Navigate to={ROUTE_PATHS.tradePartners} replace />} />
         <Route path={ROUTE_PATHS.teamDirectory} element={<Navigate to={ROUTE_PATHS.tradePartners} replace />} />
-        <Route path={ROUTE_PATHS.calendar} element={<RouteStateSync view="Calendar"><CalendarView /></RouteStateSync>} />
-        <Route path={ROUTE_PATHS.tradePartners} element={<TeamHubView />} />
-        <Route path={ROUTE_PATHS.organization} element={<RouteStateSync view="Organization"><TeamView /></RouteStateSync>} />
-        <Route path={ROUTE_PATHS.settings} element={<RouteStateSync view="Settings"><SettingsView /></RouteStateSync>} />
-        <Route path={ROUTE_PATHS.notifications} element={<RouteStateSync view="Settings"><SettingsView /></RouteStateSync>} />
+        <Route path={ROUTE_PATHS.calendar} element={<RouteStateSync view="Calendar"><LazyViewWrapper><CalendarView /></LazyViewWrapper></RouteStateSync>} />
+        <Route path={ROUTE_PATHS.tradePartners} element={<LazyViewWrapper><TeamHubView /></LazyViewWrapper>} />
+        <Route path={ROUTE_PATHS.organization} element={<RouteStateSync view="Organization"><LazyViewWrapper><TeamView /></LazyViewWrapper></RouteStateSync>} />
+        <Route path={ROUTE_PATHS.settings} element={<RouteStateSync view="Settings"><LazyViewWrapper><SettingsView /></LazyViewWrapper></RouteStateSync>} />
+        <Route path={ROUTE_PATHS.notifications} element={<RouteStateSync view="Settings"><LazyViewWrapper><SettingsView /></LazyViewWrapper></RouteStateSync>} />
       </Route>
     </Routes>
     </ToastProvider>

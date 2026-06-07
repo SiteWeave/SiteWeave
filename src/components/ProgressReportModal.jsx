@@ -27,8 +27,9 @@ function ProgressReportModal({ projectId, onClose }) {
   const { t, i18n } = useTranslation();
   const { state } = useAppContext();
   const { addToast } = useToast();
-  const { canExport } = useWorkspaceTier();
+  const { canExport, canProgressReports } = useWorkspaceTier();
   const [showExportUpgrade, setShowExportUpgrade] = useState(false);
+  const [showCommsUpgrade, setShowCommsUpgrade] = useState(false);
   const [schedules, setSchedules] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showBuilder, setShowBuilder] = useState(false);
@@ -63,11 +64,19 @@ function ProgressReportModal({ projectId, onClose }) {
   };
 
   const handleCreateNew = () => {
+    if (!canProgressReports) {
+      setShowCommsUpgrade(true);
+      return;
+    }
     setEditingScheduleId(null);
     setShowBuilder(true);
   };
 
   const handleEdit = (scheduleId) => {
+    if (!canProgressReports) {
+      setShowCommsUpgrade(true);
+      return;
+    }
     setEditingScheduleId(scheduleId);
     setShowBuilder(true);
   };
@@ -104,6 +113,10 @@ function ProgressReportModal({ projectId, onClose }) {
   };
 
   const handleSendNow = async (scheduleId) => {
+    if (!canProgressReports) {
+      setShowCommsUpgrade(true);
+      return;
+    }
     try {
       const result = await sendManualReport(supabaseClient, scheduleId);
       addToast(t('progressReports.sent_success'), 'success');
@@ -403,6 +416,11 @@ function ProgressReportModal({ projectId, onClose }) {
       isOpen={showExportUpgrade}
       onClose={() => setShowExportUpgrade(false)}
       feature="exports"
+    />
+    <UpgradeRequiredModal
+      isOpen={showCommsUpgrade}
+      onClose={() => setShowCommsUpgrade(false)}
+      feature="progress_reports"
     />
     </>
   );

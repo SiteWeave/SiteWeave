@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { useAppContext, supabaseClient } from '../context/AppContext';
+import { useAppContext, supabaseClient, useLazyDataLoader } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
 import ProjectModal from '../components/ProjectModal';
@@ -26,11 +26,13 @@ import {
   ensureOrganizationForWrites,
   isOrganizationRlsError,
 } from '../utils/organizationContext';
+import { calculateProjectsProgressMap } from '../utils/projectHelpers';
 
 function DashboardView() {
     const { t } = useTranslation();
     const navigate = useNavigate();
     const { state, dispatch } = useAppContext();
+    const { loadMyDayTasksIfNeeded } = useLazyDataLoader();
     const { addToast } = useToast();
     const [showModal, setShowModal] = useState(false);
     const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -39,6 +41,50 @@ function DashboardView() {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [projectToDelete, setProjectToDelete] = useState(null);
     const [viewType, setViewType] = useState('card'); // 'card', 'list', or 'board'
+    const [cardProgressMap, setCardProgressMap] = useState({});
+    const [cardProgressLoading, setCardProgressLoading] = useState(false);
+    const projectIdsKey = useMemo(
+        () => (state.projects || []).map((p) => p.id).join(','),
+        [state.projects],
+    );
+
+    useEffect(() => {
+        if (viewType !== 'card' || !state.projects?.length) {
+            setCardProgressMap({});
+            setCardProgressLoading(false);
+            return undefined;
+        }
+
+        let cancelled = false;
+        setCardProgressLoading(true);
+
+        calculateProjectsProgressMap(state.projects, supabaseClient)
+            .then((map) => {
+                if (!cancelled) {
+                    setCardProgressMap(map);
+                    setCardProgressLoading(false);
+                }
+            })
+            .catch((error) => {
+                console.error('Error loading card progress map:', error);
+                if (!cancelled) setCardProgressLoading(false);
+            });
+
+        return () => { cancelled = true; };
+    }, [viewType, projectIdsKey, state.projects]);
+
+    useEffect(() => {
+        if (!state.user || state.authLoading || !state.userContactId) return undefined;
+
+        const run = () => loadMyDayTasksIfNeeded();
+        if (typeof requestIdleCallback === 'function') {
+            const idleId = requestIdleCallback(run, { timeout: 800 });
+            return () => cancelIdleCallback(idleId);
+        }
+        const timerId = setTimeout(run, 150);
+        return () => clearTimeout(timerId);
+    }, [state.user, state.authLoading, state.userContactId, loadMyDayTasksIfNeeded]);
+
     const [showCreateFromTemplateModal, setShowCreateFromTemplateModal] = useState(false);
     const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
@@ -496,6 +542,12 @@ function DashboardView() {
                                                 project={p} 
                                                 onEdit={handleEditProject}
                                                 onDelete={handleDeleteProject}
+                                                progressData={{
+                                                    loading: cardProgressLoading,
+                                                    progress: cardProgressMap[p.id]?.progress ?? 0,
+                                                    phaseCount: cardProgressMap[p.id]?.phaseCount ?? 0,
+                                                    completeCount: cardProgressMap[p.id]?.completeCount ?? 0,
+                                                }}
                                             />
                                         </div>
                                     ))}

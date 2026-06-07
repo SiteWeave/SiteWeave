@@ -2,15 +2,15 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
 import { createServiceClient, requireCronOrServiceRole } from '../_shared/auth.ts'
 import { buildMinimalDigestEmail, formatDigestDueDate } from '../_shared/notificationEmailTemplates.ts'
+import { sendTransactionalEmail } from '../_shared/transactionalEmailLayout.ts'
 import { sendTwilioSms } from '../_shared/twilioSms.ts'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { createGuestShare } from '../_shared/guestShare.ts'
 import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
 import { withTransactionalSmsFooter } from '../_shared/smsCompliance.ts'
+import { hasFullTierAccess } from '../_shared/workspaceTier.ts'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
-const RESEND_FROM =
-  Deno.env.get('RESEND_FROM') ?? 'SiteWeave Notifications <notifications@siteweave.org>'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -134,12 +134,24 @@ serve(async (req) => {
     const { data: orgRows } = await supabase
       .from('organizations')
       .select(
-        'id, name, task_start_notifications_enabled, task_start_notification_lead_days, notification_email_batching_enabled, progress_report_timezone',
+        'id, name, workspace_type, trial_ends_at, task_start_notifications_enabled, task_start_notification_lead_days, notification_email_batching_enabled, progress_report_timezone',
       )
       .in('id', organizationIds)
 
     const orgById = new Map((orgRows || []).map((row: any) => [row.id, row]))
-    const taskIds = taskList.map((t: any) => t.id)
+    const tierEligibleTasks = taskList.filter((task: any) => {
+      const org = orgById.get(task.organization_id)
+      return org && hasFullTierAccess(org)
+    })
+
+    if (tierEligibleTasks.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, processed: 0, sent: 0, skipped: taskList.length, failed: 0 }),
+        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+      )
+    }
+
+    const taskIds = tierEligibleTasks.map((t: any) => t.id)
     const { data: existingRows } = await supabase
       .from('task_notification_history')
       .select('task_id, lead_days')
@@ -154,7 +166,7 @@ serve(async (req) => {
 
     const groupedNotifications = new Map<string, any>()
 
-    for (const task of taskList) {
+    for (const task of tierEligibleTasks) {
       const startDate = new Date(task.start_date)
       startDate.setHours(0, 0, 0, 0)
       const daysUntilStart = Math.floor((startDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
@@ -279,23 +291,15 @@ serve(async (req) => {
       let smsDelivered = false
 
       if (RESEND_API_KEY && bucket.recipientEmail) {
-        const resendResponse = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${RESEND_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: RESEND_FROM,
-            to: [bucket.recipientEmail],
-            subject,
-            html: template.html,
-            text: template.text,
-          }),
+        const sendResult = await sendTransactionalEmail({
+          to: bucket.recipientEmail,
+          subject,
+          html: template.html,
+          text: template.text,
         })
-        if (!resendResponse.ok) {
+        if (!sendResult.success) {
           status = 'failed'
-          errorMessage = `Resend error (${resendResponse.status})`
+          errorMessage = sendResult.error || `Resend error`
         } else {
           emailDelivered = true
         }

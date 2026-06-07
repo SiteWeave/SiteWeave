@@ -85,9 +85,8 @@ function MyDaySidebar() {
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('myDay.todo_section', { count: myTodos.length })}</h3>
                 <div className="space-y-2.5">
                     {myTodos.length > 0 ? myTodos.map(task => (
-                        <div key={task.id} className="flex items-center gap-2.5 text-sm text-gray-700">
-                            <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                            <span className="flex-1 ui-clamp-2">{task.text}</span>
+                        <div key={task.id} className="text-sm text-gray-700">
+                            <span className="ui-clamp-2">{task.text}</span>
                         </div>
                     )) : <p className="text-sm text-center py-3 text-gray-400">{t('myDay.no_tasks_assigned')}</p>}
                 </div>

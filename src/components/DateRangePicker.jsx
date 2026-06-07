@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/style.css';
 import { localDateIso } from '../utils/dateHelpers';
@@ -26,8 +27,11 @@ function formatRangeLabel(startIso, endIso, locale) {
   return '';
 }
 
+const VIEWPORT_PADDING = 8;
+
 /**
  * Single trigger + popover calendar for selecting a start/end range (YYYY-MM-DD).
+ * Popover renders in a portal with fixed positioning so it is not clipped by overflow containers.
  */
 function DateRangePicker({
   startValue,
@@ -43,7 +47,10 @@ function DateRangePicker({
 }) {
   const [open, setOpen] = useState(false);
   const [numberOfMonths, setNumberOfMonths] = useState(1);
+  const [popoverStyle, setPopoverStyle] = useState(null);
   const rootRef = useRef(null);
+  const triggerRef = useRef(null);
+  const popoverRef = useRef(null);
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)');
@@ -63,12 +70,64 @@ function DateRangePicker({
 
   const defaultMonth = selected?.from || selected?.to || new Date();
 
+  const updatePopoverPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const popoverEl = popoverRef.current;
+    const popoverWidth = popoverEl?.offsetWidth ?? (compact || size === 'sm' ? 280 : 320);
+    const popoverHeight = popoverEl?.offsetHeight ?? 360;
+    const gap = 6;
+
+    const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_PADDING;
+    const spaceAbove = rect.top - VIEWPORT_PADDING;
+    const openAbove = spaceBelow < popoverHeight && spaceAbove > spaceBelow;
+
+    let top = openAbove ? rect.top - popoverHeight - gap : rect.bottom + gap;
+    let left = rect.left;
+
+    if (left + popoverWidth > window.innerWidth - VIEWPORT_PADDING) {
+      left = window.innerWidth - popoverWidth - VIEWPORT_PADDING;
+    }
+    left = Math.max(VIEWPORT_PADDING, left);
+    top = Math.max(
+      VIEWPORT_PADDING,
+      Math.min(top, window.innerHeight - popoverHeight - VIEWPORT_PADDING),
+    );
+
+    setPopoverStyle({
+      position: 'fixed',
+      top: `${top}px`,
+      left: `${left}px`,
+      width: compact || size === 'sm' ? `${Math.min(popoverWidth, window.innerWidth - VIEWPORT_PADDING * 2)}px` : undefined,
+      zIndex: elevated ? 60 : 50,
+    });
+  }, [compact, elevated, size]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    updatePopoverPosition();
+    const raf = requestAnimationFrame(updatePopoverPosition);
+
+    const onScrollOrResize = () => updatePopoverPosition();
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [open, updatePopoverPosition, numberOfMonths]);
+
   useEffect(() => {
     if (!open) return undefined;
     const onDoc = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) {
-        setOpen(false);
-      }
+      if (rootRef.current?.contains(e.target)) return;
+      if (popoverRef.current?.contains(e.target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
@@ -101,7 +160,96 @@ function DateRangePicker({
   };
 
   const sm = size === 'sm';
-  const popoverZ = elevated ? 'z-[60]' : 'z-30';
+
+  const popoverClassName = `overflow-visible border border-gray-200 bg-white shadow-xl ${
+    sm
+      ? 'min-w-[240px] max-w-[min(100vw-1rem,320px)] rounded-lg p-2'
+      : compact
+        ? 'min-w-[280px] rounded-xl p-2.5'
+        : 'max-w-[calc(100vw-2rem)] rounded-xl p-3'
+  }`;
+
+  const popoverContent = open ? (
+    <div
+      ref={popoverRef}
+      className={popoverClassName}
+      role="dialog"
+      aria-label="Choose date range"
+      style={{ ...pickerStyle, ...popoverStyle }}
+    >
+      {presets ? (
+        <div
+          className={
+            sm
+              ? 'mb-2 flex flex-wrap gap-1.5 border-b border-gray-100 pb-2'
+              : 'mb-3 flex flex-wrap gap-2 border-b border-gray-100 pb-3'
+          }
+        >
+          {presets}
+        </div>
+      ) : null}
+      <div
+        className={`overflow-visible ${compact && !sm ? 'overflow-x-auto pr-0.5' : ''} ${sm ? '' : 'overflow-x-auto'}`}
+      >
+        {sm ? (
+          <div className="relative w-full" style={{ minHeight: '240px' }}>
+            <div
+              className="origin-top-left"
+              style={{
+                transform: 'scale(0.82)',
+                width: '121.95%',
+                marginBottom: '-12%',
+              }}
+            >
+              <DayPicker
+                mode="range"
+                selected={selected}
+                onSelect={handleSelect}
+                defaultMonth={defaultMonth}
+                numberOfMonths={numberOfMonths}
+                captionLayout="dropdown"
+                fromYear={year - 3}
+                toYear={year + 12}
+              />
+            </div>
+          </div>
+        ) : (
+          <DayPicker
+            mode="range"
+            selected={selected}
+            onSelect={handleSelect}
+            defaultMonth={defaultMonth}
+            numberOfMonths={numberOfMonths}
+            captionLayout="dropdown"
+            fromYear={year - 3}
+            toYear={year + 12}
+          />
+        )}
+      </div>
+      <div
+        className={
+          sm
+            ? 'mt-2 flex justify-end border-t border-gray-100 pt-2'
+            : 'mt-3 flex justify-end border-t border-gray-100 pt-3'
+        }
+      >
+        <button
+          type="button"
+          onClick={() => {
+            onChange({ start: '', end: '' });
+            setOpen(false);
+          }}
+          className={
+            sm
+              ? 'text-[10px] font-medium text-gray-500 hover:text-gray-800'
+              : 'text-xs font-medium text-gray-500 hover:text-gray-800'
+          }
+        >
+          Clear dates
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <div className={`relative ${sm ? 'text-[11px]' : ''} ${className}`} ref={rootRef}>
@@ -118,6 +266,7 @@ function DateRangePicker({
         </label>
       ) : null}
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -143,92 +292,9 @@ function DateRangePicker({
         </svg>
       </button>
 
-      {open && (
-        <div
-          className={`absolute top-full ${popoverZ} overflow-visible border border-gray-200 bg-white shadow-xl ${
-            sm
-              ? 'left-0 mt-1.5 w-full min-w-[240px] max-w-[min(100vw-1rem,320px)] rounded-lg p-2'
-              : compact
-                ? 'left-0 mt-2 w-full min-w-0 rounded-xl p-2.5'
-                : 'left-0 mt-2 max-w-[calc(100vw-2rem)] rounded-xl p-3'
-          }`}
-          role="dialog"
-          aria-label="Choose date range"
-          style={pickerStyle}
-        >
-          {presets ? (
-            <div
-              className={
-                sm
-                  ? 'mb-2 flex flex-wrap gap-1.5 border-b border-gray-100 pb-2'
-                  : 'mb-3 flex flex-wrap gap-2 border-b border-gray-100 pb-3'
-              }
-            >
-              {presets}
-            </div>
-          ) : null}
-          <div
-            className={`overflow-visible ${compact && !sm ? 'overflow-x-auto pr-0.5' : ''} ${sm ? '' : 'overflow-x-auto'}`}
-          >
-            {sm ? (
-              <div className="relative w-full" style={{ minHeight: '240px' }}>
-                <div
-                  className="origin-top-left"
-                  style={{
-                    transform: 'scale(0.82)',
-                    width: '121.95%',
-                    marginBottom: '-12%',
-                  }}
-                >
-                  <DayPicker
-                    mode="range"
-                    selected={selected}
-                    onSelect={handleSelect}
-                    defaultMonth={defaultMonth}
-                    numberOfMonths={numberOfMonths}
-                    captionLayout="dropdown"
-                    fromYear={year - 3}
-                    toYear={year + 12}
-                  />
-                </div>
-              </div>
-            ) : (
-              <DayPicker
-                mode="range"
-                selected={selected}
-                onSelect={handleSelect}
-                defaultMonth={defaultMonth}
-                numberOfMonths={numberOfMonths}
-                captionLayout="dropdown"
-                fromYear={year - 3}
-                toYear={year + 12}
-              />
-            )}
-          </div>
-          <div
-            className={
-              sm
-                ? 'mt-2 flex justify-end border-t border-gray-100 pt-2'
-                : 'mt-3 flex justify-end border-t border-gray-100 pt-3'
-            }
-          >
-            <button
-              type="button"
-              onClick={() => {
-                onChange({ start: '', end: '' });
-                setOpen(false);
-              }}
-              className={
-                sm
-                  ? 'text-[10px] font-medium text-gray-500 hover:text-gray-800'
-                  : 'text-xs font-medium text-gray-500 hover:text-gray-800'
-              }
-            >
-              Clear dates
-            </button>
-          </div>
-        </div>
-      )}
+      {typeof document !== 'undefined' && popoverContent
+        ? createPortal(popoverContent, document.body)
+        : null}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { useAppContext } from '../context/AppContext'
 import { useToast } from '../context/ToastContext'
 import Avatar from '../components/Avatar'
 import Icon from '../components/Icon'
+import TrialCountdownBanner from '../components/TrialCountdownBanner'
 
 export default function AppShell({ session }) {
   const { state, dispatch } = useAppContext()
@@ -71,6 +72,7 @@ export default function AppShell({ session }) {
                 <p className="text-sm font-semibold text-slate-800 mt-1 truncate">
                   {state.currentOrganization.name}
                 </p>
+                <TrialCountdownBanner className="mt-2" />
               </>
             ) : state.isProjectCollaborator ? (
               <>

@@ -414,24 +414,12 @@ function BuildPath({ project, phaseControl = null, onPhasesChange, embedded = fa
 
 export function PhaseModal({ phase, onClose, onSave, isLoading }) {
     const { t } = useTranslation();
-    const [formData, setFormData] = useState({
-        name: phase?.name || '',
-        start_date: phase?.start_date || '',
-        end_date: phase?.end_date || '',
-    });
+    const [name, setName] = useState(phase?.name || '');
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        onSave({
-            ...formData,
-            start_date: formData.start_date || null,
-            end_date: formData.end_date || null,
-        });
+        onSave({ name: name.trim() });
         onClose();
-    };
-
-    const applyScheduleRange = (start, end) => {
-        setFormData((prev) => ({ ...prev, start_date: start, end_date: end }));
     };
 
     return (
@@ -452,21 +440,12 @@ export function PhaseModal({ phase, onClose, onSave, isLoading }) {
                         </label>
                         <input
                             type="text"
-                            value={formData.name}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                             required
                         />
                     </div>
-                    <DateRangePicker
-                        label={t('tasks.schedule')}
-                        startValue={formData.start_date}
-                        endValue={formData.end_date}
-                        onChange={({ start, end }) => applyScheduleRange(start, end)}
-                        presets={
-                            <ScheduleDatePresets t={t} onSelectRange={applyScheduleRange} />
-                        }
-                    />
                     <div className="flex justify-end gap-3">
                         <button
                             type="button"

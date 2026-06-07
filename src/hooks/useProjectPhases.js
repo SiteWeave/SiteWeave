@@ -5,61 +5,77 @@ import { useToast } from '../context/ToastContext';
 import { logPhaseProgressChange } from '../utils/activityLogger';
 import {
     calculateOverallPhaseProgress,
-    DEFAULT_CONSTRUCTION_PHASES,
-    DEFAULT_CONSTRUCTION_PHASE_NAMES,
+    DEFAULT_PHASE_TEMPLATE,
+    DEFAULT_PHASE_TEMPLATE_NAMES,
 } from '../utils/projectPhasesUtils';
 
+/** Dedupe concurrent phase fetches for the same project across hook instances. */
+const phasesInflight = new Map();
+
 /**
- * Shared project phase CRUD + loading for Tasks tab and BuildPath.
- * @param {string|null} projectId
- * @param {{ id: string, name?: string, organization_id?: string }|null} projectMeta — for activity logging
+ * Shared project phase CRUD + loading for Tasks tab, BuildPath, and sidebar.
+ * Phases are cached in AppContext per projectId so multiple consumers share one fetch.
  */
 export function useProjectPhases(projectId, projectMeta = null) {
     const { t } = useTranslation();
-    const { state } = useAppContext();
+    const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
-    const [phases, setPhases] = useState([]);
-    const [loading, setLoading] = useState(false);
     const [isMutating, setIsMutating] = useState(false);
 
-    const refresh = useCallback(async () => {
-        if (!projectId) {
-            setPhases([]);
-            return [];
+    const phases = projectId ? (state.projectPhasesByProjectId[projectId] ?? []) : [];
+    const loading = projectId ? (state.projectPhasesLoadingByProjectId[projectId] ?? false) : false;
+
+    const refresh = useCallback(async (force = false) => {
+        if (!projectId) return [];
+
+        if (!force && Object.prototype.hasOwnProperty.call(state.projectPhasesByProjectId, projectId)) {
+            return state.projectPhasesByProjectId[projectId];
         }
-        setLoading(true);
-        try {
-            const { data, error } = await supabaseClient
-                .from('project_phases')
-                .select('*')
-                .eq('project_id', projectId)
-                .order('order', { ascending: true });
-            if (error) {
-                console.error('Error loading project phases:', error);
-                setPhases([]);
+
+        if (phasesInflight.has(projectId)) return phasesInflight.get(projectId);
+
+        dispatch({ type: 'SET_PROJECT_PHASES_LOADING', payload: { projectId, loading: true } });
+
+        const promise = (async () => {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('project_phases')
+                    .select('*')
+                    .eq('project_id', projectId)
+                    .order('order', { ascending: true });
+                if (error) {
+                    console.error('Error loading project phases:', error);
+                    dispatch({ type: 'SET_PROJECT_PHASES', payload: { projectId, phases: [] } });
+                    return [];
+                }
+                const rows = data || [];
+                dispatch({ type: 'SET_PROJECT_PHASES', payload: { projectId, phases: rows } });
+                return rows;
+            } catch (err) {
+                console.error('Error loading project phases:', err);
+                dispatch({ type: 'SET_PROJECT_PHASES', payload: { projectId, phases: [] } });
                 return [];
+            } finally {
+                phasesInflight.delete(projectId);
             }
-            const rows = data || [];
-            setPhases(rows);
-            return rows;
-        } catch (err) {
-            console.error('Error loading project phases:', err);
-            setPhases([]);
-            return [];
-        } finally {
-            setLoading(false);
-        }
-    }, [projectId]);
+        })();
+
+        phasesInflight.set(projectId, promise);
+        return promise;
+    }, [projectId, dispatch, state.projectPhasesByProjectId]);
 
     useEffect(() => {
+        if (!projectId) return;
+        if (Object.prototype.hasOwnProperty.call(state.projectPhasesByProjectId, projectId)) return;
         refresh();
-    }, [refresh]);
+    }, [projectId, state.projectPhasesByProjectId, refresh]);
 
     const overallProgress = useMemo(() => calculateOverallPhaseProgress(phases), [phases]);
 
     const notifyChange = useCallback((nextPhases) => {
-        setPhases(nextPhases);
-    }, []);
+        if (!projectId) return;
+        dispatch({ type: 'SET_PROJECT_PHASES', payload: { projectId, phases: nextPhases } });
+    }, [projectId, dispatch]);
 
     const addPhase = useCallback(
         async (phaseData, { optimistic = false } = {}) => {
@@ -85,12 +101,12 @@ export function useProjectPhases(projectId, projectMeta = null) {
                     .select()
                     .single();
                 if (error) {
-                    if (rollback) setPhases(rollback);
+                    if (rollback) notifyChange(rollback);
                     addToast(t('toast.error_adding_phase', { message: error.message }), 'error');
                     return null;
                 }
-                setPhases((prev) => [
-                    ...prev.filter((p) => !String(p.id).startsWith('temp-phase-')),
+                notifyChange([
+                    ...phases.filter((p) => !String(p.id).startsWith('temp-phase-')),
                     data,
                 ]);
                 addToast(t('toast.phase_added_successfully'), 'success');
@@ -134,18 +150,16 @@ export function useProjectPhases(projectId, projectMeta = null) {
                     return false;
                 }
 
-                const next = phases.map((p) => (p.id === phaseId ? { ...p, ...updates } : p));
-                notifyChange(next);
+                notifyChange(phases.map((p) => (p.id === phaseId ? { ...p, ...updates } : p)));
 
                 if (
-                    updates.progress !== undefined &&
-                    updates.progress !== oldProgress &&
-                    state.user &&
-                    projectMeta
+                    updates.progress !== undefined
+                    && updates.progress !== oldProgress
+                    && state.user
+                    && projectMeta
                 ) {
-                    const updatedPhase = { ...currentPhase, ...updates };
                     await logPhaseProgressChange(
-                        updatedPhase,
+                        { ...currentPhase, ...updates },
                         state.user,
                         projectMeta.id,
                         projectMeta.name,
@@ -155,9 +169,7 @@ export function useProjectPhases(projectId, projectMeta = null) {
                     );
                 }
 
-                if (!silent) {
-                    addToast(t('toast.phase_updated_successfully'), 'success');
-                }
+                if (!silent) addToast(t('toast.phase_updated_successfully'), 'success');
                 return true;
             } catch (err) {
                 addToast(t('toast.error_updating_phase', { message: err.message }), 'error');
@@ -206,28 +218,28 @@ export function useProjectPhases(projectId, projectMeta = null) {
             notifyChange(updatedPhases);
             setIsMutating(true);
             try {
-                const updatePromises = updatedPhases.map((phase) =>
-                    supabaseClient
-                        .from('project_phases')
-                        .update({ order: phase.order })
-                        .eq('id', phase.id),
+                const results = await Promise.all(
+                    updatedPhases.map((phase) =>
+                        supabaseClient
+                            .from('project_phases')
+                            .update({ order: phase.order })
+                            .eq('id', phase.id),
+                    ),
                 );
-                const results = await Promise.all(updatePromises);
-                const hasError = results.some((result) => result.error);
-                if (hasError) {
+                if (results.some((result) => result.error)) {
                     const errorMessages = results
                         .filter((r) => r.error)
                         .map((r) => r.error.message)
                         .join(', ');
                     addToast(t('toast.error_reordering_phases', { message: errorMessages }), 'error');
-                    await refresh();
+                    await refresh(true);
                     return false;
                 }
                 addToast(t('toast.phases_reordered_successfully'), 'success');
                 return true;
             } catch (err) {
                 addToast(t('toast.error_reordering_phases', { message: err.message }), 'error');
-                await refresh();
+                await refresh(true);
                 return false;
             } finally {
                 setIsMutating(false);
@@ -244,7 +256,7 @@ export function useProjectPhases(projectId, projectMeta = null) {
         }
         setIsMutating(true);
         try {
-            const rows = DEFAULT_CONSTRUCTION_PHASES.map((phase) => ({
+            const rows = DEFAULT_PHASE_TEMPLATE.map((phase) => ({
                 ...phase,
                 project_id: projectId,
             }));
@@ -259,8 +271,8 @@ export function useProjectPhases(projectId, projectMeta = null) {
             const inserted = data || [];
             notifyChange(inserted);
             addToast(
-                t('projectDetail.construction_template_applied', {
-                    names: DEFAULT_CONSTRUCTION_PHASE_NAMES.join(', '),
+                t('projectDetail.phase_template_applied', {
+                    names: DEFAULT_PHASE_TEMPLATE_NAMES.join(', '),
                 }),
                 'success',
             );
@@ -286,7 +298,7 @@ export function useProjectPhases(projectId, projectMeta = null) {
         deletePhase,
         reorderPhases,
         seedDefaultPhases,
-        DEFAULT_CONSTRUCTION_PHASE_NAMES,
+        DEFAULT_PHASE_TEMPLATE_NAMES,
     };
 }
 

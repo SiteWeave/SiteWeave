@@ -12,6 +12,7 @@ import {
     updateTaskPhoto,
     uploadTaskPhotoSet,
     normalizeAssigneePhone,
+    TASK_LIST_COLUMNS,
 } from '@siteweave/core-logic';
 import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
@@ -70,6 +71,7 @@ import { useStreamUnread } from '../hooks/useStreamUnread';
 import { useIssuesUnread } from '../hooks/useIssuesUnread';
 import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
 import Icon from '../components/Icon';
+import { formatLocalDateOnly } from '../utils/dateHelpers';
 import { SkeletonList } from '../components/ui/Skeleton';
 
 function ProjectDetailsView({ routeTab, onTabChange } = {}) {
@@ -81,7 +83,11 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const projects = state.projects || [];
     const tasksState = state.tasks || [];
     const contacts = state.contacts || [];
-    const project = projects.find(p => p.id === state.selectedProjectId);
+    const project = useMemo(
+        () => projects.find((p) => String(p.id) === String(state.selectedProjectId)),
+        [projects, state.selectedProjectId],
+    );
+    const [projectHydrating, setProjectHydrating] = useState(false);
 
     const organizationDisplayName = useMemo(() => {
         if (!project?.organization_id) return t('projectDetail.your_team');
@@ -104,6 +110,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [pingingTaskId, setPingingTaskId] = useState(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [taskToDelete, setTaskToDelete] = useState(null);
+    const [showPhaseDeleteConfirm, setShowPhaseDeleteConfirm] = useState(false);
+    const [phaseToDelete, setPhaseToDelete] = useState(null);
     const [selectedTasks, setSelectedTasks] = useState([]);
     const [taskFilter, setTaskFilter] = useState('all'); // all, completed, pending
     const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
@@ -130,6 +138,41 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     useEffect(() => {
         applyRouteTab(routeTab);
     }, [routeTab, applyRouteTab]);
+
+    useEffect(() => {
+        if (!state.selectedProjectId || project || state.isLoading) {
+            setProjectHydrating(false);
+            return undefined;
+        }
+
+        let cancelled = false;
+        setProjectHydrating(true);
+        (async () => {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('projects')
+                    .select('*')
+                    .eq('id', state.selectedProjectId)
+                    .maybeSingle();
+                if (cancelled) return;
+                if (error) {
+                    console.error('Error loading project:', error);
+                    return;
+                }
+                if (data) {
+                    dispatch({ type: 'ADD_PROJECT', payload: data });
+                }
+            } catch (err) {
+                if (!cancelled) console.error('Error loading project:', err);
+            } finally {
+                if (!cancelled) setProjectHydrating(false);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [state.selectedProjectId, project, state.isLoading, dispatch]);
 
     const selectTab = useCallback((tab, { panel } = {}) => {
         if (onTabChange) {
@@ -178,6 +221,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [discussionModalTaskId, setDiscussionModalTaskId] = useState(null);
     const [showPhasesModal, setShowPhasesModal] = useState(false);
     const [showAddPhaseModal, setShowAddPhaseModal] = useState(false);
+    const [draggedPhaseId, setDraggedPhaseId] = useState(null);
+    const [phaseDragOver, setPhaseDragOver] = useState(null);
     const [taskModalDefaultPhaseId, setTaskModalDefaultPhaseId] = useState('');
     const [dependencyDrawerTaskId, setDependencyDrawerTaskId] = useState(null);
     const [drawerPredecessorQuery, setDrawerPredecessorQuery] = useState('');
@@ -200,6 +245,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         addPhaseByName,
         updatePhase,
         deletePhase,
+        reorderPhases,
         seedDefaultPhases,
     } = phaseControl;
 
@@ -367,7 +413,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             try {
                 const { data: tasks, error } = await supabaseClient
                     .from('tasks')
-                    .select('*, contacts(name, avatar_url, email, phone), task_photos(*)')
+                    .select(TASK_LIST_COLUMNS)
                     .eq('project_id', state.selectedProjectId)
                     .order('due_date', { ascending: true, nullsFirst: false })
                     .order('id', { ascending: true });
@@ -441,12 +487,15 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         return sortTaskPhotos(hydrated);
     };
 
-    const hydrateTaskRows = async (rows) => {
-        const allPhotos = (rows || []).flatMap((task) => task.task_photos || []);
-        const signedPhotos = allPhotos.length
-            ? await attachTaskPhotoUrls(supabaseClient, allPhotos)
-            : [];
-        const photoById = new Map(signedPhotos.map((photo) => [photo.id, photo]));
+    const hydrateTaskRows = async (rows, { hydratePhotos = false } = {}) => {
+        let photoById = new Map();
+        if (hydratePhotos) {
+            const allPhotos = (rows || []).flatMap((task) => task.task_photos || []);
+            const signedPhotos = allPhotos.length
+                ? await attachTaskPhotoUrls(supabaseClient, allPhotos)
+                : [];
+            photoById = new Map(signedPhotos.map((photo) => [photo.id, photo]));
+        }
 
         const base = (rows || []).map((task) => ({
             ...task,
@@ -478,6 +527,30 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         dispatch({ type: 'UPDATE_TASK', payload: nextTask });
         setProjectTasksList(prev => prev.map((task) => task.id === taskId ? nextTask : task));
     };
+
+    const ensureTaskPhotosHydrated = useCallback(async (taskId) => {
+        if (!taskId) return;
+        const task = (allTasksFromState.length > 0 ? allTasksFromState : projectTasksList)
+            .find((t) => t.id === taskId);
+        if (!task) return;
+        const photos = task.task_photos || [];
+        if (photos.length === 0) return;
+        if (photos.every((p) => p.signed_url || p.public_url || p.preview_url)) return;
+
+        try {
+            const fullPhotos = await fetchTaskPhotos(supabaseClient, taskId);
+            const hydrated = await attachTaskPhotoUrls(supabaseClient, sortTaskPhotos(fullPhotos));
+            replaceTaskRow(taskId, { ...task, task_photos: sortTaskPhotos(hydrated) });
+        } catch (err) {
+            console.error('Error hydrating task photos:', err);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- replaceTaskRow is stable enough for photo modal open
+    }, [allTasksFromState, projectTasksList]);
+
+    useEffect(() => {
+        if (!photoModalTaskId) return;
+        ensureTaskPhotosHydrated(photoModalTaskId);
+    }, [photoModalTaskId, ensureTaskPhotosHydrated]);
 
     const setTaskPhotoBusy = (taskId, isBusy) => {
         setPhotoActionTaskIds((prev) => {
@@ -771,25 +844,88 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     }, []);
 
     const handleRenamePhase = useCallback(
-        async (phaseId, currentName) => {
-            const next = window.prompt(t('projectDetail.rename_phase'), currentName);
-            if (next == null) return;
-            const trimmed = next.trim();
-            if (!trimmed || trimmed === currentName) return;
-            await updatePhase(phaseId, { name: trimmed });
+        async (phaseId, name) => {
+            const trimmed = String(name || '').trim();
+            if (!trimmed) return;
+            const current = projectPhases.find((p) => p.id === phaseId);
+            if (!current || trimmed === current.name) return;
+            await updatePhase(phaseId, { name: trimmed }, { silent: true });
         },
-        [t, updatePhase],
+        [projectPhases, updatePhase],
+    );
+
+    const resetPhaseDragState = useCallback(() => {
+        setDraggedPhaseId(null);
+        setPhaseDragOver(null);
+    }, []);
+
+    const handlePhaseDragStart = useCallback((phaseId) => {
+        setDraggedPhaseId(phaseId);
+        setPhaseDragOver(null);
+    }, []);
+
+    const handlePhaseDragOver = useCallback((e, targetPhaseId) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = e.currentTarget.getBoundingClientRect();
+        const offset = e.clientY - rect.top;
+        const position = offset < rect.height / 2 ? 'top' : 'bottom';
+        setPhaseDragOver((prev) =>
+            prev?.id === targetPhaseId && prev?.position === position
+                ? prev
+                : { id: targetPhaseId, position },
+        );
+    }, []);
+
+    const handlePhaseDrop = useCallback(
+        async (e, targetPhaseId) => {
+            e.preventDefault();
+            const draggedId =
+                e.dataTransfer.getData('application/x-siteweave-phase-id') || draggedPhaseId;
+            if (!draggedId || draggedId === targetPhaseId) {
+                resetPhaseDragState();
+                return;
+            }
+            const draggedIndex = projectPhases.findIndex((p) => p.id === draggedId);
+            const targetIndex = projectPhases.findIndex((p) => p.id === targetPhaseId);
+            if (draggedIndex === -1 || targetIndex === -1) {
+                resetPhaseDragState();
+                return;
+            }
+            const reordered = [...projectPhases];
+            const [dragged] = reordered.splice(draggedIndex, 1);
+            let insertIndex = reordered.findIndex((p) => p.id === targetPhaseId);
+            if (insertIndex === -1) {
+                resetPhaseDragState();
+                return;
+            }
+            if ((phaseDragOver?.position || 'bottom') === 'bottom') insertIndex += 1;
+            reordered.splice(insertIndex, 0, dragged);
+            await reorderPhases(reordered);
+            resetPhaseDragState();
+        },
+        [draggedPhaseId, phaseDragOver, projectPhases, reorderPhases, resetPhaseDragState],
     );
 
     const handleDeletePhaseConfirm = useCallback(
-        async (phaseId) => {
+        (phaseId) => {
             const phase = projectPhases.find((p) => p.id === phaseId);
             if (!phase) return;
-            if (!window.confirm(t('projectDetail.delete_phase') + `: ${phase.name}?`)) return;
-            await deletePhase(phaseId);
+            setPhaseToDelete({ id: phase.id, name: phase.name });
+            setShowPhaseDeleteConfirm(true);
         },
-        [projectPhases, deletePhase, t],
+        [projectPhases],
     );
+
+    const confirmDeletePhase = useCallback(async () => {
+        if (!phaseToDelete) {
+            setShowPhaseDeleteConfirm(false);
+            return;
+        }
+        await deletePhase(phaseToDelete.id);
+        setShowPhaseDeleteConfirm(false);
+        setPhaseToDelete(null);
+    }, [phaseToDelete, deletePhase]);
 
     const handleRequestAssigneeSmsConsent = async (task, { forceResend = false } = {}) => {
         const fallbackContact = task.assignee_id
@@ -891,11 +1027,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         try {
             const senderName = state.user?.user_metadata?.full_name || state.user?.email || 'SiteWeave user';
             const taskDueDateLabel = task.due_date
-                ? new Date(task.due_date).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                  })
+                ? formatLocalDateOnly(task.due_date, 'en-US', { month: 'short', year: 'numeric' })
                 : null;
             const { data: manualReminderResult, error: manualReminderError } = await supabaseClient.functions.invoke(
                 'dispatch-notification',
@@ -1020,6 +1152,10 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     };
 
     const resolveAssigneeContact = useCallback(async ({ assigneeId, assigneeEmailInput, assigneePhoneRaw }) => {
+        if (!project?.id) {
+            return { assigneeId: assigneeId || null, invalidPhone: false };
+        }
+
         const normalizedEmail = String(assigneeEmailInput || '').trim().toLowerCase();
         const normalizedPhoneResult = normalizeAssigneePhone(String(assigneePhoneRaw || '').trim(), { defaultRegion: 'US' });
         const normalizedPhone = normalizedPhoneResult.isValid ? normalizedPhoneResult.e164 : null;
@@ -1088,7 +1224,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         }
 
         return { assigneeId: primaryContact.id, invalidPhone: false };
-    }, [project.id, project.organization_id]);
+    }, [project?.id, project?.organization_id]);
 
     const handleAddTask = async (taskData) => {
         setIsCreatingTask(true);
@@ -1468,11 +1604,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 unlockedTaskName: task.text || 'Task',
                 successorPriority: task.priority || null,
                 successorDueDate: task.due_date
-                    ? new Date(task.due_date).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                      })
+                    ? formatLocalDateOnly(task.due_date, 'en-US', { month: 'short', year: 'numeric' })
                     : null,
             }));
         if (pendingNotifications.length === 0) return;
@@ -2086,11 +2218,27 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     }, [dependencyDrawerTask, dependencyDrawerTaskId]);
 
     if (!project) {
+        if (state.isLoading || projectHydrating) {
+            return (
+                <div className="view-fade-in p-6 max-w-4xl mx-auto w-full">
+                    <SkeletonList count={6} />
+                </div>
+            );
+        }
+
         return (
             <div className="flex items-center justify-center h-full">
                 <div className="text-center">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('projects.no_project_selected')}</h2>
-                    <p className="text-gray-500 mb-4">{t('projects.no_project_description')}</p>
+                    <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                        {state.selectedProjectId
+                            ? t('projects.project_not_found', { defaultValue: 'Project not found' })
+                            : t('projects.no_project_selected')}
+                    </h2>
+                    <p className="text-gray-500 mb-4">
+                        {state.selectedProjectId
+                            ? t('projects.project_not_found_description', { defaultValue: 'This project may have been removed or you may not have access.' })
+                            : t('projects.no_project_description')}
+                    </p>
                     <button
                         type="button"
                         onClick={() => {
@@ -2577,8 +2725,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                     {projectPhases.map((phase) => {
                                                         const phaseTasks = tasksByPhaseId.get(phase.id) || [];
                                                         const rows = mergeWeatherIntoPhaseTasks(phaseTasks, weatherImpacts);
-                                                        const hasContent =
-                                                            phaseTasks.length > 0 || rows.some((r) => r.kind === 'weather');
                                                         return (
                                                             <PhaseTaskSection
                                                                 key={phase.id}
@@ -2593,8 +2739,16 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                 onAddTaskToPhase={openTaskModalForPhase}
                                                                 onRenamePhase={handleRenamePhase}
                                                                 onDeletePhase={handleDeletePhaseConfirm}
+                                                                phaseOrderDraggable={canEditProjects}
+                                                                isPhaseDragging={draggedPhaseId === phase.id}
+                                                                isPhaseDropTarget={phaseDragOver?.id === phase.id}
+                                                                phaseDropPosition={phaseDragOver?.id === phase.id ? phaseDragOver.position : null}
+                                                                onPhaseDragStart={handlePhaseDragStart}
+                                                                onPhaseDragEnd={resetPhaseDragState}
+                                                                onPhaseDragOver={handlePhaseDragOver}
+                                                                onPhaseDrop={handlePhaseDrop}
                                                             >
-                                                                {hasContent ? (
+                                                                {rows.length > 0 ? (
                                                                     <ul className="bg-white">
                                                                         {rows.map((row) =>
                                                                             row.kind === 'weather' ? (
@@ -2635,17 +2789,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                             ),
                                                                         )}
                                                                     </ul>
-                                                                ) : (
-                                                                    <div className="px-3 py-3 bg-white">
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => openTaskModalForPhase(phase.id)}
-                                                                            className="text-sm font-medium text-blue-600 hover:text-blue-800"
-                                                                        >
-                                                                            {t('projectDetail.add_task_to_phase')}
-                                                                        </button>
-                                                                    </div>
-                                                                )}
+                                                                ) : null}
                                                             </PhaseTaskSection>
                                                         );
                                                     })}
@@ -3075,6 +3219,16 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 message={`Are you sure you want to delete "${taskToDelete?.text}"? This action cannot be undone.`}
                 confirmText="Delete"
                 cancelText="Cancel"
+            />
+            <ConfirmDialog
+                isOpen={showPhaseDeleteConfirm}
+                onClose={() => {
+                    setShowPhaseDeleteConfirm(false);
+                    setPhaseToDelete(null);
+                }}
+                onConfirm={confirmDeletePhase}
+                title={t('projectDetail.delete_phase')}
+                message={t('projectDetail.delete_phase_confirm', { name: phaseToDelete?.name ?? '' })}
             />
         </div>
     );

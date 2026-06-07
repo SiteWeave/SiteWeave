@@ -17,7 +17,32 @@ export {
   businessDaysBetween,
 } from './utils/usBusinessCalendar.js';
 
+export {
+  parseLocalDateOnly,
+  localDateOnlyIso,
+  addDaysToDateOnly,
+  formatLocalDateOnly,
+  formatLocalDateRange,
+  daysBetweenDateOnly,
+  isDateOnlyString,
+  formatDateForDisplay,
+} from './utils/dateOnly.js';
+
 export { normalizeAssigneePhone } from './utils/assigneePhone.js';
+
+export {
+  SITEWEAVE_PHYSICAL_ADDRESS,
+  SITEWEAVE_LOGO_URL,
+  SITEWEAVE_SITE_URL,
+  SITEWEAVE_CONTACT_URL,
+  escapeHtml as escapeTransactionalHtml,
+  buildComplianceFooterHtml,
+  buildComplianceFooterText,
+  buildPrimaryCtaHtml,
+  buildLinkFallbackHtml,
+  buildTransactionalShell,
+  buildTaskAssignmentEmail,
+} from './email/transactionalEmailLayout.js';
 
 export {
   normalizeContactEmail,

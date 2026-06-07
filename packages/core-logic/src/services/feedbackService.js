@@ -1,8 +1,10 @@
+import { buildComplianceFooterText } from '../email/transactionalEmailLayout.js';
+
+export const FEEDBACK_RECIPIENT = 'chris@siteweave.org';
+
 /**
  * User feedback — email-only delivery via send-email edge function.
  */
-
-export const FEEDBACK_RECIPIENT = 'chris@siteweave.org';
 
 const FEEDBACK_TYPE_LABELS = {
   bug: 'Bug Report',
@@ -82,6 +84,8 @@ export async function submitUserFeedback(supabase, {
     `Subject: ${trimmedSubject}`,
     '',
     trimmedMessage,
+    '',
+    buildComplianceFooterText(),
   ].join('\n');
 
   const { data, error } = await supabase.functions.invoke('send-email', {

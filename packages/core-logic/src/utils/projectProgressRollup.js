@@ -4,32 +4,33 @@
  */
 
 import { buildFederalHolidayMap, businessDaysBetween } from './usBusinessCalendar.js';
+import { parseLocalDateOnly, localDateOnlyIso, addDaysToDateOnly } from './dateOnly.js';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-const toUtcDate = (dateString) => {
-  if (!dateString) return null;
-  const parsed = new Date(`${dateString}T00:00:00Z`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
+const toLocalDate = parseLocalDateOnly;
+
+const localTodayMidnight = (now = new Date()) =>
+  new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
 const phaseDurationDays = (startDate, endDate) => {
-  const start = toUtcDate(startDate);
-  const end = toUtcDate(endDate);
+  const start = toLocalDate(startDate);
+  const end = toLocalDate(endDate);
   if (!start || !end) return 1;
   const diffDays = Math.floor((end.getTime() - start.getTime()) / MS_PER_DAY);
   return Math.max(1, diffDays);
 };
 
 const scheduleProgressPct = (startDate, endDate, today) => {
-  const start = toUtcDate(startDate);
-  const end = toUtcDate(endDate);
+  const start = toLocalDate(startDate);
+  const end = toLocalDate(endDate);
   if (!start || !end) return null;
-  if (today < start) return 0;
-  if (today >= end) return 100;
+  const todayMid = localTodayMidnight(today);
+  if (todayMid < start) return 0;
+  if (todayMid >= end) return 100;
   const totalDays = Math.floor((end.getTime() - start.getTime()) / MS_PER_DAY);
   if (totalDays <= 0) return 100;
-  const elapsedDays = Math.floor((today.getTime() - start.getTime()) / MS_PER_DAY);
+  const elapsedDays = Math.floor((todayMid.getTime() - start.getTime()) / MS_PER_DAY);
   return Math.max(0, Math.min(100, Math.round((elapsedDays / totalDays) * 100)));
 };
 
@@ -38,9 +39,8 @@ const attachFallbackPhaseDates = (phases, projectDueDate) => {
   const hasAnyDate = phases.some((phase) => phase.start_date && phase.end_date);
   if (hasAnyDate) return phases;
 
-  const today = new Date();
-  const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  const due = toUtcDate(projectDueDate);
+  const start = localTodayMidnight();
+  const due = toLocalDate(projectDueDate);
   const fallbackEnd = due && due > start
     ? due
     : new Date(start.getTime() + phases.length * MS_PER_DAY);
@@ -53,8 +53,8 @@ const attachFallbackPhaseDates = (phases, projectDueDate) => {
     const phaseEnd = new Date(start.getTime() + Math.max(rangeStartOffset + 1, rangeEndOffset) * MS_PER_DAY);
     return {
       ...phase,
-      start_date: phase.start_date || phaseStart.toISOString().slice(0, 10),
-      end_date: phase.end_date || phaseEnd.toISOString().slice(0, 10),
+      start_date: phase.start_date || localDateOnlyIso(phaseStart),
+      end_date: phase.end_date || localDateOnlyIso(phaseEnd),
     };
   });
 };
@@ -94,12 +94,9 @@ function taskEffectiveEndDateIso(task) {
   if (!task) return null;
   if (task.due_date) return task.due_date;
   if (!task.start_date) return null;
-  const start = toUtcDate(task.start_date);
-  if (!start) return null;
   const durationRaw = Number(task.duration_days);
   const n = Number.isFinite(durationRaw) ? Math.max(1, Math.trunc(durationRaw)) : 1;
-  const end = new Date(start.getTime() + (n - 1) * MS_PER_DAY);
-  return end.toISOString().slice(0, 10);
+  return addDaysToDateOnly(task.start_date, n - 1);
 }
 
 function collectTaskScheduleIsoDates(task) {
@@ -147,7 +144,7 @@ function scheduleTimelineFromBounds(minStart, maxEnd, now) {
   const endExclusive = new Date(maxEnd.getTime() + MS_PER_DAY);
   const holidayMap = buildFederalHolidayMap(minStart, endExclusive);
   const totalDays = Math.max(1, businessDaysBetween(minStart, endExclusive, holidayMap));
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const today = localTodayMidnight(now);
   let elapsedDays = businessDaysBetween(minStart, today, holidayMap);
   elapsedDays = Math.max(0, Math.min(totalDays, elapsedDays));
 
@@ -184,16 +181,16 @@ export function computeProjectScheduleTimeline(
   projectStartDate = null,
   tasks = null,
 ) {
-  const windowStart = toUtcDate(projectStartDate);
-  const windowEnd = toUtcDate(projectDueDate);
+  const windowStart = toLocalDate(projectStartDate);
+  const windowEnd = toLocalDate(projectDueDate);
   if (windowStart && windowEnd && windowEnd >= windowStart) {
     return scheduleTimelineFromBounds(windowStart, windowEnd, now);
   }
 
   const inferred = inferScheduleBoundsFromTasks(tasks, projectDueDate);
   if (inferred) {
-    const s = toUtcDate(inferred.start);
-    const e = toUtcDate(inferred.end);
+    const s = toLocalDate(inferred.start);
+    const e = toLocalDate(inferred.end);
     if (s && e && e >= s) {
       return scheduleTimelineFromBounds(s, e, now);
     }
@@ -207,8 +204,8 @@ export function computeProjectScheduleTimeline(
   let minStart = null;
   let maxEnd = null;
   for (const p of normalized) {
-    const s = toUtcDate(p.start_date);
-    const e = toUtcDate(p.end_date);
+    const s = toLocalDate(p.start_date);
+    const e = toLocalDate(p.end_date);
     if (s && e) {
       if (!minStart || s < minStart) minStart = s;
       if (!maxEnd || e > maxEnd) maxEnd = e;

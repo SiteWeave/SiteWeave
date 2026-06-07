@@ -27,7 +27,11 @@ function ProjectListView({ projects, onEdit, onDelete, onProjectClick }) {
                 const progressMap = await calculateProjectsProgressMap(projects, supabaseClient);
                 const newData = {};
                 projects.forEach((project) => {
-                    newData[project.id] = { progress: progressMap[project.id] || 0, loading: false };
+                    const entry = progressMap[project.id];
+                    newData[project.id] = {
+                        progress: entry?.progress ?? 0,
+                        loading: false,
+                    };
                 });
                 setProjectData(newData);
             } catch (error) {

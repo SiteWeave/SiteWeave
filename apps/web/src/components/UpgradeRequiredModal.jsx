@@ -1,6 +1,6 @@
 import React from 'react';
 
-const SALES_URL = 'https://www.siteweave.org/contact';
+const SALES_URL = 'https://www.siteweave.org/#contact';
 
 const COPY = {
   project_limit: {
@@ -18,6 +18,22 @@ const COPY = {
   custom_roles: {
     title: 'Custom Roles Require Upgrade',
     body: 'Personal workspaces use a simple owner and guest model. Custom roles and granular permissions (e.g. PM edit vs. foreman view-only) are available on the business plan.',
+  },
+  reminders: {
+    title: 'Automatic Task Reminders',
+    body: 'Get automatic heads-up emails and texts before tasks start—so subs and crew show up on the right day. Business workspaces can customize lead times per project.',
+  },
+  pings: {
+    title: 'Ping Assignees from the Field',
+    body: 'Send a quick nudge to assignees by email or SMS without a phone tree. Business plan keeps your crew aligned when schedules shift on site.',
+  },
+  progress_reports: {
+    title: 'Progress Reports for Clients & Architects',
+    body: 'Send polished project snapshots on a schedule or on demand. Business plan includes branded PDF exports for clients, architects, and inspectors.',
+  },
+  trial_expired: {
+    title: 'Your 14-Day Trial Has Ended',
+    body: 'You still have tasks, phases, photos, and your full project history. Upgrade to Business to keep pings, progress reports, exports, and unlimited projects.',
   },
 };
 
@@ -41,14 +57,14 @@ function UpgradeRequiredModal({ isOpen, onClose, feature = 'exports' }) {
             onClick={onClose}
             className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm font-medium"
           >
-            Cancel
+            Not now
           </button>
           <button
             type="button"
             onClick={handleContactSales}
             className="px-4 py-2 app-action-primary rounded-lg text-sm font-semibold"
           >
-            Contact Sales
+            Talk to us about Business
           </button>
         </div>
       </div>

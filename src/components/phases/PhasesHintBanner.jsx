@@ -1,13 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
-
-const HINT_KEY = 'siteweave.phasesHint.dismissed';
 
 function PhasesHintBanner() {
     const { t } = useTranslation();
-    const [visible, setVisible] = useState(false);
+    const [visible, setVisible] = React.useState(false);
+    const HINT_KEY = 'siteweave.phasesHint.dismissed';
 
-    useEffect(() => {
+    React.useEffect(() => {
         try {
             setVisible(window.localStorage.getItem(HINT_KEY) !== '1');
         } catch {

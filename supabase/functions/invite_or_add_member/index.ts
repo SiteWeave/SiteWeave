@@ -20,6 +20,7 @@ import {
   requireUser,
 } from '../_shared/auth.ts'
 import { resolveProjectCrewRoleForInvite } from '../_shared/projectCrewRole.ts'
+import { buildAddedToProjectEmail, getResendFrom } from '../_shared/transactionalEmailLayout.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -144,7 +145,7 @@ serve(async (req) => {
     const blockedEmails = await buildBlockedInviteEmails(supabaseAdmin, user, projectId)
 
     const results: Array<{ email: string; action: 'added' | 'invited' | 'skipped'; reason?: string }> = []
-    const emailsToSend: Array<{ from: string; to: string[]; subject: string; html: string }> = []
+    const emailsToSend: Array<{ from: string; to: string[]; subject: string; html: string; text: string; reply_to?: string; tags?: Array<{ name: string; value: string }> }> = []
     const smsToSend: Array<{ email: string; phone: string; message: string }> = []
 
     for (const entry of entries as Entry[]) {
@@ -359,26 +360,6 @@ serve(async (req) => {
           inviterName = inviterProfile?.contacts?.name || inviterName
         }
 
-        // Get client name (optional) - check if project has a client contact
-        let clientName: string | null = null
-        const { data: clientContacts } = await supabaseAdmin
-          .from('project_contacts')
-          .select(`
-            contacts!fk_project_contacts_contact (
-              name,
-              type
-            )
-          `)
-          .eq('project_id', projectId)
-          .limit(10)
-        
-        if (clientContacts && clientContacts.length > 0) {
-          const client = clientContacts.find((pc: any) => pc.contacts?.type === 'Client')
-          if (client?.contacts?.name) {
-            clientName = client.contacts.name
-          }
-        }
-
         // Construct dashboard URL
         const baseUrl = (Deno.env.get('APP_URL') || 
                          Deno.env.get('VITE_APP_URL') || 
@@ -403,169 +384,22 @@ serve(async (req) => {
         if (RESEND_API_KEY) {
           try {
             console.log('Preparing notification email for:', email)
-            const emailHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
-            line-height: 1.6; 
-            color: #1a1a1a; 
-            background: #f6f9fc; 
-            padding: 40px 20px; 
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-        }
-        .email-wrapper { 
-            max-width: 600px; 
-            margin: 0 auto; 
-        }
-        .card { 
-            background: #ffffff; 
-            border-radius: 8px; 
-            border: 1px solid #e6ebf1;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-            overflow: hidden;
-        }
-        .header { 
-            background: #ffffff; 
-            padding: 32px 40px 24px 40px; 
-            text-align: center; 
-        }
-        .logo-img {
-            height: 120px;
-            width: auto;
-            margin: 0 auto;
-            display: block;
-        }
-        .content { 
-            padding: 32px 40px 40px 40px; 
-        }
-        .headline { 
-            font-size: 24px; 
-            font-weight: 600; 
-            color: #1a1a1a; 
-            margin: 0 0 24px 0;
-            line-height: 1.3;
-        }
-        .job-details {
-            background: #f3f4f6;
-            border-radius: 4px;
-            padding: 20px;
-            margin: 24px 0;
-        }
-        .detail-row {
-            display: flex;
-            margin-bottom: 12px;
-        }
-        .detail-row:last-child {
-            margin-bottom: 0;
-        }
-        .detail-label {
-            font-size: 13px;
-            color: #6b7280;
-            font-weight: 500;
-            min-width: 100px;
-            flex-shrink: 0;
-        }
-        .detail-value {
-            font-size: 15px;
-            color: #1a1a1a;
-            font-weight: 600;
-        }
-        .cta-container {
-            text-align: center;
-            margin: 32px 0;
-        }
-        .cta-button { 
-            display: inline-block; 
-            padding: 12px 24px; 
-            background: #2563EB; 
-            color: #ffffff !important; 
-            text-decoration: none; 
-            border-radius: 6px; 
-            font-weight: 600; 
-            font-size: 15px; 
-            letter-spacing: -0.2px;
-            transition: background-color 0.2s;
-        }
-        .cta-button:hover {
-            background: #1d4ed8;
-            color: #ffffff !important;
-        }
-        .footer { 
-            background: #f9fafb; 
-            padding: 24px 40px; 
-            text-align: center; 
-            border-top: 1px solid #e5e7eb;
-        }
-        .footer-text {
-            font-size: 12px; 
-            color: #6b7280; 
-            line-height: 1.6;
-            margin: 0;
-        }
-        @media only screen and (max-width: 600px) {
-            body { padding: 20px 12px; }
-            .header { padding: 24px 24px 0 24px; }
-            .content { padding: 24px 24px 32px 24px; }
-            .footer { padding: 20px 24px; }
-            .headline { font-size: 20px; }
-        }
-    </style>
-</head>
-<body>
-    <div class="email-wrapper">
-        <div class="card">
-            <div class="header">
-                <img src="https://app.siteweave.org/logo.svg" alt="SiteWeave" class="logo-img" />
-            </div>
-            <div class="content">
-                <h2 class="headline">${inviterName} added you to ${projectName}.</h2>
-                
-                <div class="job-details">
-                    <div class="detail-row">
-                        <span class="detail-label">Project</span>
-                        <span class="detail-value">${projectName}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Your Role</span>
-                        <span class="detail-value">${role}</span>
-                    </div>
-                    ${clientName ? `
-                    <div class="detail-row">
-                        <span class="detail-label">Client</span>
-                        <span class="detail-value">${clientName}</span>
-                    </div>
-                    ` : ''}
-                </div>
-                
-                <div class="cta-container">
-                    <a href="${projectInviteUrl}" class="cta-button">Accept project invite</a>
-                </div>
-                ${inviteShortCode ? `<p style="text-align:center;font-size:13px;color:#6b7280;margin-top:12px;">Or sign in and enter code: <strong>${inviteShortCode}</strong></p>` : ''}
-            </div>
-            <div class="footer">
-                <p class="footer-text">
-                    You received this email because you are a member of ${organizationName}.
-                </p>
-            </div>
-        </div>
-    </div>
-</body>
-</html>
-            `.trim()
+            const template = buildAddedToProjectEmail({
+              inviterName,
+              projectName,
+              organizationName,
+              projectInviteUrl,
+              inviteShortCode,
+            })
 
-            // Add to batch email queue
             emailsToSend.push({
-              from: 'SiteWeave <noreply@siteweave.org>',
+              from: getResendFrom(),
               to: [email],
-              subject: `${inviterName} added you to ${projectName}`,
-              html: emailHtml
+              subject: template.subject,
+              html: template.html,
+              text: template.text,
+              reply_to: user.email ?? undefined,
+              tags: [{ name: 'category', value: 'transactional' }],
             })
             
             console.log('Email prepared for batch sending to:', email)

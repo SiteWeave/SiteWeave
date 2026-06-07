@@ -1,14 +1,24 @@
-/** Default construction schedule template (order 1..n). */
-export const DEFAULT_CONSTRUCTION_PHASES = [
-    { name: 'Mobilize', progress: 0, start_date: null, end_date: null, order: 1 },
-    { name: 'Clear and Grub', progress: 0, start_date: null, end_date: null, order: 2 },
-    { name: 'Demo', progress: 0, start_date: null, end_date: null, order: 3 },
-    { name: 'Rough Cut', progress: 0, start_date: null, end_date: null, order: 4 },
-    { name: 'BP', progress: 0, start_date: null, end_date: null, order: 5 },
-    { name: 'Final Grade', progress: 0, start_date: null, end_date: null, order: 6 },
+import {
+  parseLocalDateOnly,
+  addDaysToDateOnly,
+  formatLocalDateRange,
+} from '@siteweave/core-logic';
+
+/** Default phase template (order 1..n). */
+export const DEFAULT_PHASE_TEMPLATE = [
+    { name: 'Phase 1', progress: 0, start_date: null, end_date: null, order: 1 },
+    { name: 'Phase 2', progress: 0, start_date: null, end_date: null, order: 2 },
+    { name: 'Phase 3', progress: 0, start_date: null, end_date: null, order: 3 },
+    { name: 'Phase 4', progress: 0, start_date: null, end_date: null, order: 4 },
 ];
 
-export const DEFAULT_CONSTRUCTION_PHASE_NAMES = DEFAULT_CONSTRUCTION_PHASES.map((p) => p.name);
+/** @deprecated Use DEFAULT_PHASE_TEMPLATE */
+export const DEFAULT_CONSTRUCTION_PHASES = DEFAULT_PHASE_TEMPLATE;
+
+export const DEFAULT_PHASE_TEMPLATE_NAMES = DEFAULT_PHASE_TEMPLATE.map((p) => p.name);
+
+/** @deprecated Use DEFAULT_PHASE_TEMPLATE_NAMES */
+export const DEFAULT_CONSTRUCTION_PHASE_NAMES = DEFAULT_PHASE_TEMPLATE_NAMES;
 
 /**
  * Average task % complete for a phase (uses percent_complete; completed tasks count as 100).
@@ -26,6 +36,46 @@ export function calculatePhaseProgressFromTasks(taskList) {
     return Math.round(sum / taskList.length);
 }
 
+function getTaskEndDateForRollup(task) {
+    if (task?.due_date) return task.due_date;
+    if (!task?.start_date) return null;
+    const duration = Number.isFinite(Number(task.duration_days))
+        ? Math.max(1, Number(task.duration_days))
+        : 1;
+    return addDaysToDateOnly(task.start_date, duration - 1);
+}
+
+/**
+ * Derive phase schedule bounds from linked tasks (display + client-side preview).
+ * @param {Array<{ start_date?: string|null, due_date?: string|null, duration_days?: number|null }>} taskList
+ */
+export function derivePhaseDatesFromTasks(taskList) {
+    if (!taskList?.length) {
+        return { start_date: null, end_date: null };
+    }
+
+    const starts = taskList.map((t) => t.start_date).filter(Boolean);
+    const ends = taskList.map((t) => getTaskEndDateForRollup(t)).filter(Boolean);
+
+    if (!starts.length && !ends.length) {
+        return { start_date: null, end_date: null };
+    }
+
+    const start_date = starts.length ? starts.reduce((a, b) => (a < b ? a : b)) : null;
+    const end_date = ends.length ? ends.reduce((a, b) => (a > b ? a : b)) : null;
+    return { start_date, end_date };
+}
+
+/**
+ * Format phase date range for UI headers (local calendar).
+ * @param {string|null} start
+ * @param {string|null} end
+ * @param {string} [locale]
+ */
+export function formatPhaseDateRange(start, end, locale = undefined) {
+    return formatLocalDateRange(start, end, locale);
+}
+
 /**
  * Weighted overall progress from phase rows (by schedule duration when dates exist).
  * @param {Array<{ progress?: number, start_date?: string|null, end_date?: string|null }>} phases
@@ -33,15 +83,10 @@ export function calculatePhaseProgressFromTasks(taskList) {
 export function calculateOverallPhaseProgress(phases) {
     if (!phases?.length) return 0;
 
-    const parseDate = (dateString) => {
-        if (!dateString) return null;
-        const parsed = new Date(`${dateString}T00:00:00Z`);
-        return Number.isNaN(parsed.getTime()) ? null : parsed;
-    };
     const msPerDay = 24 * 60 * 60 * 1000;
     const durations = phases.map((phase) => {
-        const start = parseDate(phase.start_date);
-        const end = parseDate(phase.end_date);
+        const start = parseLocalDateOnly(phase.start_date);
+        const end = parseLocalDateOnly(phase.end_date);
         if (!start || !end) return 1;
         return Math.max(1, Math.floor((end.getTime() - start.getTime()) / msPerDay));
     });
@@ -64,7 +109,7 @@ export function setAllPhaseSectionsExpanded(projectId, phaseKeys, expanded) {
     const value = expanded ? '1' : '0';
     for (const key of phaseKeys) {
         try {
-            window.localStorage.setItem(phaseCollapseStorageKey(projectId, key), value);
+            window.localStorage.setItem(phaseCollapseStorageKey(projectId, phaseKey), value);
         } catch {
             /* ignore */
         }

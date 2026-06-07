@@ -11,6 +11,15 @@ export function createSupabaseClient(supabaseUrl, supabaseAnonKey) {
     throw new Error('Missing Supabase environment variables')
   }
   
-  return createClient(supabaseUrl, supabaseAnonKey)
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+    realtime: {
+      // One shared socket for all channels; avoids hammering reconnect on boot.
+      params: { eventsPerSecond: 10 },
+    },
+  })
 }
 

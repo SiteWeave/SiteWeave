@@ -333,6 +333,9 @@ verify_jwt = false
 [functions.process-task-notifications]
 verify_jwt = false
 
+[functions.send-email-fixtures]
+verify_jwt = false
+
 [functions.guest-task-share]
 verify_jwt = false
 

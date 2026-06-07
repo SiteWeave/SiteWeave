@@ -25,8 +25,31 @@ export function getBearerToken(req: Request): string | null {
   return token || null
 }
 
+function getJwtClaims(token: string): { role?: string; ref?: string } | null {
+  const parts = token.split('.')
+  if (parts.length !== 3) return null
+  try {
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return { role: payload?.role, ref: payload?.ref }
+  } catch {
+    return null
+  }
+}
+
+function getProjectRef(): string | null {
+  const match = SUPABASE_URL.match(/https:\/\/([^.]+)\.supabase\.co/)
+  return match?.[1] ?? null
+}
+
+/** Accept exact env match or a service_role JWT for this project. */
 export function isServiceRoleToken(token: string): boolean {
-  return Boolean(SUPABASE_SERVICE_ROLE_KEY && token === SUPABASE_SERVICE_ROLE_KEY)
+  if (!token) return false
+  if (SUPABASE_SERVICE_ROLE_KEY && token === SUPABASE_SERVICE_ROLE_KEY) return true
+  const claims = getJwtClaims(token)
+  if (claims?.role !== 'service_role') return false
+  const ref = getProjectRef()
+  if (ref && claims.ref && claims.ref !== ref) return false
+  return true
 }
 
 let _serviceClient: SupabaseClient | null = null

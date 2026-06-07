@@ -40,6 +40,7 @@ export const TASK_LIST_SELECT = TASK_LIST_COLUMNS;
 
 /** Single in-flight load so concurrent callers share one network round-trip */
 let tasksLoadInFlight = null;
+let myDayTasksLoadInFlight = null;
 
 async function runTasksLoadWithRetries(supabaseClient, dispatch, getState) {
   const state = getState();
@@ -71,6 +72,50 @@ export async function loadTasksIfNeeded(supabaseClient, dispatch, getState) {
   }
 
   await tasksLoadInFlight;
+}
+
+/**
+ * Prefetch incomplete tasks assigned to the signed-in user for My Day sidebar.
+ * Merges into global task state without replacing project-loaded tasks.
+ */
+export async function loadMyDayTasksIfNeeded(supabaseClient, dispatch, getState) {
+  const state = getState();
+  if (!state?.user?.id || state.myDayTasksLoaded) {
+    return;
+  }
+  if (!state.userContactId) {
+    return;
+  }
+
+  if (!myDayTasksLoadInFlight) {
+    myDayTasksLoadInFlight = (async () => {
+      try {
+        const liveState = getState();
+        if (!liveState?.user?.id || !liveState.userContactId) return;
+
+        const { fetchUserIncompleteTasks } = await import('@siteweave/core-logic');
+        const rows = await fetchUserIncompleteTasks(
+          supabaseClient,
+          liveState.user.id,
+          liveState.userContactId,
+          { limit: 50, orderByDueDate: true },
+        );
+        const existing = liveState.tasks || [];
+        const byId = new Map(existing.map((t) => [String(t.id), t]));
+        (rows || []).forEach((t) => {
+          byId.set(String(t.id), { ...byId.get(String(t.id)), ...t });
+        });
+        dispatch({ type: 'MERGE_TASKS', payload: [...byId.values()] });
+        dispatch({ type: 'SET_MY_DAY_TASKS_LOADED', payload: true });
+      } catch (error) {
+        console.error('Error loading My Day tasks:', error);
+      }
+    })().finally(() => {
+      myDayTasksLoadInFlight = null;
+    });
+  }
+
+  await myDayTasksLoadInFlight;
 }
 
 /**

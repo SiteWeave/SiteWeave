@@ -1,6 +1,8 @@
 // AUTO-GENERATED from src/utils/progressReportEmailTemplates.js — run: node scripts/sync-progress-report-templates.mjs
 // deno-lint-ignore-file no-explicit-any
 
+import { buildComplianceFooterHtml, buildComplianceFooterText } from './transactionalEmailLayout.ts';
+
 /**
  * Progress Report Email Templates
  * Generates HTML email templates for different audience types.
@@ -141,6 +143,9 @@ function emailShell({ subject, branding, bodyHtml }) {
           </div>` : ''}
           <div style="padding:12px 0 0;margin-top:12px;text-align:center;border-top:1px solid #e5e7eb;">
             ${siteweaveFooterBlock}
+          </div>
+          <div style="padding:0;margin-top:8px;">
+            ${buildComplianceFooterHtml()}
           </div>
         </div>
       </td>
@@ -785,6 +790,7 @@ function generateTextVersion(reportData, schedule, period) {
   }
 
   appendStandardTextBody(reportData, true);
+  text += `\n${buildComplianceFooterText()}\n`;
   return text;
 }
 

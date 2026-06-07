@@ -1,12 +1,12 @@
 import React, { useState, memo, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import Icon from './Icon';
+import InlineEditableText from './InlineEditableText';
 import PermissionGuard from './PermissionGuard';
 import DateRangePicker from './DateRangePicker';
-import { addDaysIso, localDateIso } from '../utils/dateHelpers';
+import { addDaysIso, localDateIso, formatLocalDateOnly } from '../utils/dateHelpers';
 import { normalizeAssigneePhone } from '@siteweave/core-logic';
 
-/** @typedef {null | 'dates' | 'assign' | 'title'} TaskPanel */
+/** @typedef {null | 'dates' | 'assign'} TaskPanel */
 
 
 const TaskItem = memo(function TaskItem({
@@ -22,6 +22,7 @@ const TaskItem = memo(function TaskItem({
     dependencyMeta = null,
     onOpenDependencyDrawer,
     onPingAssignee = null,
+    pingLocked = false,
     onRequestAssigneeSmsConsent = null,
     pingingTaskId = null,
     project = null,
@@ -31,7 +32,6 @@ const TaskItem = memo(function TaskItem({
     const [panel, setPanel] = useState(null);
     const [draftStart, setDraftStart] = useState(task.start_date || '');
     const [draftDue, setDraftDue] = useState(task.due_date || '');
-    const [editTitle, setEditTitle] = useState(task.text);
     const [editPhaseId, setEditPhaseId] = useState(task.project_phase_id || '');
     const [editAssigneeId, setEditAssigneeId] = useState(task.assignee_id || '');
     const [editAssigneeEmail, setEditAssigneeEmail] = useState(task.contacts?.email || '');
@@ -45,7 +45,6 @@ const TaskItem = memo(function TaskItem({
     const syncDraftsFromTask = useCallback(() => {
         setDraftStart(task.start_date || '');
         setDraftDue(task.due_date || '');
-        setEditTitle(task.text);
         setEditPhaseId(task.project_phase_id || '');
         setEditAssigneeId(task.assignee_id || '');
         setEditAssigneeEmail(task.contacts?.email || '');
@@ -85,10 +84,8 @@ const TaskItem = memo(function TaskItem({
         Low: 'bg-blue-100 text-blue-700',
     };
 
-    const formatDateShort = (dateString) => {
-        if (!dateString) return '';
-        return new Date(dateString).toLocaleDateString(i18n.language, { month: 'short', day: 'numeric' });
-    };
+    const formatDateShort = (dateString) =>
+        formatLocalDateOnly(dateString, i18n.language, { month: 'short' });
 
     const dateLine = () => {
         if (task.start_date && task.due_date) {
@@ -221,13 +218,6 @@ const TaskItem = memo(function TaskItem({
 
     const clearDates = () => {
         onEdit(task.id, { start_date: null, due_date: null });
-        setPanel(null);
-    };
-
-    const saveTitle = () => {
-        const trimmed = editTitle.trim();
-        if (!trimmed) return;
-        onEdit(task.id, { text: trimmed });
         setPanel(null);
     };
 
@@ -419,16 +409,16 @@ const TaskItem = memo(function TaskItem({
                                 </span>
                             }
                         >
-                            <button
-                                type="button"
-                                onClick={openPanel('title')}
-                                className={`ui-clamp-2 text-left font-semibold text-sm sm:text-base leading-snug hover:text-blue-700 focus:outline-none ${
+                            <InlineEditableText
+                                value={task.text}
+                                canEdit
+                                onSave={(text) => onEdit(task.id, { text })}
+                                className={`ui-clamp-2 font-semibold text-sm sm:text-base leading-snug ${
                                     isComplete ? 'line-through text-gray-400' : 'text-gray-900'
                                 }`}
-                                title={t('tasks.click_to_rename')}
-                            >
-                                {task.text}
-                            </button>
+                                inputClassName="font-semibold text-sm sm:text-base"
+                                ariaLabel={t('tasks.click_to_rename')}
+                            />
                         </PermissionGuard>
                     </div>
 
@@ -887,44 +877,6 @@ const TaskItem = memo(function TaskItem({
                     </PermissionGuard>
                 )}
 
-                {/* ── Title rename panel ── */}
-                {panel === 'title' && (
-                    <PermissionGuard permission="can_edit_tasks">
-                        <div
-                            className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm select-text"
-                            onClick={stop}
-                            onMouseDown={suppressRowDrag}
-                            onTouchStart={suppressRowDrag}
-                            onDragStart={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                            }}
-                        >
-                            <input
-                                type="text"
-                                value={editTitle}
-                                onChange={(e) => setEditTitle(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') saveTitle(); }}
-                                className="min-w-[12rem] flex-1 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                autoFocus
-                            />
-                            <button
-                                type="button"
-                                onClick={saveTitle}
-                                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                            >
-                                Save
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setPanel(null)}
-                                className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </PermissionGuard>
-                )}
             </div>
         </li>
     );

@@ -30,7 +30,7 @@ function PhasesEmptyState({
                     {t('projectDetail.phases_empty_with_tasks', { count: taskCount })}
                 </p>
             )}
-            <p className="text-xs text-gray-500 mb-4">{t('projectDetail.construction_template_hint')}</p>
+            <p className="text-xs text-gray-500 mb-4">{t('projectDetail.phase_template_hint')}</p>
             <div className="flex flex-wrap items-center justify-center gap-3">
                 <button
                     type="button"
@@ -46,7 +46,7 @@ function PhasesEmptyState({
                     disabled={isMutating}
                     className="px-4 py-2 border border-gray-300 bg-white text-gray-800 rounded-full text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
                 >
-                    {t('projectDetail.use_construction_template')}
+                    {t('projectDetail.use_phase_template')}
                 </button>
             </div>
         </div>

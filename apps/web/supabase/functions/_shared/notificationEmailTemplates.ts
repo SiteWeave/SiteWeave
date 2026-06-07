@@ -1,3 +1,8 @@
+import {
+  buildComplianceFooterHtml,
+  buildComplianceFooterText,
+} from './transactionalEmailLayout.ts'
+
 function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -413,6 +418,11 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
               <p style="margin:8px 0 0;color:#6b7280;font-size:12px;">${escapeHtml(footerText)}</p>
             </td>
           </tr>
+          <tr>
+            <td style="padding:0;">
+              ${buildComplianceFooterHtml()}
+            </td>
+          </tr>
         </table>
       </td>
     </tr>
@@ -449,9 +459,95 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
   if (textMultiLink) {
     textParts.push('', textMultiLink)
   }
-  textParts.push('', recipientName ? `Hi ${recipientName},` : 'Hi there,', footerText)
+  textParts.push('', recipientName ? `Hi ${recipientName},` : 'Hi there,', footerText, '', buildComplianceFooterText())
 
   const text = textParts.filter((line) => line !== '').join('\n')
 
   return { html, text }
+}
+
+export type TrialReminderVariant = 'mid' | 'final'
+
+export function buildTrialReminderEmail(params: {
+  variant: TrialReminderVariant
+  recipientName?: string | null
+  daysRemaining: number
+  trialEndsAt: string
+  contactUrl: string
+  appUrl: string
+}): { subject: string; html: string; text: string } {
+  const { variant, recipientName, daysRemaining, trialEndsAt, contactUrl, appUrl } = params
+  const name = recipientName?.trim() || 'there'
+  const endLabel = formatDigestDueDate(trialEndsAt) || trialEndsAt.slice(0, 10)
+
+  const isFinal = variant === 'final'
+  const subject = isFinal
+    ? 'Your SiteWeave trial ends tomorrow'
+    : '7 days left on your SiteWeave full access trial'
+
+  const headline = isFinal
+    ? 'Your full-access trial ends tomorrow'
+    : `${daysRemaining} days left on your full-access trial`
+
+  const bodyLead = isFinal
+    ? `After ${endLabel}, pings, progress reports, exports, and other Business features will be limited on your personal workspace. Your tasks, phases, photos, and in-app project data stay with you.`
+    : `You still have full access to progress reports, assignee pings, task reminders, exports, and unlimited projects until ${endLabel}. Use this time to run a real job in SiteWeave.`
+
+  const ctaLabel = isFinal ? 'Talk to us before it ends' : 'Contact Us'
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table role="presentation" style="width:100%;border-collapse:collapse;">
+    <tr>
+      <td style="padding:24px 16px;">
+        <table role="presentation" style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;">
+          <tr>
+            <td style="padding:24px 24px 12px;text-align:center;border-bottom:1px solid #e5e7eb;">
+              <img src="${SITEWEAVE_LOGO_URL}" alt="SiteWeave" width="40" height="40" style="display:block;margin:0 auto 12px;" />
+              <p style="margin:0;font-size:18px;font-weight:700;color:#111827;">SiteWeave</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px;">
+              <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">Hi ${escapeHtml(name)},</p>
+              <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#111827;">${escapeHtml(headline)}</h1>
+              <p style="margin:0 0 20px;font-size:15px;line-height:1.55;color:#374151;">${escapeHtml(bodyLead)}</p>
+              <p style="margin:0 0 12px;">
+                <a href="${escapeHtml(contactUrl)}" style="display:inline-block;background:#2563eb;color:#fff;font-weight:600;font-size:14px;padding:12px 20px;border-radius:9999px;text-decoration:none;">${escapeHtml(ctaLabel)}</a>
+              </p>
+              <p style="margin:16px 0 0;font-size:14px;">
+                <a href="${escapeHtml(appUrl)}" style="color:#2563eb;font-weight:600;">Open SiteWeave</a>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 24px 24px;">
+              ${buildComplianceFooterHtml()}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+
+  const text = [
+    `Hi ${name},`,
+    '',
+    headline,
+    '',
+    bodyLead,
+    '',
+    `${ctaLabel}: ${contactUrl}`,
+    `Open SiteWeave: ${appUrl}`,
+    '',
+    'Automated message from SiteWeave',
+    '',
+    buildComplianceFooterText(),
+  ].join('\n')
+
+  return { subject, html, text }
 }

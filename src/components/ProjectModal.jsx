@@ -10,6 +10,8 @@ import DateDropdown from './DateDropdown';
 import DateRangePicker from './DateRangePicker';
 import Avatar from './Avatar';
 import PermissionGuard from './PermissionGuard';
+import UpgradeRequiredModal from './UpgradeRequiredModal';
+import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import MsProjectImportModal from './MsProjectImportModal';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 
@@ -60,7 +62,17 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const [dependencyNotifEnabled, setDependencyNotifEnabled] = useState(true);
     const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
     const [smartTaskNotifOpen, setSmartTaskNotifOpen] = useState(false);
+    const [showRemindersUpgrade, setShowRemindersUpgrade] = useState(false);
     const actionsMenuRef = useRef(null);
+    const { canRemind } = useWorkspaceTier();
+
+    const openSmartTaskNotifications = () => {
+        if (!canRemind) {
+            setShowRemindersUpgrade(true);
+            return;
+        }
+        setSmartTaskNotifOpen(true);
+    };
 
     const isEditMode = !!project;
     const isOrgAdminRole = state.userRole?.name === 'Org Admin' || state.userRole?.name === 'Admin';
@@ -385,6 +397,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     }
 
     return (
+        <>
         <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
@@ -410,7 +423,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                     role="menuitem"
                                     className="w-full px-3 py-2 text-left text-gray-800 hover:bg-gray-50"
                                     onClick={() => {
-                                        setSmartTaskNotifOpen(true);
+                                        openSmartTaskNotifications();
                                         setActionsMenuOpen(false);
                                     }}
                                 >
@@ -459,7 +472,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                             <button
                                 type="button"
                                 className="font-semibold text-blue-600 hover:text-blue-800"
-                                onClick={() => setSmartTaskNotifOpen(true)}
+                                onClick={openSmartTaskNotifications}
                             >
                                 {t('projectModal.edit_notification_settings')}
                             </button>
@@ -771,6 +784,12 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                 />
             )}
         </div>
+        <UpgradeRequiredModal
+            isOpen={showRemindersUpgrade}
+            onClose={() => setShowRemindersUpgrade(false)}
+            feature="reminders"
+        />
+        </>
     );
 }
 
