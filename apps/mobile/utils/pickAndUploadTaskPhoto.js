@@ -1,6 +1,11 @@
 import * as ImagePicker from 'expo-image-picker';
 import { uploadTaskPhotoSet } from '@siteweave/core-logic';
-import { uriToUploadFile } from './imageUpload';
+import { uriToUploadPayload } from './imageUpload';
+import { prepareTaskPhotoForUpload } from './prepareTaskPhoto';
+
+const IMAGE_MEDIA_TYPES = ImagePicker.MediaType?.Images
+  ? [ImagePicker.MediaType.Images]
+  : (ImagePicker.MediaTypeOptions?.Images ?? ['images']);
 
 /**
  * Pick from camera or library and attach a photo to a task.
@@ -15,6 +20,9 @@ export async function pickAndUploadTaskPhoto({
   if (!task?.id || !task?.project_id || !organizationId || !supabase) {
     throw new Error('Task photo upload is missing project or organization context.');
   }
+  if (!userId) {
+    throw new Error('You must be signed in to attach photos.');
+  }
 
   const permission =
     mode === 'camera'
@@ -24,16 +32,15 @@ export async function pickAndUploadTaskPhoto({
     throw new Error('Photo permission is required to attach task photos.');
   }
 
-  const mediaTypes = ImagePicker.MediaTypeOptions?.Images ?? ['images'];
   const result =
     mode === 'camera'
       ? await ImagePicker.launchCameraAsync({
-          mediaTypes,
+          mediaTypes: IMAGE_MEDIA_TYPES,
           quality: 0.8,
           allowsEditing: false,
         })
       : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes,
+          mediaTypes: IMAGE_MEDIA_TYPES,
           quality: 0.8,
           allowsEditing: false,
         });
@@ -41,8 +48,9 @@ export async function pickAndUploadTaskPhoto({
   if (result.canceled || !result.assets?.[0]) return null;
 
   const asset = result.assets[0];
-  const originalFile = await uriToUploadFile(asset.uri, {
-    mimeType: asset.mimeType || 'image/jpeg',
+  const prepared = await prepareTaskPhotoForUpload(asset.uri);
+  const originalFile = await uriToUploadPayload(prepared.uri, {
+    mimeType: prepared.mimeType,
     fileName: asset.fileName || undefined,
   });
 

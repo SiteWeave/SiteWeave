@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createSupabaseClient } from '@siteweave/core-logic';
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
@@ -41,6 +42,49 @@ function getMobileRedirectUrl() {
   return `${scheme}://auth/callback`;
 }
 
+const supabaseAuthStorage = {
+  getItem: (key) => AsyncStorage.getItem(key),
+  setItem: (key, value) => AsyncStorage.setItem(key, value),
+  removeItem: (key) => AsyncStorage.removeItem(key),
+};
+
+async function completeOAuthFromCallbackUrl(supabase, url) {
+  const parsedUrl = Linking.parse(url);
+  const code = parsedUrl.queryParams?.code;
+
+  if (code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(String(code));
+    if (error) throw error;
+    return data;
+  }
+
+  const hashParams = parseHashParams(url);
+  if (hashParams.access_token && hashParams.refresh_token) {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: hashParams.access_token,
+      refresh_token: hashParams.refresh_token,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  if (parsedUrl.queryParams?.access_token && parsedUrl.queryParams?.refresh_token) {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: String(parsedUrl.queryParams.access_token),
+      refresh_token: String(parsedUrl.queryParams.refresh_token),
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) {
+    return { user: session.user, session };
+  }
+
+  throw new Error('No valid OAuth tokens or code found in callback URL');
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -60,7 +104,7 @@ export function AuthProvider({ children }) {
       Constants.expoConfig?.extra?.supabaseUrl;
     const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
       Constants.expoConfig?.extra?.supabaseAnonKey;
-    return createSupabaseClient(supabaseUrl, supabaseAnonKey);
+    return createSupabaseClient(supabaseUrl, supabaseAnonKey, { storage: supabaseAuthStorage });
   }, []);
 
   // Load org membership or guest collaborator access
@@ -87,7 +131,7 @@ export function AuthProvider({ children }) {
           )
         `)
         .eq('id', targetUser.id)
-        .single();
+        .maybeSingle();
 
       if (profileError) {
         console.error('Error loading organization:', profileError);
@@ -287,28 +331,27 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    // Check for existing session
-    checkSession();
-
-    // Listen for auth changes
-    // Supabase automatically handles session persistence, no need for SecureStore
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth state change event:', event, 'Has session:', !!session);
-        
-        // Handle different auth events
+
         switch (event) {
+          case 'INITIAL_SESSION':
+            if (session?.user) {
+              setUser(session.user);
+            } else {
+              setUser(null);
+              setActiveOrganization(null);
+            }
+            break;
           case 'SIGNED_IN':
           case 'TOKEN_REFRESHED':
           case 'USER_UPDATED':
-            // User is signed in or session refreshed - keep them signed in
             if (session?.user) {
               setUser(session.user);
-              // Organization is loaded by the user.id effect above.
             }
             break;
           case 'SIGNED_OUT':
-            // Only clear user if explicitly signed out
             setUser(null);
             setActiveOrganization(null);
             setOrganizationError(null);
@@ -316,71 +359,19 @@ export function AuthProvider({ children }) {
             setCollaborationProjects([]);
             break;
           case 'PASSWORD_RECOVERY':
-            // Don't change user state for password recovery
             break;
           default:
-            // For other events, update user if session exists
             if (session?.user) {
               setUser(session.user);
-            } else if (event === 'SIGNED_OUT') {
-              setUser(null);
             }
         }
-        
+
         setLoading(false);
       }
     );
 
     return () => subscription.unsubscribe();
   }, [supabase]);
-
-  const checkSession = async () => {
-    try {
-      // Supabase automatically handles session persistence
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        console.error('Error getting session:', error);
-        // Don't sign out on error - might be temporary network issue
-        setLoading(false);
-        return;
-      }
-      
-      if (session?.user) {
-        console.log('Session found, user:', session.user.email);
-        setUser(session.user);
-        
-        // Refresh the session to ensure it's valid
-        const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
-        
-        if (refreshError) {
-          console.error('Error refreshing session:', refreshError);
-          // If refresh fails, check if it's a real error or just expired
-          if (refreshError.message?.includes('refresh_token_not_found') || 
-              refreshError.message?.includes('invalid_grant')) {
-            // Token is truly invalid, sign out
-            setUser(null);
-            setActiveOrganization(null);
-          }
-          // Otherwise, keep the existing session
-        } else if (refreshedSession?.user) {
-          setUser(refreshedSession.user);
-        } else if (session?.user) {
-          // Keep existing session user until auth listener/effects settle.
-          setUser(session.user);
-        }
-      } else {
-        console.log('No session found');
-        setUser(null);
-        setActiveOrganization(null);
-      }
-    } catch (error) {
-      console.error('Error checking session:', error);
-      // Don't sign out on error - might be temporary network issue
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const signIn = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -395,103 +386,35 @@ export function AuthProvider({ children }) {
     try {
       const redirectUrl = getMobileRedirectUrl();
       console.log('Google OAuth redirect URL:', redirectUrl);
-      
-      // Start OAuth flow with implicit flow (no PKCE) since WebCrypto isn't available in React Native
-      // This avoids the "invalid flow state" error caused by PKCE without WebCrypto
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: redirectUrl,
-          skipBrowserRedirect: true, // Manual browser handling
-          queryParams: {
-            // Force implicit flow by not using PKCE
-            access_type: 'offline',
-          },
+          skipBrowserRedirect: true,
         },
       });
-      
+
       if (error) throw error;
-      
-      // Open the OAuth URL in browser
+
       if (data?.url) {
         const result = await WebBrowser.openAuthSessionAsync(
           data.url,
           redirectUrl
         );
-        
-        // If user cancelled
+
         if (result.type === 'cancel') {
           throw new Error('OAuth sign-in was cancelled');
         }
-        
-        // Process the callback URL
+
         if (result.type === 'success' && result.url) {
-          // Parse the callback URL
-          const url = result.url;
-          const parsedUrl = Linking.parse(url);
-          const hashParams = parseHashParams(url);
-          
-          // Try hash fragment first (implicit flow)
-          if (hashParams.access_token) {
-            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-              access_token: hashParams.access_token,
-              refresh_token: hashParams.refresh_token || '',
-            });
-            if (sessionError) throw sessionError;
-            return sessionData;
-          }
-          
-          // Try query params (implicit flow)
-          if (parsedUrl.queryParams?.access_token) {
-            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-              access_token: parsedUrl.queryParams.access_token,
-              refresh_token: parsedUrl.queryParams.refresh_token || '',
-            });
-            if (sessionError) throw sessionError;
-            return sessionData;
-          }
-          
-          // Try PKCE code exchange - this requires the flow state to be in storage
-          // Skip this in React Native since WebCrypto isn't available and PKCE doesn't work properly
-          if (parsedUrl.queryParams?.code && Platform.OS === 'web') {
-            // Only try code exchange on web where WebCrypto is available
-            // Wait a moment to ensure storage is synced
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(
-              parsedUrl.queryParams.code
-            );
-            
-            if (sessionError) {
-              // If code exchange fails, it might be because flow state is lost
-              // Try to get session directly in case Supabase processed it automatically
-              const { data: { session } } = await supabase.auth.getSession();
-              if (session) {
-                return { user: session.user, session };
-              }
-              throw sessionError;
-            }
-            return sessionData;
-          }
-          
-          // If we have a code but we're on React Native, it means implicit flow should have been used
-          // This shouldn't happen, but if it does, try to get session anyway
-          if (parsedUrl.queryParams?.code) {
-            console.warn('Received OAuth code but WebCrypto not available. Trying to get session...');
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-              return { user: session.user, session };
-            }
-            throw new Error('OAuth code received but cannot exchange (WebCrypto not available). Please use implicit flow.');
-          }
-          
-          throw new Error('No valid OAuth tokens or code found in callback URL');
+          return completeOAuthFromCallbackUrl(supabase, result.url);
         }
-        
+
         throw new Error('OAuth callback was not successful');
-      } else {
-        throw new Error('No OAuth URL received');
       }
+
+      throw new Error('No OAuth URL received');
     } catch (error) {
       console.error('Google OAuth error:', error);
       throw error;
@@ -502,68 +425,35 @@ export function AuthProvider({ children }) {
     try {
       const redirectUrl = getMobileRedirectUrl();
       console.log('Microsoft OAuth redirect URL:', redirectUrl);
-      
-      // Use implicit flow for React Native (no PKCE)
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'azure',
         options: {
           redirectTo: redirectUrl,
-          skipBrowserRedirect: true, // We'll handle the browser redirect manually
-          queryParams: {
-            // Force implicit flow by not using PKCE
-            access_type: 'offline',
-          },
+          skipBrowserRedirect: true,
         },
       });
-      
+
       if (error) throw error;
-      
-      // Open the OAuth URL in browser
+
       if (data?.url) {
         const result = await WebBrowser.openAuthSessionAsync(
           data.url,
           redirectUrl
         );
-        
-        if (result.type === 'success' && result.url) {
-          // Parse the redirect URL - Supabase uses hash fragments
-          const parsedUrl = Linking.parse(result.url);
-          
-          // Extract tokens from hash fragment (Supabase OAuth flow)
-          if (parsedUrl.queryParams?.access_token) {
-            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-              access_token: parsedUrl.queryParams.access_token,
-              refresh_token: parsedUrl.queryParams.refresh_token || '',
-            });
-            
-            if (sessionError) throw sessionError;
-            return sessionData;
-          }
-          
-          // Fallback: try code exchange (PKCE flow)
-          if (parsedUrl.queryParams?.code) {
-            const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(
-              parsedUrl.queryParams.code
-            );
-            if (sessionError) throw sessionError;
-            return sessionData;
-          }
-          
-          // Try parsing hash fragment manually if queryParams didn't work
-          const hashParams = parseHashParams(result.url);
-          if (hashParams.access_token) {
-            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-              access_token: hashParams.access_token,
-              refresh_token: hashParams.refresh_token || '',
-            });
-            
-            if (sessionError) throw sessionError;
-            return sessionData;
-          }
-        } else if (result.type === 'cancel') {
+
+        if (result.type === 'cancel') {
           throw new Error('OAuth sign-in was cancelled');
         }
+
+        if (result.type === 'success' && result.url) {
+          return completeOAuthFromCallbackUrl(supabase, result.url);
+        }
+
+        throw new Error('OAuth callback was not successful');
       }
+
+      throw new Error('No OAuth URL received');
     } catch (error) {
       console.error('Microsoft OAuth error:', error);
       throw error;

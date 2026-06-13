@@ -1,5 +1,6 @@
 import React, { useState, memo, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import Icon from './Icon';
 import InlineEditableText from './InlineEditableText';
 import PermissionGuard from './PermissionGuard';
 import DateRangePicker from './DateRangePicker';

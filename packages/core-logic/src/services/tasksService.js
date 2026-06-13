@@ -295,6 +295,33 @@ export async function fetchOverdueTasksList(supabase, options = {}) {
 }
 
 /**
+ * Group tasks by project for dashboard overdue/completed modals.
+ * @param {Array<{ project_id?: string, text?: string }>} tasks
+ * @param {Array<{ id: string, name?: string }>} projects
+ * @param {{ noProjectLabel?: string }} [options]
+ */
+export function groupTasksByProject(tasks, projects, options = {}) {
+  const noProjectLabel = options.noProjectLabel || 'No project';
+  const projectById = new Map((projects || []).map((project) => [String(project.id), project]));
+  const grouped = new Map();
+
+  (tasks || []).forEach((task) => {
+    const key = String(task.project_id || 'unassigned');
+    const project = projectById.get(key);
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        projectId: project?.id ?? (key === 'unassigned' ? null : key),
+        projectName: project?.name || noProjectLabel,
+        items: [],
+      });
+    }
+    grouped.get(key).items.push(task);
+  });
+
+  return Array.from(grouped.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
+}
+
+/**
  * Fetch recently completed tasks for dashboard modals (RLS-scoped).
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {{ limit?: number, projectIds?: string[] | null }} [options]

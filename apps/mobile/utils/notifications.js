@@ -296,8 +296,8 @@ export function setupNotificationListeners(onNotificationReceived, onNotificatio
 
   // Return cleanup function
   return () => {
-    Notifications.removeNotificationSubscription(receivedListener);
-    Notifications.removeNotificationSubscription(responseListener);
+    receivedListener.remove();
+    responseListener.remove();
   };
 }
 

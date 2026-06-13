@@ -11,11 +11,13 @@ import {
   fetchActiveProjectsCount,
   fetchCompletedTasksCount,
   fetchOverdueTasksCount,
+  fetchOverdueTasksList,
   fetchUserProjectsWithProgress,
   loadWithFallback,
 } from '@siteweave/core-logic';
 import QuickActionsModal from '../../components/QuickActionsModal';
 import KPICarousel from '../../components/KPICarousel';
+import OverdueTasksModal from '../../components/OverdueTasksModal';
 import MyDayItemModal from '../../components/MyDayItemModal';
 import PhotoAttachSheet from '../../components/PhotoAttachSheet';
 import { pickAndUploadTaskPhoto, resolveTaskOrganizationId } from '../../utils/pickAndUploadTaskPhoto';
@@ -59,6 +61,9 @@ export default function HomeScreen() {
   const [photoTask, setPhotoTask] = useState(null);
   const [showPhotoSheet, setShowPhotoSheet] = useState(false);
   const [photoUploadTaskId, setPhotoUploadTaskId] = useState(null);
+  const [showOverdueModal, setShowOverdueModal] = useState(false);
+  const [overdueModalTasks, setOverdueModalTasks] = useState([]);
+  const [overdueModalLoading, setOverdueModalLoading] = useState(false);
 
   useEffect(() => {
     if (!supabase || !user) return;
@@ -322,6 +327,23 @@ export default function HomeScreen() {
     }
   };
 
+  const openOverdueModal = async () => {
+    if (!supabase || (kpis.overdueTasks ?? 0) <= 0) return;
+    haptics.light();
+    setShowOverdueModal(true);
+    setOverdueModalLoading(true);
+    try {
+      const projectIds = projects.map((p) => p.id).filter(Boolean);
+      const rows = await fetchOverdueTasksList(supabase, { projectIds });
+      setOverdueModalTasks(rows);
+    } catch (error) {
+      console.error('Error loading overdue tasks:', error);
+      setOverdueModalTasks([]);
+    } finally {
+      setOverdueModalLoading(false);
+    }
+  };
+
   const getUserName = () => {
     if (user?.user_metadata?.full_name) {
       return user.user_metadata.full_name.split(' ')[0]; // First name only
@@ -468,6 +490,7 @@ export default function HomeScreen() {
             activeProjects={kpis.activeProjects}
             completedTasks={kpis.completedTasks}
             overdueTasks={kpis.overdueTasks}
+            onOverduePress={openOverdueModal}
           />
         </View>
 
@@ -553,6 +576,13 @@ export default function HomeScreen() {
       <QuickActionsModal
         visible={showQuickActions}
         onClose={() => setShowQuickActions(false)}
+      />
+      <OverdueTasksModal
+        visible={showOverdueModal}
+        onClose={() => setShowOverdueModal(false)}
+        tasks={overdueModalTasks}
+        projects={projects}
+        loading={overdueModalLoading}
       />
       <MyDayItemModal
         visible={showItemModal}

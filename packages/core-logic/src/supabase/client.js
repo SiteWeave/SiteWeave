@@ -134,10 +134,11 @@ function attachStaleSessionRecovery(client) {
  * Creates a Supabase client instance
  * @param {string} supabaseUrl - Supabase project URL
  * @param {string} supabaseAnonKey - Supabase anonymous key
+ * @param {{ storage?: import('@supabase/supabase-js').SupportedStorage }} [options]
  * @returns {import('@supabase/supabase-js').SupabaseClient} Supabase client instance
  */
-export function createSupabaseClient(supabaseUrl, supabaseAnonKey) {
-  const storageAdapter = getStorageAdapter();
+export function createSupabaseClient(supabaseUrl, supabaseAnonKey, options = {}) {
+  const storageAdapter = options.storage ?? getStorageAdapter();
   polyfillReactNativeCrypto();
 
   const isReactNative = typeof navigator !== 'undefined' && navigator.product === 'ReactNative';

@@ -68,6 +68,10 @@ export { runOptimistic, createOptimisticUpdate } from './utils/optimistic.js';
 
 export { loadWithFallback } from './utils/loadWithFallback.js';
 
+export { resolveStorageUpload } from './utils/uploadPayload.js';
+
+export { canManageTaskPhotos } from './utils/taskPhotoPermissions.js';
+
 export {
   isPersistedContactId,
   profileIdFromContactRef,

@@ -1,4 +1,5 @@
 import { createSignedFileUrl } from './fileService.js';
+import { resolveStorageUpload } from '../utils/uploadPayload.js';
 
 export const TASK_PHOTOS_BUCKET = 'task_photos';
 
@@ -84,20 +85,22 @@ export async function uploadTaskPhotoSet(supabase, {
 
   const storage = supabase.storage.from(TASK_PHOTOS_BUCKET);
 
-  const { error: originalError } = await storage.upload(originalPath, originalFile, {
+  const originalUpload = resolveStorageUpload(originalFile);
+  const { error: originalError } = await storage.upload(originalPath, originalUpload.body, {
     cacheControl: '3600',
     upsert: false,
-    contentType: originalFile?.type || 'image/jpeg',
+    contentType: originalUpload.contentType || 'image/jpeg',
   });
   if (originalError) throw originalError;
 
   let uploadedThumbPath = null;
   try {
     if (thumbnailFile) {
-      const { error: thumbError } = await storage.upload(thumbnailPath, thumbnailFile, {
+      const thumbUpload = resolveStorageUpload(thumbnailFile);
+      const { error: thumbError } = await storage.upload(thumbnailPath, thumbUpload.body, {
         cacheControl: '3600',
         upsert: false,
-        contentType: thumbnailFile?.type || 'image/jpeg',
+        contentType: thumbUpload.contentType || 'image/jpeg',
       });
       if (thumbError) throw thumbError;
       uploadedThumbPath = thumbnailPath;
@@ -115,9 +118,9 @@ export async function uploadTaskPhotoSet(supabase, {
         sort_order: sortOrder,
         is_completion_photo: Boolean(isCompletionPhoto),
         uploaded_by_user_id: uploadedByUserId,
-        mime_type: originalFile?.type || null,
-        original_filename: originalFile?.name || null,
-        file_size_bytes: originalFile?.size || null,
+        mime_type: originalUpload.contentType || null,
+        original_filename: originalUpload.name || null,
+        file_size_bytes: originalUpload.size || null,
         captured_at: capturedAt || null,
       })
       .select('*')

@@ -18,6 +18,7 @@ export default function TaskCard({
   onPress,
   onProgressPress,
   onPhotoPress,
+  canManagePhotos = true,
   photoUploading = false,
   testID,
 }) {
@@ -60,17 +61,19 @@ export default function TaskCard({
             </View>
           ) : null}
           <View style={styles.spacer} />
-          <PressableWithFade
-            onPress={() => onPhotoPress?.(task)}
-            style={styles.iconBtn}
-            hitSlop={touch.hitSlop}
-            disabled={photoUploading}
-            testID={`${testID}-photo`}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.add_photo')}
-          >
-            <Ionicons name="camera-outline" size={24} color={photoUploading ? colors.textSubtle : primaryColor} />
-          </PressableWithFade>
+          {canManagePhotos ? (
+            <PressableWithFade
+              onPress={() => onPhotoPress?.(task)}
+              style={styles.iconBtn}
+              hitSlop={touch.hitSlop}
+              disabled={photoUploading}
+              testID={`${testID}-photo`}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.add_photo')}
+            >
+              <Ionicons name="camera-outline" size={24} color={photoUploading ? colors.textSubtle : primaryColor} />
+            </PressableWithFade>
+          ) : null}
         </View>
       </View>
     </Wrapper>

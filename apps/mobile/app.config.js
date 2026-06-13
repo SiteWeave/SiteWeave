@@ -5,7 +5,7 @@ module.exports = function(env) {
     expo: {
       name: "SiteWeave",
       slug: "siteweave-mobile",
-      version: "1.0.2",
+      version: "1.0.3",
       orientation: "portrait",
       icon: "./assets/icon.png",
       userInterfaceStyle: "light",

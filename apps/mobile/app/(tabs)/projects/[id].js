@@ -1,22 +1,21 @@
-import { View, Text, StyleSheet, ScrollView, SectionList, FlatList } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, SectionList, FlatList, Alert } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../../context/AuthContext';
-import * as ImagePicker from 'expo-image-picker';
 import {
   fetchProject,
   fetchTasksByProject,
   completeTask,
   updateTask,
   computeWeightedProjectProgressPercent,
-  uploadTaskPhotoSet,
+  canManageTaskPhotos,
 } from '@siteweave/core-logic';
 import TaskCard from '../../../components/TaskCard';
 import TaskDetailModal from '../../../components/TaskDetailModal';
 import ProgressBottomSheet from '../../../components/ProgressBottomSheet';
 import PhotoAttachSheet from '../../../components/PhotoAttachSheet';
-import { uriToUploadFile } from '../../../utils/imageUpload';
+import { pickAndUploadTaskPhoto, resolveTaskOrganizationId } from '../../../utils/pickAndUploadTaskPhoto';
 import { colors, spacing, touch } from '../../../theme';
 import { TAB_BAR_CLEARANCE } from '../../../components/ui/FloatingTabBar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,8 +27,8 @@ import ProjectCollaborationPanel from '../../../components/ProjectCollaborationP
 import { SkeletonCard, SkeletonList } from '../../../components/ui/Skeleton';
 
 function resolveScopeOrganizationId({ activeOrganization, project, collaborationProjects, projectId }) {
-  if (activeOrganization?.id) return activeOrganization.id;
   if (project?.organization_id) return project.organization_id;
+  if (activeOrganization?.id) return activeOrganization.id;
   const collab = collaborationProjects?.find((p) => p.id === projectId);
   return collab?.organization_id ?? null;
 }
@@ -41,6 +40,7 @@ export default function ProjectDetailScreen() {
   const router = useRouter();
   const {
     supabase,
+    user,
     activeOrganization,
     isProjectCollaborator,
     collaborationProjects,
@@ -56,7 +56,7 @@ export default function ProjectDetailScreen() {
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [progress, setProgress] = useState(0);
   const [photoUploadTaskId, setPhotoUploadTaskId] = useState(null);
-  const [currentUserId, setCurrentUserId] = useState(null);
+  const [userContactId, setUserContactId] = useState(null);
   const subscriptionRef = useRef(null);
   const [progressTask, setProgressTask] = useState(null);
   const [showProgressSheet, setShowProgressSheet] = useState(false);
@@ -144,13 +144,18 @@ export default function ProjectDetailScreen() {
   };
 
   useEffect(() => {
-    const resolveCurrentUser = async () => {
-      if (!supabase) return;
-      const { data } = await supabase.auth.getUser();
-      setCurrentUserId(data?.user?.id || null);
-    };
-    resolveCurrentUser();
-  }, [supabase]);
+    if (!user?.id || !supabase) {
+      setUserContactId(null);
+      return;
+    }
+    supabase
+      .from('profiles')
+      .select('contact_id')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => setUserContactId(data?.contact_id ?? null))
+      .catch(() => setUserContactId(null));
+  }, [user?.id, supabase]);
 
   const loadProjectData = async () => {
     if (!projectId || !supabase) {
@@ -243,58 +248,50 @@ export default function ProjectDetailScreen() {
     }
   };
 
-  const pickAndUploadTaskPhoto = async (task, mode) => {
-    if (!task?.id || !task?.project_id || !scopeOrganizationId || !supabase) return;
+  const runTaskPhotoUpload = async (mode) => {
+    const task = photoTask;
+    if (!task) return;
+
+    const orgId = resolveTaskOrganizationId(
+      task,
+      activeOrganization,
+      project ? [project] : collaborationProjects,
+    );
+    if (!orgId) {
+      Alert.alert(t('common.error'), t('mobile.task_photo_missing_org', { defaultValue: 'Could not resolve organization for this task.' }));
+      return;
+    }
 
     try {
-      const permission =
-        mode === 'camera'
-          ? await ImagePicker.requestCameraPermissionsAsync()
-          : await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        alert('Photo permission is required to attach task photos.');
-        return;
-      }
-
-      const mediaTypes = ImagePicker.MediaTypeOptions?.Images ?? ['images'];
-      const result =
-        mode === 'camera'
-          ? await ImagePicker.launchCameraAsync({
-              mediaTypes,
-              quality: 0.8,
-              allowsEditing: false,
-            })
-          : await ImagePicker.launchImageLibraryAsync({
-              mediaTypes,
-              quality: 0.8,
-              allowsEditing: false,
-            });
-
-      if (result.canceled || !result.assets?.[0]) return;
-      const asset = result.assets[0];
-      const originalFile = await uriToUploadFile(asset.uri, {
-        mimeType: asset.mimeType || 'image/jpeg',
-        fileName: asset.fileName || undefined,
-      });
-
       setPhotoUploadTaskId(task.id);
-      await uploadTaskPhotoSet(supabase, {
-        taskId: task.id,
-        organizationId: scopeOrganizationId,
-        projectId: task.project_id,
-        originalFile,
-        thumbnailFile: null,
-        uploadedByUserId: currentUserId,
-        capturedAt: new Date().toISOString(),
+      const uploaded = await pickAndUploadTaskPhoto({
+        supabase,
+        task,
+        organizationId: orgId,
+        userId: user?.id,
+        mode,
       });
-      alert('Photo attached to task.');
+      if (uploaded) {
+        Alert.alert(t('common.success'), t('mobile.task_photo_attached', { defaultValue: 'Photo attached to task.' }));
+        await loadProjectData();
+      }
     } catch (error) {
       console.error('Error uploading task photo:', error);
-      alert('Could not upload photo. Please try again.');
+      Alert.alert(t('common.error'), error.message || t('mobile.task_photo_upload_failed', { defaultValue: 'Could not upload photo.' }));
     } finally {
       setPhotoUploadTaskId(null);
+      setShowPhotoSheet(false);
+      setPhotoTask(null);
     }
   };
+
+  const canUploadPhotosForTask = (task) =>
+    canManageTaskPhotos({
+      project,
+      userId: user?.id,
+      userContactId,
+      task,
+    });
 
   const groupTasksByStatus = () => {
     const today = new Date();
@@ -394,6 +391,13 @@ export default function ProjectDetailScreen() {
   };
 
   const openPhotoSheet = (task) => {
+    if (!canUploadPhotosForTask(task)) {
+      Alert.alert(
+        t('common.error'),
+        t('mobile.task_photo_permission_denied', { defaultValue: 'You do not have permission to attach photos to this task.' }),
+      );
+      return;
+    }
     setPhotoTask(task);
     setShowPhotoSheet(true);
   };
@@ -432,6 +436,7 @@ export default function ProjectDetailScreen() {
         setShowProgressSheet(true);
       }}
       onPhotoPress={openPhotoSheet}
+      canManagePhotos={canUploadPhotosForTask(item)}
       photoUploading={photoUploadTaskId === item.id}
       testID={`task-card-${item.id}`}
     />
@@ -639,7 +644,7 @@ export default function ProjectDetailScreen() {
             <ProjectCollaborationPanel
               project={project}
               supabase={supabase}
-              currentUserId={currentUserId}
+              currentUserId={user?.id}
             />
           )}
 
@@ -656,7 +661,7 @@ export default function ProjectDetailScreen() {
         task={detailTask}
         project={project}
         supabase={supabase}
-        currentUserId={currentUserId}
+        currentUserId={user?.id}
         viewerOrgId={scopeOrganizationId}
         onClose={() => {
           setShowTaskDetail(false);
@@ -682,18 +687,8 @@ export default function ProjectDetailScreen() {
           setPhotoTask(null);
         }}
         uploading={!!photoUploadTaskId}
-        onCamera={() => {
-          const task = photoTask;
-          setShowPhotoSheet(false);
-          setPhotoTask(null);
-          if (task) pickAndUploadTaskPhoto(task, 'camera');
-        }}
-        onLibrary={() => {
-          const task = photoTask;
-          setShowPhotoSheet(false);
-          setPhotoTask(null);
-          if (task) pickAndUploadTaskPhoto(task, 'library');
-        }}
+        onCamera={() => runTaskPhotoUpload('camera')}
+        onLibrary={() => runTaskPhotoUpload('library')}
       />
     </View>
   );

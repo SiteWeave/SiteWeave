@@ -11,52 +11,17 @@ import PressableWithFade from '../PressableWithFade';
 import { Text } from './Text';
 import { colors, spacing } from '../../theme';
 import { useBranding } from '../../context/BrandingContext';
+import {
+  getConditionFromCode,
+  getWeatherDescriptionKey,
+  getWeatherIconName,
+  isSnowWeatherCode,
+} from '../../utils/weatherDescriptions';
 
 const WEATHER_API_URL = 'https://api.open-meteo.com/v1/forecast';
 const ICON_SIZE = 36;
 const ICON_COLUMN = 44;
 const PRECIP_SHOW_THRESHOLD = 15;
-
-const getWeatherIcon = (condition) => {
-  const c = condition?.toLowerCase() || '';
-  if (c.includes('clear')) return 'sunny';
-  if (c.includes('cloud')) return 'cloudy';
-  if (c.includes('rain') || c.includes('drizzle')) return 'rainy';
-  if (c.includes('thunderstorm')) return 'thunderstorm';
-  if (c.includes('snow')) return 'snow';
-  return 'partly-sunny';
-};
-
-const getConditionFromCode = (code) => {
-  if (code === 0) return 'Clear';
-  if (code >= 1 && code <= 3) return 'Cloud';
-  if (code >= 45 && code <= 48) return 'Fog';
-  if (code >= 51 && code <= 67) return 'Rain';
-  if (code >= 71 && code <= 77) return 'Snow';
-  if (code >= 80 && code <= 82) return 'Rain';
-  if (code >= 85 && code <= 86) return 'Snow';
-  if (code >= 95 && code <= 99) return 'Thunderstorm';
-  return 'Cloud';
-};
-
-function isSnowWeatherCode(code) {
-  return (code >= 71 && code <= 77) || (code >= 85 && code <= 86);
-}
-
-const DESCRIPTIONS = {
-  0: 'Clear sky',
-  1: 'Mainly clear',
-  2: 'Partly cloudy',
-  3: 'Overcast',
-  61: 'Rain',
-  63: 'Moderate rain',
-  65: 'Heavy rain',
-  95: 'Thunderstorm',
-};
-
-function getDescriptionFromCode(code) {
-  return DESCRIPTIONS[code] || getConditionFromCode(code);
-}
 
 async function resolveLocationLabel(latitude, longitude) {
   try {
@@ -119,8 +84,8 @@ export default function WeatherCard({ onPress, onLogWeather, testID = 'weather-c
 
       setWeather({
         temperature: Math.round(data.current.temperature_2m),
-        description: getDescriptionFromCode(code),
-        icon: getWeatherIcon(condition),
+        weatherCode: code,
+        icon: getWeatherIconName(condition),
         locationLabel,
         precipProbability,
         precipIsSnow: isSnowWeatherCode(code),
@@ -134,6 +99,10 @@ export default function WeatherCard({ onPress, onLogWeather, testID = 'weather-c
   };
 
   const logLabel = t('mobile.log_weather_short', { defaultValue: 'Log delay' });
+
+  const weatherDescription = weather
+    ? t(getWeatherDescriptionKey(weather.weatherCode))
+    : null;
 
   const precipLine =
     weather &&
@@ -186,7 +155,7 @@ export default function WeatherCard({ onPress, onLogWeather, testID = 'weather-c
                 <Text style={styles.unit}>°F</Text>
               </View>
               <Text variant="bodyMedium" style={styles.description} numberOfLines={1}>
-                {weather.description}
+                {weatherDescription}
               </Text>
               {precipLine ? (
                 <Text variant="bodyMedium" style={styles.precip} numberOfLines={1}>

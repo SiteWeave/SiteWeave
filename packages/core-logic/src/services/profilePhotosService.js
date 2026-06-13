@@ -1,3 +1,5 @@
+import { resolveStorageUpload } from '../utils/uploadPayload.js';
+
 export const PROFILE_PHOTOS_BUCKET = 'profile_photos';
 export const PROFILE_PHOTO_MAX_BYTES = 3 * 1024 * 1024;
 export const PROFILE_PHOTO_SIZE = 512;
@@ -221,18 +223,19 @@ export function validateProfilePhotoFile(file) {
 }
 
 export async function uploadProfilePhoto(supabase, { userId, file }) {
-  validateProfilePhotoFile(file);
+  const upload = resolveStorageUpload(file);
+  validateProfilePhotoFile({ type: upload.contentType, size: upload.size || 0 });
   const { contactId, avatarUrl: previousAvatarUrl } = await getCurrentUserContactProfile(supabase, userId, {
     ensureLinked: true,
   });
-  const path = buildProfilePhotoPath(userId, contactId, file.type);
+  const path = buildProfilePhotoPath(userId, contactId, upload.contentType);
 
   const { error: uploadError } = await supabase.storage
     .from(PROFILE_PHOTOS_BUCKET)
-    .upload(path, file, {
+    .upload(path, upload.body, {
       cacheControl: '31536000',
       upsert: false,
-      contentType: file.type || 'image/jpeg',
+      contentType: upload.contentType || 'image/jpeg',
     });
   if (uploadError) throw uploadError;
 

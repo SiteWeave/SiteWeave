@@ -35,10 +35,10 @@ function extensionFromUri(uri, mimeType) {
 }
 
 /**
- * Read a local image URI into a Blob-like object for Supabase storage upload.
- * React Native fetch(file://) is unreliable; expo-file-system base64 is used instead.
+ * Read a local image URI into an upload payload for Supabase storage.
+ * React Native Blob does not support ArrayBufferView — pass ArrayBuffer to storage.upload instead.
  */
-export async function uriToUploadFile(uri, { mimeType = 'image/jpeg', fileName } = {}) {
+export async function uriToUploadPayload(uri, { mimeType = 'image/jpeg', fileName } = {}) {
   const base64 = await FileSystem.readAsStringAsync(uri, {
     encoding: FileSystem.EncodingType.Base64,
   });
@@ -46,13 +46,17 @@ export async function uriToUploadFile(uri, { mimeType = 'image/jpeg', fileName }
   const type = mimeType || 'image/jpeg';
   const ext = extensionFromUri(uri, type);
   const name = fileName || `photo-${Date.now()}.${ext}`;
+  const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 
-  const blob = new Blob([bytes], { type });
-  try {
-    Object.defineProperty(blob, 'name', { value: name, configurable: true });
-    Object.defineProperty(blob, 'size', { value: bytes.length, configurable: true });
-  } catch {
-    // Some RN runtimes omit name/size; storage still works with contentType.
-  }
-  return blob;
+  return {
+    body,
+    type,
+    name,
+    size: bytes.length,
+  };
+}
+
+/** @deprecated Use uriToUploadPayload — kept for callers expecting the old name. */
+export async function uriToUploadFile(uri, options) {
+  return uriToUploadPayload(uri, options);
 }

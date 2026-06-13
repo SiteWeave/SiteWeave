@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadProfilePhoto, removeProfilePhoto, validateProfilePhotoFile } from '@siteweave/core-logic';
-import { uriToUploadFile } from '../utils/imageUpload';
+import { uriToUploadPayload } from '../utils/imageUpload';
 import { prepareMobileAvatarUri } from '../utils/prepareAvatarImage';
 import Avatar from './ui/Avatar';
 
@@ -99,7 +99,9 @@ export default function EditProfileModal({ visible, onClose, onProfileUpdated })
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ImagePicker.MediaType?.Images
+          ? [ImagePicker.MediaType.Images]
+          : (ImagePicker.MediaTypeOptions?.Images ?? ['images']),
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.85,
@@ -108,7 +110,7 @@ export default function EditProfileModal({ visible, onClose, onProfileUpdated })
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
       const prepared = await prepareMobileAvatarUri(asset.uri);
-      const uploadFile = await uriToUploadFile(prepared.uri, {
+      const uploadFile = await uriToUploadPayload(prepared.uri, {
         mimeType: prepared.mimeType,
         fileName: `avatar-${Date.now()}.jpg`,
       });

@@ -11,7 +11,6 @@ import { colors, spacing, touch } from '../../theme';
 import {
   fetchUserNotifications,
   markNotificationRead,
-  acknowledgeNotification,
   resolveNotificationRoute,
 } from '../../utils/notifications';
 import { getCached, setCached } from '../../utils/persistentCache';
@@ -86,21 +85,6 @@ export default function NotificationsScreen() {
     router.push(route || '/');
   };
 
-  const handleAcknowledge = async (item) => {
-    try {
-      await acknowledgeNotification(supabase, { notificationId: item.id, userId: user?.id });
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n.id === item.id
-            ? { ...n, acknowledged_at: new Date().toISOString(), read_at: n.read_at || new Date().toISOString() }
-            : n,
-        ),
-      );
-    } catch (error) {
-      console.error('Error acknowledging notification:', error);
-    }
-  };
-
   const handleMarkRead = async (item) => {
     const readAt = new Date().toISOString();
     const prev = notifications;
@@ -118,40 +102,36 @@ export default function NotificationsScreen() {
   const renderNotification = ({ item }) => {
     const isUnread = !item.read_at;
     return (
-      <PressableWithFade
-        style={[styles.card, isUnread && styles.cardUnread]}
-        onPress={() => handleOpenNotification(item)}
-        activeOpacity={0.75}
-      >
-        <View style={styles.cardHeader}>
-          <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
-          {isUnread ? <View style={styles.unreadDot} /> : null}
-        </View>
-        <Text style={styles.body} numberOfLines={3}>{item.body}</Text>
-        <Text style={styles.time}>
-          {item.created_at ? new Date(item.created_at).toLocaleString() : ''}
-        </Text>
-        <View style={styles.actionsRow}>
+      <View style={[styles.card, isUnread && styles.cardUnread]}>
+        <View style={styles.cardRow}>
+          <View style={styles.cardContent}>
+            <PressableWithFade
+              style={styles.cardContentPressable}
+              onPress={() => handleOpenNotification(item)}
+              activeOpacity={0.75}
+            >
+              <View style={styles.cardHeader}>
+                <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
+                {isUnread ? <View style={styles.unreadDot} /> : null}
+              </View>
+              <Text style={styles.body} numberOfLines={3}>{item.body}</Text>
+              <Text style={styles.time}>
+                {item.created_at ? new Date(item.created_at).toLocaleString() : ''}
+              </Text>
+            </PressableWithFade>
+          </View>
           <PressableWithFade
             style={styles.actionButton}
             onPress={() => handleMarkRead(item)}
             disabled={Boolean(item.read_at)}
             activeOpacity={0.7}
           >
-            <Text style={styles.actionButtonText}>{item.read_at ? t('mobile.read') : t('mobile.mark_read')}</Text>
-          </PressableWithFade>
-          <PressableWithFade
-            style={styles.actionButton}
-            onPress={() => handleAcknowledge(item)}
-            disabled={Boolean(item.acknowledged_at)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionButtonText}>
-              {item.acknowledged_at ? 'Acknowledged' : 'Acknowledge'}
+            <Text style={[styles.actionButtonText, item.read_at && styles.actionButtonTextRead]}>
+              {item.read_at ? t('mobile.read') : t('mobile.mark_read')}
             </Text>
           </PressableWithFade>
         </View>
-      </PressableWithFade>
+      </View>
     );
   };
 
@@ -254,6 +234,19 @@ const styles = StyleSheet.create({
     borderColor: '#93C5FD',
     backgroundColor: '#F8FBFF',
   },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+  },
+  cardContent: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: spacing.lg,
+  },
+  cardContentPressable: {
+    flex: 1,
+  },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -270,24 +263,26 @@ const styles = StyleSheet.create({
   },
   body: { marginTop: 6, fontSize: 14, color: '#374151', lineHeight: 20 },
   time: { marginTop: 8, fontSize: 12, color: '#6B7280' },
-  actionsRow: {
-    marginTop: 10,
-    flexDirection: 'row',
-    gap: 8,
-  },
   actionButton: {
-    minHeight: 40,
+    alignSelf: 'center',
+    marginLeft: 'auto',
+    minHeight: 36,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#D1D5DB',
     justifyContent: 'center',
     paddingHorizontal: 10,
+    paddingVertical: 8,
     backgroundColor: '#fff',
+    flexShrink: 0,
   },
   actionButtonText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#374151',
+    color: '#2563EB',
+  },
+  actionButtonTextRead: {
+    color: '#9CA3AF',
   },
   centerState: {
     flex: 1,
