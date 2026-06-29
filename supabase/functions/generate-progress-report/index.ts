@@ -827,6 +827,42 @@ serve(async (req) => {
       weatherImpacts = mapOrgWideWeatherImpactRows(filteredWeatherRows)
     }
 
+    // Daily site logs — only when the schedule opts in (optional section).
+    let dailySiteLogs: any[] = []
+    const includeDailySiteLogs = schedule.report_sections?.include_daily_site_logs === true
+    const dailyLogProjectIds = schedule.project_id
+      ? [schedule.project_id]
+      : effectiveProjectIds
+    if (includeDailySiteLogs && dailyLogProjectIds.length > 0) {
+      let dlQuery = supabase
+        .from('project_stream_posts')
+        .select('id, project_id, title, body, payload, created_at, projects!project_stream_posts_project_id_fkey(name)')
+        .eq('organization_id', schedule.organization_id)
+        .eq('post_type', 'daily_log')
+        .in('project_id', dailyLogProjectIds)
+        .order('created_at', { ascending: true })
+      if (startDate) {
+        dlQuery = dlQuery.gte('created_at', startDate)
+      }
+      if (endDate) {
+        dlQuery = dlQuery.lte('created_at', endDate)
+      }
+      const { data: dlRows, error: dlError } = await dlQuery
+      if (dlError) {
+        console.error('Failed to load daily site logs for report generation', dlError)
+      } else {
+        dailySiteLogs = (dlRows || []).map((row: any) => ({
+          id: row.id,
+          project_id: row.project_id,
+          project_name: row.projects?.name || null,
+          title: row.title,
+          body: row.body,
+          payload: row.payload,
+          created_at: row.created_at,
+        }))
+      }
+    }
+
     // Process activities into structured changes
     const statusChanges = []
     const completedTasksById = new Map<string, {
@@ -1026,6 +1062,7 @@ serve(async (req) => {
       project_id: schedule.project_id,
       project_name: project?.name,
       weather_impacts: weatherImpacts,
+      daily_site_logs: dailySiteLogs,
       start_date: startDate,
       end_date: endDate,
       status_changes: statusChanges,

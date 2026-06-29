@@ -26,7 +26,13 @@ export function buildProgressReportEmail(reportData, filteredData, schedule, bra
 }
 `;
 
-const outDir = path.join(root, 'supabase/functions/_shared');
-fs.mkdirSync(outDir, { recursive: true });
-fs.writeFileSync(path.join(outDir, 'progressReportEmailTemplates.ts'), head + s + tail);
-console.log('Wrote supabase/functions/_shared/progressReportEmailTemplates.ts');
+const outDirs = [
+  path.join(root, 'supabase/functions/_shared'),
+  path.join(root, 'apps/web/supabase/functions/_shared'),
+];
+const contents = head + s + tail;
+for (const outDir of outDirs) {
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(path.join(outDir, 'progressReportEmailTemplates.ts'), contents);
+  console.log(`Wrote ${path.relative(root, path.join(outDir, 'progressReportEmailTemplates.ts'))}`);
+}

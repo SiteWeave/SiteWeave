@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import ContactSelector from './ContactSelector';
+import ProgressReportRecipientsField from './ProgressReportRecipientsField';
 import ProgressReportPreview from './ProgressReportPreview';
 import BrandingSettings from './BrandingSettings';
 import LoadingSpinner from './LoadingSpinner';
@@ -10,7 +10,26 @@ import {
   createProgressReportSchedule,
   updateProgressReportSchedule,
   updateRecipients,
+  formatSendHourLabel,
+  formatTimezoneLabel,
 } from '@siteweave/core-logic';
+
+const TIMEZONE_DEFS = [
+  { value: 'America/New_York', labelKey: 'timezone_eastern' },
+  { value: 'America/Chicago', labelKey: 'timezone_central' },
+  { value: 'America/Denver', labelKey: 'timezone_mountain' },
+  { value: 'America/Los_Angeles', labelKey: 'timezone_pacific' },
+  { value: 'America/Anchorage', labelKey: 'timezone_alaska' },
+  { value: 'Pacific/Honolulu', labelKey: 'timezone_hawaii' },
+];
+
+function getBrowserTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
+  } catch {
+    return 'America/New_York';
+  }
+}
 
 const DAY_I18N_KEYS = [
   'day_sunday',
@@ -57,6 +76,7 @@ const DETAIL_TOGGLE_DEFS = [
   { key: 'show_blockers', labelKey: 'toggle_blockers', default: false },
   { key: 'show_weather_impacts', labelKey: 'toggle_weather', default: true },
   { key: 'include_task_photos', labelKey: 'toggle_photos', default: false },
+  { key: 'include_daily_site_logs', labelKey: 'toggle_daily_site_logs', default: false },
   { key: 'client_friendly_labels', labelKey: 'toggle_friendly_labels', default: true },
 ];
 
@@ -74,25 +94,11 @@ const DEFAULT_SECTIONS = {
   show_blockers: false,
   show_weather_impacts: true,
   include_task_photos: false,
+  include_daily_site_logs: false,
   client_friendly_labels: true,
 };
 
 const builderKey = (suffix) => `progressReports.builder.${suffix}`;
-
-// Parse comma/newline separated emails and return array of { email, recipient_type: 'to' }
-function parseEmailsText(text) {
-  const raw = text
-    .split(/[\n,;]+/)
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  const seen = new Set();
-  return raw.filter((email) => {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false;
-    if (seen.has(email)) return false;
-    seen.add(email);
-    return true;
-  }).map((email) => ({ email, recipient_type: 'to' }));
-}
 
 /**
  * Progress Report Builder — single-page form with live preview.
@@ -112,9 +118,32 @@ function ProgressReportBuilder({
   const [showBranding, setShowBranding] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [recipientsText, setRecipientsText] = useState('');
-  const [showAddFromContacts, setShowAddFromContacts] = useState(false);
-  const [orgReportHour, setOrgReportHour] = useState(null);
+  const [recipients, setRecipients] = useState([]);
+  const recipientsFieldRef = useRef(null);
+  const browserTimezone = useMemo(() => getBrowserTimezone(), []);
+
+  const sendHourOptions = useMemo(
+    () =>
+      Array.from({ length: 24 }, (_, hour) => ({
+        value: hour,
+        label: formatSendHourLabel(hour),
+      })),
+    []
+  );
+
+  const timezoneOptions = useMemo(() => {
+    const base = TIMEZONE_DEFS.map(({ value, labelKey }) => ({
+      value,
+      label: t(builderKey(labelKey)),
+    }));
+    if (!base.some((opt) => opt.value === browserTimezone)) {
+      base.unshift({
+        value: browserTimezone,
+        label: t(builderKey('timezone_local'), { zone: browserTimezone }),
+      });
+    }
+    return base;
+  }, [t, browserTimezone]);
 
   const dayNames = useMemo(
     () => DAY_I18N_KEYS.map((key) => t(builderKey(key))),
@@ -182,16 +211,10 @@ function ProgressReportBuilder({
     requires_approval: false,
     include_branding: true,
     is_active: false,
+    send_hour: 8,
+    send_timezone: browserTimezone,
   });
 
-  const recipients = useMemo(() => parseEmailsText(recipientsText), [recipientsText]);
-  const [contactSelectedRecipients, setContactSelectedRecipients] = useState([]);
-  const allRecipients = useMemo(() => {
-    const byEmail = new Map();
-    recipients.forEach((r) => byEmail.set(r.email, r));
-    (contactSelectedRecipients || []).forEach((r) => byEmail.set(r.email, r));
-    return Array.from(byEmail.values());
-  }, [recipients, contactSelectedRecipients]);
 
   const defaultReportNameSuffix = useMemo(() => {
     if (!projectId || !projects.length) return null;
@@ -234,22 +257,26 @@ function ProgressReportBuilder({
   }, [projectId, scheduleId]);
 
   useEffect(() => {
-    const loadOrgReportHour = async () => {
-      const orgId = organizationId || state.currentOrganization?.id;
-      if (!orgId) return;
+    if (scheduleId) return;
+    const orgId = organizationId || state.currentOrganization?.id;
+    if (!orgId) return;
+    const loadDefaultTimezone = async () => {
       const { data } = await supabaseClient
         .from('organizations')
-        .select('progress_report_send_hour')
+        .select('progress_report_timezone')
         .eq('id', orgId)
         .maybeSingle();
-      setOrgReportHour(
-        Number.isFinite(Number(data?.progress_report_send_hour))
-          ? Number(data.progress_report_send_hour)
-          : null
-      );
+      const tz =
+        typeof data?.progress_report_timezone === 'string' && data.progress_report_timezone
+          ? data.progress_report_timezone
+          : browserTimezone;
+      setFormData((prev) => ({
+        ...prev,
+        send_timezone: prev.send_timezone || tz,
+      }));
     };
-    loadOrgReportHour();
-  }, [organizationId, state.currentOrganization?.id]);
+    loadDefaultTimezone();
+  }, [scheduleId, organizationId, state.currentOrganization?.id, browserTimezone]);
 
   const loadSchedule = async () => {
     setIsLoading(true);
@@ -310,11 +337,29 @@ function ProgressReportBuilder({
         requires_approval: false,
         include_branding: data.include_branding !== false,
         is_active: data.is_active || false,
+        send_hour: Number.isFinite(Number(data.send_hour)) ? Number(data.send_hour) : 8,
+        send_timezone:
+          typeof data.send_timezone === 'string' && data.send_timezone
+            ? data.send_timezone
+            : browserTimezone,
       });
 
       const recs = data.progress_report_recipients || [];
-      setRecipientsText(recs.map((r) => r.email).filter(Boolean).join(', '));
-      setContactSelectedRecipients([]);
+      const contactsById = new Map((state.contacts || []).map((c) => [c.id, c]));
+      setRecipients(
+        recs
+          .map((r) => {
+            const contact = r.contact_id ? contactsById.get(r.contact_id) : null;
+            return {
+              contact_id: r.contact_id ?? undefined,
+              email: r.email,
+              name: contact?.name,
+              contact_type: contact?.type,
+              recipient_type: r.recipient_type || 'to',
+            };
+          })
+          .filter((r) => r.email),
+      );
     } catch (error) {
       addToast(t(builderKey('load_schedule_error'), { message: error.message }), 'error');
     } finally {
@@ -327,12 +372,9 @@ function ProgressReportBuilder({
       addToast(t(builderKey('enter_report_name')), 'error');
       return;
     }
-    if (allRecipients.length === 0) {
+    const activeRecipients = recipientsFieldRef.current?.flush?.() ?? recipients;
+    if (activeRecipients.length === 0) {
       addToast(t(builderKey('add_recipient')), 'error');
-      return;
-    }
-    if (formData.frequency !== 'manual' && !Number.isFinite(Number(orgReportHour))) {
-      addToast(t(builderKey('set_org_hour')), 'warning');
       return;
     }
     if (!projectId && (!formData.included_project_ids || formData.included_project_ids.length === 0)) {
@@ -376,7 +418,7 @@ function ProgressReportBuilder({
         savedSchedule = await createProgressReportSchedule(supabaseClient, scheduleData);
       }
 
-      await updateRecipients(supabaseClient, savedSchedule.id, allRecipients);
+      await updateRecipients(supabaseClient, savedSchedule.id, activeRecipients);
 
       addToast(
         activate ? t(builderKey('schedule_activated')) : t(builderKey('schedule_saved')),
@@ -403,6 +445,15 @@ function ProgressReportBuilder({
   const needsMonthlyDay = frequency === 'monthly';
   const dayValue = frequencyValue != null && frequencyValue >= 0 && frequencyValue <= 6 ? frequencyValue : 1;
   const monthlyValue = frequency === 'monthly' ? (frequencyValue === 15 ? 15 : frequencyValue === -1 || frequencyValue === 31 ? -1 : 1) : 1;
+  const sendHour = Number.isFinite(Number(formData.send_hour)) ? Number(formData.send_hour) : 8;
+  const sendTimezone = formData.send_timezone || browserTimezone;
+  const sendTimeSummary =
+    frequency !== 'manual'
+      ? t(builderKey(needsMonthlyDay ? 'send_time_summary_monthly' : 'send_time_summary'), {
+          time: formatSendHourLabel(sendHour),
+          timezone: formatTimezoneLabel(sendTimezone),
+        })
+      : null;
 
   if (isLoading) {
     return <LoadingSpinner text={t(builderKey('loading_schedule'))} />;
@@ -521,47 +572,16 @@ function ProgressReportBuilder({
             </div>
           )}
 
-          {/* Recipients */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t(builderKey('recipients'))}</label>
-            <textarea
-              value={recipientsText}
-              onChange={(e) => setRecipientsText(e.target.value)}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-              placeholder={t(builderKey('recipients_placeholder'))}
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              {t(builderKey('recipients_hint'))}
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowAddFromContacts((v) => !v)}
-              className="mt-2 text-sm text-blue-600 hover:text-blue-700"
-            >
-              {showAddFromContacts ? t(builderKey('hide_contacts')) : t(builderKey('add_from_contacts'))}
-            </button>
-            {showAddFromContacts && (
-              <div className="mt-2 border border-gray-200 rounded-lg p-3 bg-gray-50">
-                <ContactSelector
-                  selectedRecipients={contactSelectedRecipients}
-                  onChange={setContactSelectedRecipients}
-                  projectId={projectId}
-                  showRecipientType={false}
-                />
-              </div>
-            )}
-          </div>
+          <ProgressReportRecipientsField
+            ref={recipientsFieldRef}
+            recipients={recipients}
+            onChange={setRecipients}
+            projectId={projectId}
+          />
 
           {/* Schedule */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">{t(builderKey('schedule'))}</label>
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
-              {t(builderKey('schedule_hour_hint'))}
-              {Number.isFinite(Number(orgReportHour))
-                ? t(builderKey('schedule_hour_set'), { hour: orgReportHour })
-                : t(builderKey('schedule_hour_missing'))}
-            </p>
             <div className="flex flex-wrap gap-3 items-end">
               <div className="min-w-[140px]">
                 <select
@@ -614,6 +634,41 @@ function ProgressReportBuilder({
                 </div>
               )}
             </div>
+            {frequency !== 'manual' && (
+              <div className="flex flex-wrap gap-3 items-end pt-1">
+                <div className="min-w-[140px]">
+                  <label className="block text-xs text-gray-500 mb-1">{t(builderKey('send_time_label'))}</label>
+                  <select
+                    value={sendHour}
+                    onChange={(e) =>
+                      setFormData({ ...formData, send_hour: parseInt(e.target.value, 10) })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  >
+                    {sendHourOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="min-w-[180px]">
+                  <label className="block text-xs text-gray-500 mb-1">{t(builderKey('send_timezone_label'))}</label>
+                  <select
+                    value={sendTimezone}
+                    onChange={(e) => setFormData({ ...formData, send_timezone: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  >
+                    {timezoneOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+            {sendTimeSummary && (
+              <p className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-md px-2 py-1.5">
+                {sendTimeSummary}
+              </p>
+            )}
           </div>
 
           {projectId && (
@@ -759,7 +814,7 @@ function ProgressReportBuilder({
           <ProgressReportPreview
             formData={formData}
             projectId={projectId}
-            recipients={allRecipients}
+            recipients={recipients}
             scheduleId={scheduleId}
           />
         </div>
