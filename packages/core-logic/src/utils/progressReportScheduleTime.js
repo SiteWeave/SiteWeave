@@ -2,6 +2,49 @@
  * Progress report send-time helpers (aligned with send-progress-report edge function).
  */
 
+const TIMEZONE_SHORT_LABELS = {
+  'America/New_York': 'Eastern',
+  'America/Chicago': 'Central',
+  'America/Denver': 'Mountain',
+  'America/Los_Angeles': 'Pacific',
+  'America/Anchorage': 'Alaska',
+  'Pacific/Honolulu': 'Hawaii',
+};
+
+/**
+ * Format hour 0–23 as a 12-hour clock label (e.g. "8:00 AM").
+ * @param {number} hour
+ * @returns {string}
+ */
+export function formatSendHourLabel(hour) {
+  const safeHour = Number.isFinite(Number(hour))
+    ? Math.max(0, Math.min(23, Number(hour)))
+    : 8;
+  const period = safeHour < 12 ? 'AM' : 'PM';
+  const displayHour = safeHour % 12 === 0 ? 12 : safeHour % 12;
+  return `${displayHour}:00 ${period}`;
+}
+
+/**
+ * Format an IANA timezone for send-time summaries.
+ * @param {string} timeZone
+ * @returns {string}
+ */
+export function formatTimezoneLabel(timeZone) {
+  if (!timeZone || typeof timeZone !== 'string') return TIMEZONE_SHORT_LABELS['America/New_York'];
+  if (TIMEZONE_SHORT_LABELS[timeZone]) return TIMEZONE_SHORT_LABELS[timeZone];
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'short',
+    }).formatToParts(new Date());
+    const tzPart = parts.find((part) => part.type === 'timeZoneName');
+    return tzPart?.value || timeZone;
+  } catch {
+    return timeZone;
+  }
+}
+
 function getDateTimeParts(date, timeZone) {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone,

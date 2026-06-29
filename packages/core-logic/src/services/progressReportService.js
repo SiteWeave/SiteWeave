@@ -10,7 +10,13 @@ import {
   resolveScheduleNextSendAt,
 } from '../utils/progressReportScheduleTime.js';
 
-export { calculateNextSendDate, calculateFirstSendDate, resolveScheduleNextSendAt };
+export {
+  calculateNextSendDate,
+  calculateFirstSendDate,
+  resolveScheduleNextSendAt,
+  formatSendHourLabel,
+  formatTimezoneLabel,
+} from '../utils/progressReportScheduleTime.js';
 
 /**
  * @param {import('@supabase/supabase-js').FunctionsHttpError | Error | null} error
