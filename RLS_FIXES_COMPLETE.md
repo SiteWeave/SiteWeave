@@ -26,9 +26,8 @@
 
 ## Files Updated
 
-### Schema Files (Single Source of Truth)
-- ✅ `schema.sql` (root) - Updated with all RLS policies
-- ✅ `apps/web/schema.sql` - Synchronized with root
+### Schema File (Single Source of Truth)
+- ✅ `schema.sql` (repository root) - Updated with all RLS policies
 
 ### Quick Fix Scripts Created
 1. `apps/web/scripts/fix-roles-rls-quick.sql` - Roles RLS policy
@@ -104,11 +103,11 @@ This subquery gets **blocked by RLS** on the profiles table, causing 403 errors.
 
 ## Schema Files Are Now Idempotent
 
-Both `schema.sql` files can now be run multiple times without conflicts:
+Root `schema.sql` can now be run multiple times without conflicts:
 - ✅ All policies use DROP statements before CREATE
 - ✅ All triggers use DROP before CREATE
 - ✅ All functions use CREATE OR REPLACE
-- ✅ Both schema files are synchronized
+- ✅ Root `schema.sql` is the only schema file
 
 ## Helper Functions Added
 
@@ -141,7 +140,7 @@ All CREATE statements now have DROP blocks:
 ✅ All 403 Forbidden errors identified and fixed
 ✅ Schema files are the single source of truth
 ✅ Quick fix scripts available for immediate deployment
-✅ Both schema files synchronized
+✅ Root `schema.sql` is canonical
 ✅ Duplicate code removed from AppContext.jsx
 
 ## Why Separate Fix Scripts?
@@ -149,7 +148,7 @@ All CREATE statements now have DROP blocks:
 The separate scripts (`fix-roles-rls-quick.sql`, etc.) were created for **quick deployment while debugging**. They let you test fixes immediately without running the entire schema.sql (which can take time and might have other side effects).
 
 **Now that the fixes work:**
-- ✅ Both `schema.sql` files are updated with working policies
+- ✅ Root `schema.sql` is updated with working policies
 - ✅ You can run schema.sql anytime to reset everything
 - ✅ The fix scripts remain available for quick patches if needed
 

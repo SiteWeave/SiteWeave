@@ -1,21 +1,11 @@
 /**
- * Task Comments Service — task-anchored discussion with public/internal visibility.
+ * Task Comments Service — task-anchored discussion.
  */
 
 import { fetchUserInfo } from '../utils/fetchUserInfo.js';
 import { notifyTaskCommentCreated } from './projectCommunicationNotifyService.js';
 
 const COMMENT_BODY_MAX = 4000;
-
-/**
- * Whether the viewer can post internal comments (same org as project).
- * @param {{ organization_id?: string }} viewerProfile
- * @param {{ organization_id?: string }} project
- */
-export function canSetInternalVisibility(viewerProfile, project) {
-  if (!viewerProfile?.organization_id || !project?.organization_id) return false;
-  return viewerProfile.organization_id === project.organization_id;
-}
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
@@ -52,7 +42,7 @@ export async function createTaskComment(supabase, commentData) {
 
   const { data, error } = await supabase
     .from('task_comments')
-    .insert({ ...commentData, body })
+    .insert({ ...commentData, body, visibility: 'public' })
     .select('*')
     .single();
 
@@ -79,6 +69,7 @@ export async function updateTaskComment(supabase, commentId, updates) {
     if (!patch.body) throw new Error('Comment is required');
     if (patch.body.length > COMMENT_BODY_MAX) throw new Error(`Comment must be under ${COMMENT_BODY_MAX} characters`);
   }
+  delete patch.visibility;
 
   const { data, error } = await supabase
     .from('task_comments')

@@ -5,7 +5,7 @@ import InlineEditableText from './InlineEditableText';
 import PermissionGuard from './PermissionGuard';
 import DateRangePicker from './DateRangePicker';
 import { addDaysIso, localDateIso, formatLocalDateOnly } from '../utils/dateHelpers';
-import { normalizeAssigneePhone } from '@siteweave/core-logic';
+import { normalizeAssigneePhone, isSmsNotificationsEnabled } from '@siteweave/core-logic';
 
 /** @typedef {null | 'dates' | 'assign'} TaskPanel */
 
@@ -25,6 +25,7 @@ const TaskItem = memo(function TaskItem({
     onPingAssignee = null,
     pingLocked = false,
     onRequestAssigneeSmsConsent = null,
+    onShareSmsConsentLink = null,
     pingingTaskId = null,
     project = null,
 }) {
@@ -275,8 +276,9 @@ const TaskItem = memo(function TaskItem({
         defaultRegion: 'US',
     });
     const assigneePhoneOkPing = assigneePhoneNorm.isValid;
+    const smsEnabled = isSmsNotificationsEnabled();
     const smsConsent = task.assignee_sms_consent ?? null;
-    const smsPingAllowed = assigneePhoneOkPing && smsConsent === 'confirmed';
+    const smsPingAllowed = smsEnabled && assigneePhoneOkPing && smsConsent === 'confirmed';
     const smsConsentBlocked = assigneePhoneOkPing && smsConsent === 'opted_out';
     const looksLikePlaceholderName =
         /^assignee?\b/i.test(assigneeName) ||
@@ -636,7 +638,7 @@ const TaskItem = memo(function TaskItem({
                             task.assignee_id &&
                             (
                                 (assigneeEmail && assigneeEmail.includes('@')) ||
-                                Boolean(String(selectedAssigneeContact?.phone || '').trim())
+                                (smsEnabled && Boolean(String(selectedAssigneeContact?.phone || '').trim()))
                             ) && (
                                 <PermissionGuard permission="can_assign_tasks">
                                     <div className="flex shrink-0 items-center gap-0.5">
@@ -647,32 +649,25 @@ const TaskItem = memo(function TaskItem({
                                                 onPingAssignee(task);
                                             }}
                                             disabled={pingingTaskId === task.id}
-                                            className={`relative flex shrink-0 items-center gap-1 rounded-md border bg-white px-1.5 py-1 text-xs shadow-xs disabled:cursor-not-allowed disabled:opacity-50 ${
-                                                pingLocked
-                                                    ? 'border-amber-200 text-amber-700 hover:border-amber-300'
-                                                    : 'border-gray-200 text-gray-500 hover:border-blue-200 hover:text-blue-600'
-                                            }`}
+                                            className="relative flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-500 shadow-xs hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                                             title={
-                                                pingLocked
-                                                    ? 'Business plan'
-                                                    : assigneePhoneOkPing && smsConsent !== 'confirmed' && !smsConsentBlocked
-                                                      ? t('tasks.ping_title_sms')
-                                                      : t('tasks.ping_title_email')
+                                                smsEnabled &&
+                                                assigneePhoneOkPing &&
+                                                smsConsent !== 'confirmed' &&
+                                                !smsConsentBlocked
+                                                    ? t('tasks.ping_title_sms')
+                                                    : t('tasks.ping_title_email')
                                             }
                                             aria-label={t('tasks.ping_assignee_aria', { task: task.text })}
                                         >
-                                            {pingLocked && (
-                                                <svg className="h-3 w-3 shrink-0 text-amber-600" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
-                                                    <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                                                </svg>
-                                            )}
                                             <Icon
                                                 path="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405z"
                                                 className="h-3.5 w-3.5 shrink-0"
                                             />
                                             <span className="hidden sm:inline">{t('tasks.ping')}</span>
                                         </button>
-                                        {onRequestAssigneeSmsConsent &&
+                                        {smsEnabled &&
+                                            onRequestAssigneeSmsConsent &&
                                             assigneePhoneOkPing &&
                                             !smsPingAllowed &&
                                             !smsConsentBlocked &&
@@ -690,7 +685,8 @@ const TaskItem = memo(function TaskItem({
                                                     {t('tasks.sms_ok')}
                                                 </button>
                                             )}
-                                        {onRequestAssigneeSmsConsent &&
+                                        {smsEnabled &&
+                                            onRequestAssigneeSmsConsent &&
                                             smsConsent === 'pending' &&
                                             !smsConsentBlocked && (
                                                 <button
@@ -704,6 +700,23 @@ const TaskItem = memo(function TaskItem({
                                                     title={t('tasks.resend_consent')}
                                                 >
                                                     {t('tasks.resend_consent')}
+                                                </button>
+                                            )}
+                                        {onShareSmsConsentLink &&
+                                            assigneePhoneOkPing &&
+                                            smsConsent !== 'confirmed' &&
+                                            smsConsent !== 'opted_out' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onShareSmsConsentLink(task);
+                                                    }}
+                                                    disabled={pingingTaskId === task.id}
+                                                    className="flex shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-1 py-0.5 text-[10px] font-medium text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+                                                    title={t('sms.web_consent.get_consent_link')}
+                                                >
+                                                    {t('sms.web_consent.share_link')}
                                                 </button>
                                             )}
                                     </div>

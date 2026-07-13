@@ -1,0 +1,114 @@
+Twilio Toll-Free Verification — SiteWeave (paste fields)
+Replace [YOUR_TOLL_FREE_NUMBER] with your verified toll-free sender (e.g. +1-888-XXX-XXXX).
+
+================================================================================
+USE CASE / CAMPAIGN DESCRIPTION (short)
+================================================================================
+SiteWeave sends transactional SMS to construction project assignees and trade partners about assigned project work (task due reminders, assignment notices, and links to open tasks/projects). Messages are event-driven, low volume, and not used for marketing blasts. Recipients must opt in via web consent form or by replying YES to a one-time consent text before any substantive messages are sent.
+
+================================================================================
+USE CASE CATEGORY (Twilio dropdown)
+================================================================================
+Account Notifications  (or: Customer Care / Mixed — transactional project alerts)
+
+================================================================================
+OPT-IN TYPE
+================================================================================
+Primary: Via website
+Alternate: Via text (reply YES)
+
+================================================================================
+OPT-IN WORKFLOW DESCRIPTION (long form)
+================================================================================
+SiteWeave provides transactional SMS for construction project teams. We do not send promotional blast campaigns.
+
+PRIMARY — WEB CONSENT (recommended)
+1. A project administrator adds the assignee's mobile number in SiteWeave and taps "Get SMS consent link."
+2. The administrator shares the link or QR code with the assignee on site (no SiteWeave app required).
+3. The assignee opens https://www.siteweave.org/sms-consent/{token} on their phone browser.
+4. The page shows: organization name, program description, message types, frequency, Msg&data rates, HELP/STOP instructions, links to Terms and Privacy, the assignee's masked phone number (read-only), and a required checkbox: "I agree to receive project-related SMS from {Org} via SiteWeave."
+5. The assignee submits the form. Consent is stored before any substantive SMS is sent.
+
+ALTERNATE — REPLY YES
+1. A project administrator taps "SMS OK?" on a task or triggers an opt-in text.
+2. SiteWeave sends one automated opt-in text from [YOUR_TOLL_FREE_NUMBER].
+3. The recipient replies YES (optionally with a 6-character verification code) to confirm.
+4. Until YES is received, no substantive project SMS is sent.
+
+OPT-OUT: Recipient texts STOP, STOPALL, or UNSUBSCRIBE. We record opt-out globally and confirm unsubscribe.
+HELP: Recipient texts HELP for program instructions and policy links.
+
+================================================================================
+OPT-IN KEYWORDS (inbound — recipient texts TO us)
+================================================================================
+YES          — confirm SMS opt-in (may include 6-character code: YES ABC123)
+Y            — confirm SMS opt-in (short form)
+STOP         — opt out of all SiteWeave SMS to this number
+STOPALL      — opt out (alias)
+UNSUBSCRIBE  — opt out (alias)
+HELP         — receive program help message
+
+Note: SiteWeave does not use START for re-subscribe. After STOP, the recipient must complete web consent or receive a new opt-in text and reply YES again.
+
+================================================================================
+OPT-IN MESSAGE (first outbound text — alternate YES path only)
+================================================================================
+{Organization name} via (SiteWeave): Welcome! Reply YES {code} to confirm receiving project task SMS alerts. Msg&data rates may apply. HELP/STOP anytime. Terms/Privacy: www.siteweave.org/legal
+
+Example:
+Acme Builders via (SiteWeave): Welcome! Reply YES K7M2NP to confirm receiving project task SMS alerts. Msg&data rates may apply. HELP/STOP anytime. Terms/Privacy: www.siteweave.org/legal
+
+================================================================================
+OPT-IN CONFIRMATION MESSAGE (after web form submit optional SMS, or after YES reply)
+================================================================================
+You're confirmed for SiteWeave project SMS. You'll receive task and project messages as needed. Msg&data rates may apply. Reply STOP to opt out.
+
+================================================================================
+HELP MESSAGE (auto-reply when recipient texts HELP)
+================================================================================
+SiteWeave: Reply YES plus the 6-character code we texted you to confirm SMS. Msg&data rates may apply. HELP/STOP anytime. Terms/Privacy: www.siteweave.org/legal
+
+================================================================================
+OPT-OUT CONFIRMATION MESSAGE (auto-reply when recipient texts STOP)
+================================================================================
+SiteWeave: You are unsubscribed from SMS and will not receive further texts from us.
+
+================================================================================
+SAMPLE MESSAGE #1 — task reminder (substantive, post opt-in)
+================================================================================
+Reminder: "Install cabinets" in Riverside Kitchen starts tomorrow. Open: https://www.siteweave.org/share/abc123 Reply STOP to opt out.
+
+================================================================================
+SAMPLE MESSAGE #2 — multi-task digest (substantive, post opt-in)
+================================================================================
+3 tasks for Riverside Kitchen start tomorrow. Open: https://www.siteweave.org/share/abc123 Reply STOP to opt out.
+
+================================================================================
+MESSAGE FREQUENCY
+================================================================================
+As needed for assigned project work — typically low volume per recipient (task reminders, assignment pings, project links). Not on a fixed marketing schedule.
+
+================================================================================
+OPT-IN POLICY PROOF URLs (one HTTPS URL per line)
+================================================================================
+https://www.siteweave.org/legal/privacy-policy
+https://www.siteweave.org/legal/terms-of-service
+
+Optional: hosted screenshot of live https://www.siteweave.org/sms-consent/{token} showing disclosure, checkbox, and Submit button (mobile browser).
+
+================================================================================
+PRIVACY POLICY URL
+================================================================================
+https://www.siteweave.org/legal/privacy-policy
+(Section 18 — SMS / Text Messaging Program)
+
+================================================================================
+TERMS OF SERVICE URL
+================================================================================
+https://www.siteweave.org/legal/terms-of-service
+(Section 18 — SMS / Text Messaging Terms)
+
+================================================================================
+SUPPORT CONTACT
+================================================================================
+support@siteweave.org

@@ -34,7 +34,7 @@ function ProjectProgressCard({ project, progressData }) {
         <div className="p-4 bg-white rounded-xl" style={{ boxShadow: '0px 4px 12px rgba(0,0,0,0.05)' }}>
             <div className="flex min-w-0 justify-between items-center mb-3 gap-2">
                 <h3 className="font-semibold text-sm text-gray-700 ui-ellipsis-1">{t('build_path.progress_status')}</h3>
-                <span className="text-sm font-bold text-gray-900">{overallProgress}%</span>
+                <span className="text-sm font-bold text-gray-900 tabular-nums">{overallProgress}%</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2 mb-2 overflow-hidden">
                 <div

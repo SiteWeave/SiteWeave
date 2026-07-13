@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -9,9 +9,11 @@ import { logContactCreated, logContactUpdated } from '../utils/activityLogger';
 import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
 import { getContactIdentityDbError, getContactIdentityError } from '../utils/contactValidation';
+import { loadSmsConsentByPhones, resolveContactSmsConsent } from '../utils/smsWebConsent';
 import {
   defaultProjectCrewRoleForContact,
   ensureContactIdForProjectAssignment,
+  normalizeAssigneePhone,
 } from '@siteweave/core-logic';
 import ProjectCrewRoleSelect from '../components/ProjectCrewRoleSelect';
 
@@ -39,6 +41,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const [assignProjectRole, setAssignProjectRole] = useState('Subcontractor');
     const [assignRoleExpanded, setAssignRoleExpanded] = useState(false);
     const [isAssigningContact, setIsAssigningContact] = useState(false);
+    const [smsConsentMap, setSmsConsentMap] = useState(() => new Map());
 
     useEffect(() => {
         if (defaultProjectFilter) {
@@ -51,6 +54,15 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const contacts = state.contacts || [];
     const projects = state.projects || [];
     const tradePartners = contacts.filter(c => c.type === 'Subcontractor');
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            const map = await loadSmsConsentByPhones(supabaseClient, tradePartners, state.currentOrganization?.id);
+            if (!cancelled) setSmsConsentMap(map);
+        })();
+        return () => { cancelled = true; };
+    }, [tradePartners]);
 
     const tradeOptions = useMemo(() => {
         const trades = new Set(tradePartners.map(c => c.trade).filter(Boolean));
@@ -421,6 +433,14 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                             showActions={true}
                             onAssignToProject={handleAssignToProject}
                             variant="trade_partner"
+                            organizationId={state.currentOrganization?.id}
+                            smsConsentStatus={resolveContactSmsConsent(c, smsConsentMap)}
+                            onSmsConsentStatusChange={(status) => {
+                                const n = normalizeAssigneePhone(c.phone, { defaultRegion: 'US' });
+                                if (n.e164) {
+                                    setSmsConsentMap((prev) => new Map(prev).set(n.e164, status));
+                                }
+                            }}
                         />
                     ))}
                 </ul>
@@ -569,7 +589,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                                 <button type="button" onClick={closeAssignModal} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
                                     {t('common.close')}
                                 </button>
-                                <button type="button" onClick={handleConfirmAssign} disabled={isAssigningContact || !selectedAssignProject || unassignedProjects.length === 0} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition active:scale-[0.98] hover:bg-blue-700 disabled:opacity-50">
+                                <button type="button" onClick={handleConfirmAssign} disabled={isAssigningContact || !selectedAssignProject || unassignedProjects.length === 0} className="rounded-lg px-4 py-2 text-sm font-semibold app-action-primary disabled:opacity-50">
                                     {isAssigningContact ? t('contacts.assigning') : t('share.add_to_project')}
                                 </button>
                             </div>

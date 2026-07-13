@@ -4,7 +4,6 @@ import {
   createTaskComment,
   updateTaskComment,
   deleteTaskComment,
-  canSetInternalVisibility,
 } from '@siteweave/core-logic';
 import { upsertById, removeById } from '@siteweave/core-logic';
 import { useAppContext, supabaseClient } from '../context/AppContext';
@@ -35,14 +34,10 @@ export default function TaskCommentsPanel({ task, project, inModal = false }) {
   const [comments, setComments] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [body, setBody] = React.useState('');
-  const [visibility, setVisibility] = React.useState('public');
   const [sending, setSending] = React.useState(false);
   const [reportTarget, setReportTarget] = React.useState(null);
   const [editingId, setEditingId] = React.useState(null);
   const [editBody, setEditBody] = React.useState('');
-
-  const viewerOrgId = state.currentOrganization?.id || project?.organization_id || null;
-  const canInternal = canSetInternalVisibility({ organization_id: viewerOrgId }, project);
 
   const load = React.useCallback(async () => {
     if (!task?.id) return;
@@ -116,7 +111,6 @@ export default function TaskCommentsPanel({ task, project, inModal = false }) {
         organization_id: project.organization_id,
         author_id: state.user.id,
         body: trimmed,
-        visibility: canInternal ? visibility : 'public',
       });
       setBody('');
       setComments((prev) => upsertById(prev, newComment, 'append'));
@@ -177,11 +171,7 @@ export default function TaskCommentsPanel({ task, project, inModal = false }) {
           {comments.map((c) => (
             <li
               key={c.id}
-              className={`rounded-lg px-3 py-2 text-sm ${
-                c.visibility === 'internal'
-                  ? 'border border-amber-100 bg-amber-50/70'
-                  : 'border border-slate-100 bg-white'
-              }`}
+              className="rounded-lg border border-slate-100 bg-white px-3 py-2 text-sm"
             >
               <div className="flex gap-2">
                 <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] font-bold text-slate-600">
@@ -191,11 +181,6 @@ export default function TaskCommentsPanel({ task, project, inModal = false }) {
                   <div className="mb-0.5 flex items-center justify-between gap-2">
                     <span className="text-[11px] text-slate-500">
                       <span className="font-medium text-slate-700">{c.author?.name || 'Member'}</span>
-                      {c.visibility === 'internal' ? (
-                        <span className="ml-1.5 rounded bg-amber-200/70 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-amber-900">
-                          Internal
-                        </span>
-                      ) : null}
                       <span className="mx-1 text-slate-300">·</span>
                       {formatWhen(c.created_at)}
                     </span>
@@ -268,32 +253,12 @@ export default function TaskCommentsPanel({ task, project, inModal = false }) {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-2">
-        {canInternal ? (
-          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
-            {['public', 'internal'].map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setVisibility(v)}
-                className={`rounded-md px-2.5 py-1 font-medium capitalize transition-colors ${
-                  visibility === v ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
-        ) : null}
         <div className="flex items-end gap-2">
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={
-              canInternal && visibility === 'internal'
-                ? 'Internal note — use @name or @email to mention teammates…'
-                : 'Comment on this task — @name or @email to mention… (⌘ Enter)'
-            }
+            placeholder="Comment on this task — @name or @email to mention… (⌘ Enter)"
             rows={2}
             className="flex-1 resize-none rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm leading-relaxed placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />

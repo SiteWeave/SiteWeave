@@ -8,6 +8,7 @@ import {
   getOrganizationProgressReportSchedules,
   getProgressReportHistory,
   sendManualReport,
+  formatScheduleNextSendAt,
 } from '@siteweave/core-logic';
 import { getLocalizedFrequencyLabel } from '@siteweave/i18n';
 
@@ -203,7 +204,11 @@ function ProgressReportDashboard() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {schedule.next_send_at
-                        ? new Date(schedule.next_send_at).toLocaleDateString(i18n.language)
+                        ? formatScheduleNextSendAt(
+                            schedule.next_send_at,
+                            i18n.language,
+                            schedule.send_timezone || 'America/New_York'
+                          )
                         : '—'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">

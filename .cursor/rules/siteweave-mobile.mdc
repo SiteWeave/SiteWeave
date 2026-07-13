@@ -12,6 +12,7 @@ When editing `apps/mobile/**`, follow [`apps/mobile/MOBILE-DESIGN.md`](../../app
 
 - **Impeccable / Taste / Emil** — apply layout, hierarchy, motion *principles* only. Implement with `StyleSheet`, `Pressable`, `expo-haptics`, and `react-native-reanimated` — never default to Inter, purple gradients, or nested “card in card” web patterns.
 - **Emil** — use on demand for motion reviews; keep UI transitions ≤300ms unless navigational; respect `AccessibilityInfo.isReduceMotionEnabled()`.
+- **make-interfaces-feel-better (Jakub)** — map web CSS guidance to RN APIs: scale on press (`0.96`) via `react-native-reanimated` on `PressableWithFade`; interruptible press on `onPressIn`/`onPressOut` (not one-shot keyframes); respect `AccessibilityInfo.isReduceMotionEnabled()`. Skip web-only tips (font-smoothing, `text-wrap`, `box-shadow` layering) unless translating equivalents.
 - **react-native-mobile-skill** — prefer for HIG/Material, 44×44 touch targets, and RN-specific polish.
 
 ## Brand & tokens

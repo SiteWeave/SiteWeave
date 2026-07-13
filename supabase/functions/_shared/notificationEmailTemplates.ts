@@ -551,3 +551,99 @@ export function buildTrialReminderEmail(params: {
 
   return { subject, html, text }
 }
+
+type CalendarInviteEvent = {
+  title?: string | null
+  description?: string | null
+  location?: string | null
+  start_time?: string | null
+  end_time?: string | null
+  is_all_day?: boolean | null
+}
+
+function formatCalendarInviteDate(dateTimeString: string | null | undefined): string {
+  if (!dateTimeString) return 'TBD'
+  return new Date(dateTimeString).toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function formatCalendarInviteTime(dateTimeString: string | null | undefined): string {
+  if (!dateTimeString) return 'TBD'
+  return new Date(dateTimeString).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
+
+export function buildCalendarInviteEmail(
+  event: CalendarInviteEvent,
+  organizerName: string,
+): { subject: string; html: string; text: string } {
+  const eventTitle = event.title || 'Event'
+  const eventDate = formatCalendarInviteDate(event.start_time)
+  const timeRange = event.is_all_day
+    ? 'All day'
+    : `${formatCalendarInviteTime(event.start_time)} – ${formatCalendarInviteTime(event.end_time)}`
+  const location = event.location || 'Remote'
+  const subject = `Event scheduled: ${eventTitle}`
+
+  const notesBlock = event.description
+    ? `<tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;"><p style="margin:0;font-size:12px;color:#6b7280;font-weight:500;">Notes</p><p style="margin:4px 0 0;font-size:15px;color:#111827;white-space:pre-wrap;">${escapeHtml(event.description)}</p></td></tr>`
+    : ''
+
+  const bodyHtml = `
+    <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#374151;">
+      <strong style="color:#111827;">${escapeHtml(organizerName)}</strong> scheduled an event:
+      <strong style="color:#111827;">${escapeHtml(eventTitle)}</strong>.
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;">
+      <tr><td style="padding:16px 18px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
+          <tr><td style="padding:0 0 10px;"><p style="margin:0;font-size:12px;color:#6b7280;font-weight:500;">Date</p><p style="margin:4px 0 0;font-size:15px;color:#111827;">${escapeHtml(eventDate)}</p></td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;"><p style="margin:0;font-size:12px;color:#6b7280;font-weight:500;">Time</p><p style="margin:4px 0 0;font-size:15px;color:#111827;">${escapeHtml(timeRange)}</p></td></tr>
+          <tr><td style="padding:10px 0;border-top:1px solid #e5e7eb;"><p style="margin:0;font-size:12px;color:#6b7280;font-weight:500;">Location</p><p style="margin:4px 0 0;font-size:15px;color:#111827;">${escapeHtml(location)}</p></td></tr>
+          ${notesBlock}
+        </table>
+      </td></tr>
+    </table>`
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table role="presentation" style="width:100%;border-collapse:collapse;">
+    <tr><td style="padding:24px 16px;">
+      <table role="presentation" style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;">
+        <tr><td style="padding:24px 24px 12px;text-align:center;border-bottom:1px solid #e5e7eb;">
+          <img src="${SITEWEAVE_LOGO_URL}" alt="SiteWeave" width="40" height="40" style="display:block;margin:0 auto 12px;" />
+          <p style="margin:0;font-size:18px;font-weight:700;color:#111827;">SiteWeave</p>
+        </td></tr>
+        <tr><td style="padding:24px;">
+          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#111827;">${escapeHtml(eventTitle)}</h1>
+          ${bodyHtml}
+        </td></tr>
+        <tr><td style="padding:0 24px 24px;">${buildComplianceFooterHtml()}</td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+
+  const text = [
+    `${organizerName} scheduled an event: ${eventTitle}`,
+    '',
+    `Date: ${eventDate}`,
+    `Time: ${timeRange}`,
+    `Location: ${location}`,
+    event.description ? `Notes: ${event.description}` : null,
+    '',
+    buildComplianceFooterText(),
+  ].filter(Boolean).join('\n')
+
+  return { subject, html, text }
+}

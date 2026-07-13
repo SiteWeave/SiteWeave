@@ -1,5 +1,5 @@
 /**
- * Field Issues Service — site triage tracker (not multi-step workflows).
+ * Field Issues Service — site triage tracker + punch list closeout.
  */
 
 import { fetchUserInfo } from '../utils/fetchUserInfo.js';
@@ -10,11 +10,81 @@ import {
   notifyFieldIssueCreated,
 } from './projectCommunicationNotifyService.js';
 
+const ISSUE_PHOTO_BUCKET = 'message_files';
+
 const ISSUE_SELECT = `
   *,
   issue_files!fk_issue_files_issue_id(*),
   issue_comments!fk_issue_comments_issue_id(count)
 `;
+
+async function invokeAuthHeaders(supabase) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error('Not authenticated');
+  return { Authorization: `Bearer ${token}` };
+}
+
+function messageFromFunctionsError(error) {
+  if (error?.context?.body) {
+    try {
+      const parsed = typeof error.context.body === 'string'
+        ? JSON.parse(error.context.body)
+        : error.context.body;
+      if (parsed?.error) return parsed.error;
+    } catch {
+      // ignore
+    }
+  }
+  return error?.message || 'Request failed';
+}
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {string|null|undefined} path
+ */
+export function resolveIssuePhotoUrl(supabase, path) {
+  if (!path) return null;
+  const { data } = supabase.storage.from(ISSUE_PHOTO_BUCKET).getPublicUrl(path);
+  return data?.publicUrl || null;
+}
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {Array<object>} issues
+ */
+export function enrichIssuesWithPhotoUrls(supabase, issues) {
+  return (issues || []).map((issue) => ({
+    ...issue,
+    before_photo_url: resolveIssuePhotoUrl(supabase, issue.before_photo_path),
+    after_photo_url: resolveIssuePhotoUrl(supabase, issue.after_photo_path),
+  }));
+}
+
+/**
+ * @param {Array<object>} issues
+ * @returns {Array<{ location: string|null, items: Array<object> }>}
+ */
+export function groupIssuesByLocation(issues) {
+  const map = new Map();
+  const unlocated = [];
+  for (const issue of issues || []) {
+    const loc = String(issue.location || '').trim();
+    if (loc) {
+      if (!map.has(loc)) map.set(loc, []);
+      map.get(loc).push(issue);
+    } else {
+      unlocated.push(issue);
+    }
+  }
+  const groups = [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([location, items]) => ({ location, items }));
+  if (unlocated.length) {
+    groups.push({ location: null, items: unlocated });
+  }
+  return groups;
+}
 
 /**
  * @param {object} row
@@ -84,7 +154,7 @@ export async function fetchProjectIssues(supabase, projectId, options = {}) {
   });
 
   const issues = await enrichIssues(supabase, rows);
-  return { issues, hasMore: (data || []).length === limit };
+  return { issues: enrichIssuesWithPhotoUrls(supabase, issues), hasMore: (data || []).length === limit };
 }
 
 /**
@@ -100,7 +170,8 @@ export async function fetchProjectIssueById(supabase, issueId) {
 
   if (error) throw error;
   const [enriched] = await enrichIssues(supabase, [data]);
-  return enriched;
+  const [withUrls] = enrichIssuesWithPhotoUrls(supabase, [enriched]);
+  return withUrls;
 }
 
 /**
@@ -139,6 +210,9 @@ export async function createProjectIssue(supabase, params) {
     created_by_user_id,
     assigned_to_user_id = null,
     related_task_ids = [],
+    location = null,
+    before_photo_path = null,
+    after_photo_path = null,
     bridgeToStream = true,
   } = params;
 
@@ -153,6 +227,9 @@ export async function createProjectIssue(supabase, params) {
     created_by_user_id,
     assigned_to_user_id,
     related_task_ids: Array.isArray(related_task_ids) ? related_task_ids : [],
+    location: location ? String(location).trim() : null,
+    before_photo_path: before_photo_path || null,
+    after_photo_path: after_photo_path || null,
     updated_at: new Date().toISOString(),
   };
 
@@ -164,6 +241,7 @@ export async function createProjectIssue(supabase, params) {
 
   if (error) throw error;
   const [issue] = await enrichIssues(supabase, [data]);
+  const [withUrls] = enrichIssuesWithPhotoUrls(supabase, [issue]);
 
   notifyFieldIssueCreated(supabase, { issueId: issue.id });
   if (assigned_to_user_id && assigned_to_user_id !== created_by_user_id) {
@@ -173,7 +251,7 @@ export async function createProjectIssue(supabase, params) {
   if (bridgeToStream && created_by_user_id) {
     try {
       await createIssueStreamBridgePost(supabase, {
-        issue,
+        issue: withUrls,
         projectId: project_id,
         organizationId: organization_id,
         authorId: created_by_user_id,
@@ -184,7 +262,7 @@ export async function createProjectIssue(supabase, params) {
     }
   }
 
-  return issue;
+  return withUrls;
 }
 
 /**
@@ -215,20 +293,21 @@ export async function updateProjectIssue(supabase, issueId, updates, options = {
 
   if (error) throw error;
   const [issue] = await enrichIssues(supabase, [data]);
+  const [withUrls] = enrichIssuesWithPhotoUrls(supabase, [issue]);
 
   if (updates.assigned_to_user_id != null) {
     notifyFieldIssueAssigned(supabase, { issueId });
   }
 
   const wasOpen = (options.previousStatus || '').toLowerCase() !== 'closed';
-  const nowClosed = (issue.status || '').toLowerCase() === 'closed' || issue.resolved_at;
-  if (options.bridgeToStream !== false && wasOpen && nowClosed && issue.created_by_user_id) {
+  const nowClosed = (withUrls.status || '').toLowerCase() === 'closed' || withUrls.resolved_at;
+  if (options.bridgeToStream !== false && wasOpen && nowClosed && withUrls.created_by_user_id) {
     try {
       await createIssueStreamBridgePost(supabase, {
-        issue,
-        projectId: issue.project_id,
-        organizationId: issue.organization_id,
-        authorId: issue.created_by_user_id,
+        issue: withUrls,
+        projectId: withUrls.project_id,
+        organizationId: withUrls.organization_id,
+        authorId: withUrls.created_by_user_id,
         event: 'closed',
       });
     } catch (e) {
@@ -236,7 +315,7 @@ export async function updateProjectIssue(supabase, issueId, updates, options = {
     }
   }
 
-  return issue;
+  return withUrls;
 }
 
 /**
@@ -319,6 +398,131 @@ export function subscribeProjectIssues(supabase, projectId, onChange) {
     .subscribe();
 
   return () => supabase.removeChannel(channel);
+}
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {string} projectId
+ * @param {{ statusFilter?: 'all'|'open'|'closed' }} [options]
+ */
+export async function fetchProjectIssuesGroupedByLocation(supabase, projectId, options = {}) {
+  const { issues } = await fetchProjectIssues(supabase, projectId, options);
+  return groupIssuesByLocation(issues);
+}
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {Object} params
+ */
+export async function createWalkthroughIssue(supabase, params) {
+  const {
+    project_id,
+    organization_id,
+    location,
+    description,
+    before_photo_path = null,
+    created_by_user_id,
+    assigned_to_user_id = null,
+    priority = 'Medium',
+    due_date = null,
+  } = params;
+
+  const note = String(description || '').trim();
+  const loc = String(location || '').trim();
+  const title = loc || 'Punch item';
+  const combinedDescription = [loc ? `Location: ${loc}` : null, note || null]
+    .filter(Boolean)
+    .join('\n');
+
+  return createProjectIssue(supabase, {
+    project_id,
+    organization_id,
+    title,
+    description: combinedDescription || null,
+    priority,
+    due_date,
+    created_by_user_id,
+    assigned_to_user_id,
+    location: null,
+    before_photo_path,
+    bridgeToStream: true,
+  });
+}
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {number} issueId
+ * @param {string} storagePath
+ */
+export async function setIssueBeforePhotoPath(supabase, issueId, storagePath) {
+  return updateProjectIssue(supabase, issueId, { before_photo_path: storagePath || null });
+}
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {number} issueId
+ * @param {string} storagePath
+ */
+export async function setIssueAfterPhotoPath(supabase, issueId, storagePath) {
+  return updateProjectIssue(supabase, issueId, { after_photo_path: storagePath || null });
+}
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {string} projectId
+ */
+export async function fetchProjectCloseoutState(supabase, projectId) {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('id, name, punch_list_signed_off_at, punch_list_signed_off_by_name, punch_list_signature')
+    .eq('id', projectId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {{ projectId: string, organizationId: string }} params
+ */
+export async function createProjectCloseoutReviewLink(supabase, { projectId, organizationId }) {
+  const headers = await invokeAuthHeaders(supabase);
+  const { data, error } = await supabase.functions.invoke('create-project-closeout-review', {
+    headers,
+    body: {
+      project_id: projectId,
+      organization_id: organizationId,
+    },
+  });
+  if (error) throw new Error(messageFromFunctionsError(error));
+  if (data?.error) throw new Error(data.error);
+  if (!data?.url) throw new Error('Review link was not returned');
+  return { url: data.url, rawToken: data.rawToken || null };
+}
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {string} projectId
+ */
+export async function exportPunchListPdf(supabase, projectId) {
+  const headers = await invokeAuthHeaders(supabase);
+  const { data, error } = await supabase.functions.invoke('export-punch-list-pdf', {
+    headers,
+    body: { project_id: projectId },
+  });
+  if (error) throw new Error(messageFromFunctionsError(error));
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+/**
+ * Compute whether a project is nearing closeout based on task completion.
+ * @param {Array<{ completed?: boolean }>} tasks
+ */
+export function isProjectCloseoutReady(tasks) {
+  if (!Array.isArray(tasks) || !tasks.length) return false;
+  const completed = tasks.filter((t) => t.completed).length;
+  return completed > 0 && completed / tasks.length >= 0.8;
 }
 
 /** @deprecated use createProjectIssue */

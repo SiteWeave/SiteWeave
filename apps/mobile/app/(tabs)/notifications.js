@@ -8,9 +8,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Linking from 'expo-linking';
 import { colors, spacing, touch } from '../../theme';
+import { scrollBottomPadding, contentTopInset } from '../../utils/layoutInsets';
+import { useNotificationCount } from '../../context/NotificationCountContext';
 import {
   fetchUserNotifications,
   markNotificationRead,
+  markNotificationUnread,
   resolveNotificationRoute,
 } from '../../utils/notifications';
 import { getCached, setCached } from '../../utils/persistentCache';
@@ -21,6 +24,7 @@ export default function NotificationsScreen() {
   const { user, supabase } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { refreshUnreadCount } = useNotificationCount();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
@@ -60,13 +64,15 @@ export default function NotificationsScreen() {
   useFocusEffect(
     useCallback(() => {
       loadNotifications();
-    }, [loadNotifications]),
+      refreshUnreadCount();
+    }, [loadNotifications, refreshUnreadCount]),
   );
 
   const handleOpenNotification = async (item) => {
     try {
       if (!item.read_at) {
         await markNotificationRead(supabase, { notificationId: item.id, userId: user?.id });
+        refreshUnreadCount();
       }
     } catch (error) {
       console.error('Error marking notification read:', error);
@@ -75,6 +81,8 @@ export default function NotificationsScreen() {
     const route = resolveNotificationRoute({
       ...item.metadata,
       project_id: item.project_id,
+      source_type: item.source_type,
+      event_id: item.metadata?.event_id,
       screen: item.metadata?.screen,
       route: item.metadata?.route,
     });
@@ -82,19 +90,33 @@ export default function NotificationsScreen() {
       await Linking.openURL(route);
       return;
     }
-    router.push(route || '/');
+    router.push(route || '/(tabs)');
   };
 
-  const handleMarkRead = async (item) => {
-    const readAt = new Date().toISOString();
+  const handleToggleRead = async (item) => {
     const prev = notifications;
+    const isUnread = !item.read_at;
+    if (isUnread) {
+      setNotifications((list) =>
+        list.map((n) => (n.id === item.id ? { ...n, read_at: new Date().toISOString() } : n)),
+      );
+      try {
+        await markNotificationRead(supabase, { notificationId: item.id, userId: user?.id });
+        refreshUnreadCount();
+      } catch (error) {
+        console.error('Error marking notification read:', error);
+        setNotifications(prev);
+      }
+      return;
+    }
     setNotifications((list) =>
-      list.map((n) => (n.id === item.id ? { ...n, read_at: readAt } : n)),
+      list.map((n) => (n.id === item.id ? { ...n, read_at: null } : n)),
     );
     try {
-      await markNotificationRead(supabase, { notificationId: item.id, userId: user?.id });
+      await markNotificationUnread(supabase, { notificationId: item.id, userId: user?.id });
+      refreshUnreadCount();
     } catch (error) {
-      console.error('Error marking notification read:', error);
+      console.error('Error marking notification unread:', error);
       setNotifications(prev);
     }
   };
@@ -108,7 +130,7 @@ export default function NotificationsScreen() {
             <PressableWithFade
               style={styles.cardContentPressable}
               onPress={() => handleOpenNotification(item)}
-              activeOpacity={0.75}
+              static
             >
               <View style={styles.cardHeader}>
                 <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
@@ -122,12 +144,10 @@ export default function NotificationsScreen() {
           </View>
           <PressableWithFade
             style={styles.actionButton}
-            onPress={() => handleMarkRead(item)}
-            disabled={Boolean(item.read_at)}
-            activeOpacity={0.7}
+            onPress={() => handleToggleRead(item)}
           >
             <Text style={[styles.actionButtonText, item.read_at && styles.actionButtonTextRead]}>
-              {item.read_at ? t('mobile.read') : t('mobile.mark_read')}
+              {item.read_at ? t('mobile.mark_unread') : t('mobile.mark_read')}
             </Text>
           </PressableWithFade>
         </View>
@@ -140,15 +160,25 @@ export default function NotificationsScreen() {
     : notifications;
 
   return (
-    <View style={[styles.safeArea, { paddingTop: insets.top }]}>
+    <View style={[styles.safeArea, { paddingTop: contentTopInset(insets) }]}>
       <View style={styles.header}>
+        <PressableWithFade
+          onPress={() => router.back()}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.back', { defaultValue: 'Back' })}
+          testID="notifications-back"
+        >
+          <Ionicons name="chevron-back" size={28} color={colors.text} />
+        </PressableWithFade>
         <Text style={styles.headerTitle}>{t('mobile.notifications_title')}</Text>
+        <View style={styles.backButton} />
       </View>
       <View style={styles.filterRow}>
         <PressableWithFade
           style={[styles.filterChip, showUnreadOnly && styles.filterChipActive]}
           onPress={() => setShowUnreadOnly((v) => !v)}
-          activeOpacity={0.7}
+          static
         >
           <Text style={[styles.filterChipText, showUnreadOnly && styles.filterChipTextActive]}>
             {showUnreadOnly ? t('mobile.showing_unread_only') : t('mobile.show_unread_only')}
@@ -163,11 +193,11 @@ export default function NotificationsScreen() {
         <FlatList
           data={visibleNotifications}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: scrollBottomPadding(insets, spacing.lg) }]}
           renderItem={renderNotification}
           ListEmptyComponent={
             <View style={styles.centerState}>
-              <Ionicons name="notifications-outline" size={44} color="#9CA3AF" />
+              <Ionicons name="mail-outline" size={44} color="#9CA3AF" />
               <Text style={styles.stateText}>{t('mobile.no_notifications')}</Text>
             </View>
           }
@@ -180,22 +210,23 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   header: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     backgroundColor: colors.surface,
   },
-  headerTitle: { fontSize: 22, fontWeight: '800', color: colors.text },
+  headerTitle: { flex: 1, fontSize: 22, fontWeight: '800', color: colors.text, textAlign: 'center' },
   backButton: {
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  listContent: { padding: spacing.lg, paddingBottom: 120 },
+  listContent: { padding: spacing.lg },
   filterRow: {
     paddingHorizontal: 14,
     paddingTop: 10,
@@ -266,7 +297,7 @@ const styles = StyleSheet.create({
   actionButton: {
     alignSelf: 'center',
     marginLeft: 'auto',
-    minHeight: 36,
+    minHeight: 44,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#D1D5DB',

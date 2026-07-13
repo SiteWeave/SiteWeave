@@ -4,9 +4,9 @@ import PressableWithFade from '../PressableWithFade';
 import { Text } from './Text';
 import { colors, spacing, touch } from '../../theme';
 
-export default function AppHeader({ title, onBack, rightAction, testID }) {
+export default function AppHeader({ title, onBack, rightAction, testID, dense = false }) {
   return (
-    <View style={styles.header} testID={testID}>
+    <View style={[styles.header, dense && styles.headerDense]} testID={testID}>
       {onBack ? (
         <PressableWithFade
           onPress={onBack}
@@ -35,6 +35,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.lg,
     minHeight: touch.minRowHeight,
+  },
+  headerDense: {
+    marginBottom: spacing.sm,
   },
   side: {
     width: touch.minSize,

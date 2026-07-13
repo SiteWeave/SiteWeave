@@ -10,6 +10,7 @@ import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { sendTwilioSms } from '../_shared/twilioSms.ts'
 import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
 import { withTransactionalSmsFooter } from '../_shared/smsCompliance.ts'
+import { isSmsNotificationsEnabled } from '../_shared/smsNotifications.ts'
 import { createProjectAccessInvite, mapRoleToAccessLevel } from '../_shared/projectInvite.ts'
 import { assertCanInviteGuestCollaborator, GUEST_COLLABORATOR_LIMIT_ERROR } from '../_shared/workspaceTier.ts'
 import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
@@ -464,7 +465,7 @@ serve(async (req) => {
     }
 
     // Send SMS notifications one-by-one to preserve per-recipient status handling.
-    if (smsToSend.length > 0) {
+    if (smsToSend.length > 0 && isSmsNotificationsEnabled()) {
       for (const sms of smsToSend) {
         const gate = await gateOrSendOptInForSubstantiveSms(supabaseAdmin, {
           phoneE164: sms.phone,

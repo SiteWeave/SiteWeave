@@ -7,6 +7,7 @@ const variants = {
   body: typography.body,
   bodyMedium: typography.bodyMedium,
   caption: typography.caption,
+  numeric: { fontVariant: ['tabular-nums'] },
 };
 
 export function Text({ variant = 'body', style, children, ...props }) {

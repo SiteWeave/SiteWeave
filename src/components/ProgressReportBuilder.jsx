@@ -514,9 +514,6 @@ function ProgressReportBuilder({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-sm font-medium text-gray-900">{t(builderKey('projects_in_report'))}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {t(builderKey('projects_in_report_hint'))}
-                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs text-gray-600">

@@ -1,22 +1,17 @@
-import { View, Text, StyleSheet, TextInput, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, TextInput, ActivityIndicator } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
-import {
-  fetchTaskComments,
-  createTaskComment,
-  canSetInternalVisibility,
-} from '@siteweave/core-logic';
+import { useTranslation } from 'react-i18next';
+import { fetchTaskComments, createTaskComment } from '@siteweave/core-logic';
 import PressableWithFade from './PressableWithFade';
+import { Text } from './ui/Text';
+import { colors, spacing, touch } from '../theme';
 
-export default function TaskCommentsSection({ task, project, supabase, currentUserId, viewerOrgId }) {
+export default function TaskCommentsSection({ task, project, supabase, currentUserId }) {
+  const { t } = useTranslation();
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [body, setBody] = useState('');
-  const [visibility, setVisibility] = useState('public');
   const [sending, setSending] = useState(false);
-  const canInternal = canSetInternalVisibility(
-    { organization_id: viewerOrgId },
-    project,
-  );
 
   const load = useCallback(async () => {
     if (!task?.id || !supabase) return;
@@ -35,7 +30,6 @@ export default function TaskCommentsSection({ task, project, supabase, currentUs
     load();
   }, [load]);
 
-  // Realtime: refresh on any comment change for this task
   useEffect(() => {
     if (!task?.id || !supabase) return;
     const ch = supabase
@@ -60,10 +54,8 @@ export default function TaskCommentsSection({ task, project, supabase, currentUs
         organization_id: project.organization_id,
         author_id: currentUserId,
         body: trimmed,
-        visibility: canInternal ? visibility : 'public',
       });
       setBody('');
-      setVisibility('public');
       await load();
     } catch (e) {
       console.error('TaskCommentsSection add error:', e);
@@ -74,76 +66,90 @@ export default function TaskCommentsSection({ task, project, supabase, currentUs
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.heading}>Task discussion</Text>
+      <View style={styles.headerRow}>
+        <Text variant="bodyMedium" style={styles.heading}>
+          {t('mobile.task_comments_heading')}
+        </Text>
+        {loading ? (
+          <ActivityIndicator color={colors.primary} size="small" />
+        ) : comments.length === 0 ? (
+          <Text variant="caption" style={styles.emptyTextInline}>
+            {t('mobile.task_comments_empty')}
+          </Text>
+        ) : null}
+      </View>
 
-      {loading ? (
-        <ActivityIndicator size="small" color="#9CA3AF" style={styles.spinner} />
-      ) : comments.length === 0 ? (
-        <Text style={styles.emptyText}>No comments yet.</Text>
-      ) : (
-        comments.map((c) => (
-          <View
-            key={c.id}
-            style={[styles.comment, c.visibility === 'internal' && styles.commentInternal]}
-          >
-            <Text style={styles.meta}>
-              {c.author?.name || 'Member'}
-              {c.visibility === 'internal' ? (
-                <Text style={styles.internalBadge}> · Internal</Text>
-              ) : null}
-            </Text>
-            <Text style={styles.body}>{c.body}</Text>
-          </View>
-        ))
-      )}
+      {!loading && comments.length > 0
+        ? comments.map((c) => (
+            <View key={c.id} style={styles.comment}>
+              <Text variant="caption" style={styles.meta}>
+                {c.author?.name || t('mobile.stream_member_fallback')}
+              </Text>
+              <Text variant="body" style={styles.body}>{c.body}</Text>
+            </View>
+          ))
+        : null}
 
-      {canInternal ? (
-        <View style={styles.visRow}>
-          <PressableWithFade
-            style={[styles.visBtn, visibility === 'public' && styles.visBtnActive]}
-            onPress={() => setVisibility('public')}
-          >
-            <Text style={[styles.visText, visibility === 'public' && styles.visTextActive]}>Public</Text>
-          </PressableWithFade>
-          <PressableWithFade
-            style={[styles.visBtn, visibility === 'internal' && styles.visBtnActive]}
-            onPress={() => setVisibility('internal')}
-          >
-            <Text style={[styles.visText, visibility === 'internal' && styles.visTextActive]}>Internal</Text>
-          </PressableWithFade>
-        </View>
-      ) : null}
       <TextInput
         style={styles.input}
         value={body}
         onChangeText={setBody}
-        placeholder="Comment on this task…"
-        placeholderTextColor="#9CA3AF"
+        placeholder={t('mobile.task_comments_placeholder')}
+        placeholderTextColor={colors.textSubtle}
       />
-      <PressableWithFade style={[styles.addBtn, sending && styles.addBtnDisabled]} onPress={handleAdd} disabled={sending}>
-        <Text style={styles.addBtnText}>{sending ? 'Adding…' : 'Add comment'}</Text>
+      <PressableWithFade
+        style={[styles.addBtn, sending && styles.addBtnDisabled]}
+        onPress={handleAdd}
+        disabled={sending}
+      >
+        <Text style={styles.addBtnText}>
+          {sending ? t('mobile.task_comments_adding') : t('mobile.task_comments_add')}
+        </Text>
       </PressableWithFade>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#E5E7EB' },
-  heading: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 10 },
-  spinner: { marginVertical: 12 },
-  emptyText: { fontSize: 13, color: '#9CA3AF', marginBottom: 10 },
-  comment: { backgroundColor: '#F9FAFB', borderRadius: 10, padding: 10, marginBottom: 8 },
-  commentInternal: { backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A' },
-  meta: { fontSize: 11, color: '#6B7280', marginBottom: 4 },
-  internalBadge: { color: '#92400E', fontWeight: '600' },
-  body: { fontSize: 14, color: '#1F2937' },
-  visRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  visBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#F3F4F6' },
-  visBtnActive: { backgroundColor: '#111827' },
-  visText: { fontSize: 12, color: '#4B5563' },
-  visTextActive: { color: '#fff' },
-  input: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, padding: 10, fontSize: 14, marginBottom: 8 },
-  addBtn: { alignSelf: 'flex-end', backgroundColor: '#111827', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
+  wrap: { marginTop: 0 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  heading: { fontWeight: '600', color: colors.textSecondary, flexShrink: 1 },
+  emptyTextInline: { color: colors.textSubtle, textAlign: 'right', flexShrink: 0 },
+  comment: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 12,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  meta: { color: colors.textMuted, marginBottom: spacing.xs },
+  body: { color: colors.text },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: spacing.md,
+    fontSize: 16,
+    color: colors.text,
+    minHeight: touch.minSize,
+    marginTop: spacing.sm,
+    backgroundColor: colors.surface,
+  },
+  addBtn: {
+    marginTop: spacing.sm,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: 12,
+    minHeight: touch.minSize,
+    justifyContent: 'center',
+  },
   addBtnDisabled: { opacity: 0.5 },
-  addBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  addBtnText: { color: colors.white, fontWeight: '700' },
 });

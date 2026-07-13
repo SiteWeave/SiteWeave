@@ -1,5 +1,5 @@
 Twilio campaign registration — paste into "Describe your opt-in type and how recipients provide consent"
-Opt-in type: Via text
+Opt-in type: Via website (primary); Via text (alternate)
 
 Replace [YOUR_TWILIO_NUMBER] with your SiteWeave sender (Messaging Service or long code).
 
@@ -7,16 +7,23 @@ Replace [YOUR_TWILIO_NUMBER] with your SiteWeave sender (Messaging Service or lo
 
 SiteWeave provides transactional SMS for construction project teams. We do not send promotional blast campaigns.
 
-HOW RECIPIENTS OPT IN
-1. A project administrator adds the assignee's mobile number in SiteWeave (contact or task) or taps "SMS OK?" to request consent.
-2. SiteWeave sends one automated opt-in text from [YOUR_TWILIO_NUMBER].
-3. The recipient must reply YES (optionally with a 6-character code in the same message, e.g. "YES ABC123") to confirm.
-4. Until YES is received, no substantive project SMS is sent. Consent is stored in our database (sms_phone_consent).
+HOW RECIPIENTS OPT IN (PRIMARY — WEB FORM)
+1. A project administrator adds the assignee's mobile number in SiteWeave and taps "Get SMS consent link."
+2. The administrator shares the link or QR code with the assignee on site (no SiteWeave app required).
+3. The assignee opens https://www.siteweave.org/sms-consent/{token} on their phone browser.
+4. The page shows: organization name, program description, message types, frequency, Msg&data rates, HELP/STOP instructions, links to Terms and Privacy, the assignee's masked phone number (read-only), and a required checkbox: "I agree to receive project-related SMS from {Org} via SiteWeave."
+5. The assignee submits the form. Consent is stored (sms_phone_consent, consent_method=web_form). Substantive SMS is blocked until confirmed.
 
-OPT-IN MESSAGE (first outbound text)
+HOW RECIPIENTS OPT IN (ALTERNATE — REPLY YES)
+1. A project administrator taps "SMS OK?" on a task or triggers an opt-in text.
+2. SiteWeave sends one automated opt-in text from [YOUR_TWILIO_NUMBER].
+3. The recipient replies YES (optionally with a 6-character code) to confirm.
+4. Until YES is received, no substantive project SMS is sent.
+
+OPT-IN MESSAGE (text path only — first outbound text)
 "{Organization name} via (SiteWeave): Welcome! Reply YES {code} to confirm receiving project task SMS alerts. Msg&data rates may apply. HELP/STOP anytime. Terms/Privacy: www.siteweave.org/legal"
 
-CONFIRMATION MESSAGE (after YES)
+CONFIRMATION MESSAGE (after web form or YES)
 "You're confirmed for SiteWeave project SMS. You'll receive task and project messages as needed. Msg&data rates may apply. Reply STOP to opt out."
 
 MESSAGE FREQUENCY
@@ -31,16 +38,15 @@ Recipient texts HELP. Reply: program instructions, Msg&data rates, HELP/STOP any
 STOP
 Recipient texts STOP, STOPALL, or UNSUBSCRIBE. We record opt-out globally for that number and reply: "SiteWeave: You are unsubscribed from SMS and will not receive further texts from us."
 
-SUBSTANTIVE MESSAGES (only after YES)
+SUBSTANTIVE MESSAGES (only after opt-in)
 Examples: task due reminders, assignment notices, project links. Each ends with "Reply STOP to opt out."
 
 LEGAL
-Privacy Policy: https://www.siteweave.org/legal/privacy-policy (Section 16 — SMS / Text Messaging Program)
+Privacy Policy: https://www.siteweave.org/legal/privacy-policy (Section 18 — SMS / Text Messaging Program)
 Terms of Service: https://www.siteweave.org/legal/terms-of-service (Section 18 — SMS / Text Messaging Terms)
 
 OPT-IN POLICY PROOF (URLs — one per line, public https://)
-Paste links to your published legal pages (required for reviewers):
 https://www.siteweave.org/legal/privacy-policy
 https://www.siteweave.org/legal/terms-of-service
 
-Optional: public UI screenshots or message-collateral image if you host them (not required if legal pages describe the program).
+Optional: screenshot of the live /sms-consent/{token} page (mobile browser) showing disclosure + checkbox + submit.

@@ -314,12 +314,12 @@ WITH CHECK (
 
 ### Key Files
 ```
-schema.sql                              # Complete database schema
+../../schema.sql                          # Complete database schema (repo root)
 scripts/
   migrate-to-organizations.sql          # Migration script
   seed-demo-account.sql                 # Demo account for reviewers
   setup-storage-policies.sql            # Storage bucket policies
-  validate-schema.sql                   # Schema validation
+  ../../scripts/validate-schema.sql       # Schema validation (repo root)
 src/
   utils/
     permissions.js                      # Permission utilities
@@ -450,7 +450,7 @@ VALUES ('<project-id>', '<user-id>', '<org-id>', 'editor');
 
 - **Full Implementation Guide:** `MULTI-TENANT-B2B-IMPLEMENTATION.md`
 - **Deployment Guide:** `DEPLOYMENT-GUIDE-B2B.md`
-- **Database Schema:** `schema.sql`
+- **Database Schema:** `../../schema.sql`
 - **Migration Script:** `scripts/migrate-to-organizations.sql`
 
 ---

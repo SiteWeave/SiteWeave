@@ -3,7 +3,7 @@ name: Multi-Tenant B2B Architecture
 overview: Refactor from single-user B2C to Organization-based multi-tenant B2B model with strict data isolation, organization-scoped authentication, RBAC, and project duplication features.
 todos:
   - id: db-schema-orgs
-    content: Create organizations table and add organization_id to all data tables in schema.sql
+    content: Create organizations table and add organization_id to all data tables in schema.sql (repository root)
     status: completed
   - id: db-migration-script
     content: Create migration script (scripts/migrate-to-organizations.sql) to add organization_id columns and handle data migration
@@ -11,12 +11,12 @@ todos:
     dependencies:
       - db-schema-orgs
   - id: rls-helper-functions
-    content: Update RLS helper functions (get_user_organization_id, is_organization_admin) in schema.sql
+    content: Update RLS helper functions (get_user_organization_id, is_organization_admin) in schema.sql (repository root)
     status: completed
     dependencies:
       - db-schema-orgs
   - id: rls-policies-update
-    content: Update all RLS policies in schema.sql to filter by organization_id
+    content: Update all RLS policies in schema.sql (repository root) to filter by organization_id
     status: completed
     dependencies:
       - rls-helper-functions
@@ -61,7 +61,7 @@ todos:
     dependencies:
       - update-invitations
   - id: create-roles-table
-    content: Create roles table with organization_id and permissions JSONB column in schema.sql
+    content: Create roles table with organization_id and permissions JSONB column in schema.sql (repository root)
     status: completed
     dependencies:
       - db-schema-orgs
@@ -71,7 +71,7 @@ todos:
     dependencies:
       - create-roles-table
   - id: create-project-collaborators-table
-    content: Create project_collaborators table for guest access (subcontractors) in schema.sql
+    content: Create project_collaborators table for guest access (subcontractors) in schema.sql (repository root)
     status: completed
     dependencies:
       - db-schema-orgs
@@ -287,7 +287,7 @@ $$ LANGUAGE sql SECURITY DEFINER;
 
 **Files to Update:**
 
-- `schema.sql` - Update all RLS policies (lines 830-1946)
+- `schema.sql (repository root)` - Update all RLS policies (lines 830-1946)
 
 ### 3. Authentication & User Provisioning
 
@@ -446,7 +446,7 @@ Instead of hardcoded role enums, implement a flexible role system where each Org
 - Create: `src/utils/permissions.js` - Dynamic permission checking
 - Create: `src/utils/roleManagementService.js` - Role CRUD operations
 - Create: `src/components/RoleManagement.jsx` - UI for managing roles
-- Update: `schema.sql` - Create roles table, update profiles.role to role_id
+- Update: `schema.sql (repository root)` - Create roles table, update profiles.role to role_id
 - Update: All components that check user roles - Use permission utility instead
 
 ### 5. Project Duplication Feature with Date Shifting
@@ -579,7 +579,7 @@ Instead of hardcoded role enums, implement a flexible role system where each Org
 
 **Database:**
 
-- `schema.sql` - Add organizations table, roles table, project_collaborators table, update all tables, update RLS policies
+- `schema.sql (repository root)` - Add organizations table, roles table, project_collaborators table, update all tables, update RLS policies
 - `scripts/migrate-to-organizations.sql` - Migration script
 - `scripts/seed-demo-account.sql` - Demo account for App Store reviewers
 - `scripts/setup-storage-policies.sql` - Update storage bucket RLS policies

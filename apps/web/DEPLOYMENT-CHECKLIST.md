@@ -14,7 +14,7 @@ Use this checklist to ensure a smooth deployment of your multi-tenant B2B archit
 
 ### Backup & Preparation
 - [ ] Backup existing database (if applicable)
-- [ ] Save current schema.sql (if applicable)
+- [ ] Save current ../../schema.sql (if applicable)
 - [ ] Note existing user credentials (if applicable)
 - [ ] Prepare rollback plan (if needed)
 
@@ -31,14 +31,14 @@ Use this checklist to ensure a smooth deployment of your multi-tenant B2B archit
 
 ### Schema Deployment
 - [ ] Open Supabase SQL Editor
-- [ ] Copy contents of `schema.sql`
+- [ ] Copy contents of `../../schema.sql`
 - [ ] Paste and run in SQL Editor
 - [ ] Wait for completion (1-2 minutes)
 - [ ] Check for any errors in output
 - [ ] Verify no red error messages
 
 ### Schema Validation
-- [ ] Copy contents of `scripts/validate-schema.sql`
+- [ ] Copy contents of `../../scripts/validate-schema.sql`
 - [ ] Paste and run in SQL Editor
 - [ ] Verify all checks show ✓ (checkmark)
 - [ ] No EXCEPTION or WARNING messages

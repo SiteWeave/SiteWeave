@@ -1,28 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Modal,
-  ScrollView,
   Alert,
   TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  Animated,
-  Dimensions,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import Constants from 'expo-constants';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { submitUserFeedback } from '@siteweave/core-logic';
 import { useAuth } from '../context/AuthContext';
 import PressableWithFade from './PressableWithFade';
-import ModalScrim from './ui/ModalScrim';
+import BottomSheet from './ui/BottomSheet';
 import { useHaptics } from '../hooks/useHaptics';
-
-const SCREEN_HEIGHT = Dimensions.get('window').height;
+import { colors, spacing, touch } from '../theme';
 
 const FEEDBACK_TYPE_KEYS = [
   { value: 'bug', labelKey: 'settings.feedback_type_bug' },
@@ -33,36 +24,31 @@ const FEEDBACK_TYPE_KEYS = [
 export default function FeedbackModal({ visible, onClose }) {
   const { t } = useTranslation();
   const { user, supabase } = useAuth();
-  const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const [feedbackType, setFeedbackType] = useState('bug');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const sheetTranslateY = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (visible) {
-      sheetTranslateY.setValue(1);
-      requestAnimationFrame(() => {
-        Animated.timing(sheetTranslateY, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }).start();
-      });
-    } else {
-      sheetTranslateY.setValue(1);
-    }
-  }, [visible, sheetTranslateY]);
+    if (!visible) return;
+    setFeedbackType('bug');
+    setSubject('');
+    setMessage('');
+    setSubmitting(false);
+  }, [visible]);
+
+  const resetAndClose = () => {
+    setSubject('');
+    setMessage('');
+    setFeedbackType('bug');
+    onClose();
+  };
 
   const handleClose = () => {
     if (!submitting) {
       haptics.light();
-      setSubject('');
-      setMessage('');
-      setFeedbackType('bug');
-      onClose();
+      resetAndClose();
     }
   };
 
@@ -91,236 +77,138 @@ export default function FeedbackModal({ visible, onClose }) {
       });
 
       haptics.success();
-      Alert.alert(
-        t('common.success'),
-        t('mobile.feedback_thanks'),
-        [
-          {
-            text: t('common.done'),
-            onPress: () => {
-              setSubject('');
-              setMessage('');
-              setFeedbackType('bug');
-              onClose();
-            },
-          },
-        ]
-      );
+      Alert.alert(t('common.success'), t('mobile.feedback_thanks'), [
+        {
+          text: t('common.done'),
+          onPress: resetAndClose,
+        },
+      ]);
     } catch (error) {
       console.error('Error submitting feedback:', error);
       haptics.error();
-      Alert.alert(
-        t('common.error'),
-        error.message || t('mobile.feedback_failed')
-      );
+      Alert.alert(t('common.error'), error.message || t('mobile.feedback_failed'));
     } finally {
       setSubmitting(false);
     }
   };
 
+  const canSubmit = Boolean(subject.trim() && message.trim());
+
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="none"
-      onRequestClose={handleClose}
+      title={t('settings.send_feedback')}
+      onClose={handleClose}
+      primaryLabel={t('settings.send_feedback')}
+      onPrimary={handleSubmit}
+      primaryDisabled={submitting || !canSubmit}
+      primaryLoading={submitting}
+      snap="medium"
+      expandOnFocus
+      stickyPrimary
       testID="feedback-modal"
     >
-      <View style={styles.container}>
-        <ModalScrim onPress={handleClose} opacity={0.5} />
-        <KeyboardAvoidingView
-          style={styles.keyboard}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          pointerEvents="box-none"
-        >
-          <Animated.View
-            style={[
-              styles.modalContent,
-              { paddingTop: insets.top, paddingBottom: insets.bottom },
-              {
-                transform: [
-                  {
-                    translateY: sheetTranslateY.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, SCREEN_HEIGHT],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-          <View style={styles.header}>
-            <Text style={styles.title}>{t('settings.send_feedback')}</Text>
-            <PressableWithFade
-              style={styles.closeButton}
-              onPress={handleClose}
-              disabled={submitting}
-              accessibilityLabel={t('mobile.close_feedback')}
-            >
-              <Ionicons name="close" size={24} color="#111827" />
-            </PressableWithFade>
-          </View>
+      <BottomSheet.Scroll>
+        <Text style={styles.description}>{t('settings.feedback_description')}</Text>
 
-          <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('settings.feedback_type_label')}</Text>
-              {FEEDBACK_TYPE_KEYS.map((type) => (
-                <PressableWithFade
-                  key={type.value}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('settings.feedback_type_label')}</Text>
+          {FEEDBACK_TYPE_KEYS.map((type) => (
+            <PressableWithFade
+              key={type.value}
+              style={[styles.typeOption, feedbackType === type.value && styles.typeOptionSelected]}
+              onPress={() => {
+                haptics.selection();
+                setFeedbackType(type.value);
+              }}
+              disabled={submitting}
+            >
+              <View style={styles.typeContent}>
+                <View
                   style={[
-                    styles.typeOption,
-                    feedbackType === type.value && styles.typeOptionSelected,
+                    styles.radioButton,
+                    feedbackType === type.value && styles.radioButtonSelected,
                   ]}
-                  onPress={() => {
-                    haptics.selection();
-                    setFeedbackType(type.value);
-                  }}
-                  disabled={submitting}
                 >
-                  <View style={styles.typeContent}>
-                    <View
-                      style={[
-                        styles.radioButton,
-                        feedbackType === type.value && styles.radioButtonSelected,
-                      ]}
-                    >
-                      {feedbackType === type.value && <View style={styles.radioButtonInner} />}
-                    </View>
-                    <Text
-                      style={[
-                        styles.typeLabel,
-                        feedbackType === type.value && styles.typeLabelSelected,
-                      ]}
-                    >
-                      {t(type.labelKey)}
-                    </Text>
-                  </View>
-                </PressableWithFade>
-              ))}
-            </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('settings.feedback_subject')} *</Text>
-              <TextInput
-                style={styles.textInput}
-                value={subject}
-                onChangeText={setSubject}
-                placeholder={t('settings.feedback_subject_placeholder')}
-                placeholderTextColor="#9CA3AF"
-                editable={!submitting}
-                maxLength={200}
-              />
-            </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('settings.feedback_message')} *</Text>
-              <TextInput
-                style={[styles.textInput, styles.messageInput]}
-                value={message}
-                onChangeText={setMessage}
-                placeholder={t('settings.feedback_message_placeholder')}
-                placeholderTextColor="#9CA3AF"
-                multiline
-                numberOfLines={8}
-                editable={!submitting}
-                maxLength={2000}
-                textAlignVertical="top"
-              />
-              <Text style={styles.charCount}>
-                {t('settings.feedback_char_count', { count: message.length })}
-              </Text>
-            </View>
-          </ScrollView>
-
-          <View style={styles.footer}>
-            <PressableWithFade
-              style={[styles.cancelButton, submitting && styles.buttonDisabled]}
-              onPress={handleClose}
-              disabled={submitting}
-              testID="feedback-cancel"
-            >
-              <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
+                  {feedbackType === type.value ? <View style={styles.radioButtonInner} /> : null}
+                </View>
+                <Text
+                  style={[styles.typeLabel, feedbackType === type.value && styles.typeLabelSelected]}
+                >
+                  {t(type.labelKey)}
+                </Text>
+              </View>
             </PressableWithFade>
-            <PressableWithFade
-              style={[
-                styles.submitButton,
-                (submitting || !subject.trim() || !message.trim()) && styles.buttonDisabled,
-              ]}
-              onPress={handleSubmit}
-              disabled={submitting || !subject.trim() || !message.trim()}
-              testID="feedback-submit"
-            >
-              <Text style={styles.submitButtonText}>
-                {submitting ? t('settings.feedback_submitting') : t('settings.send_feedback')}
-              </Text>
-            </PressableWithFade>
-          </View>
-          </Animated.View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
+          ))}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('settings.feedback_subject')} *</Text>
+          <TextInput
+            style={styles.textInput}
+            value={subject}
+            onChangeText={setSubject}
+            placeholder={t('settings.feedback_subject_placeholder')}
+            placeholderTextColor={colors.textSubtle}
+            editable={!submitting}
+            maxLength={200}
+            testID="feedback-subject"
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('settings.feedback_message')} *</Text>
+          <TextInput
+            style={[styles.textInput, styles.messageInput]}
+            value={message}
+            onChangeText={setMessage}
+            placeholder={t('settings.feedback_message_placeholder')}
+            placeholderTextColor={colors.textSubtle}
+            multiline
+            editable={!submitting}
+            maxLength={2000}
+            textAlignVertical="top"
+            testID="feedback-message"
+          />
+          <Text style={styles.charCount}>
+            {t('settings.feedback_char_count', { count: message.length })}
+          </Text>
+        </View>
+      </BottomSheet.Scroll>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  keyboard: { justifyContent: 'flex-end' },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '92%',
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  closeButton: {
-    padding: 4,
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scrollView: {
-    flex: 1,
+  description: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.textMuted,
+    marginBottom: spacing.lg,
   },
   section: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    marginBottom: spacing.lg,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#111827',
-    marginBottom: 12,
+    color: colors.text,
+    marginBottom: spacing.md,
   },
   typeOption: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginBottom: 8,
-    backgroundColor: '#F9FAFB',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: 10,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
+    minHeight: touch.minRowHeight - 8,
+    justifyContent: 'center',
   },
   typeOptionSelected: {
-    backgroundColor: '#DBEAFE',
-    borderColor: '#3B82F6',
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
   },
   typeContent: {
     flexDirection: 'row',
@@ -331,84 +219,46 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: '#D1D5DB',
-    marginRight: 12,
+    borderColor: colors.borderStrong,
+    marginRight: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   radioButtonSelected: {
-    borderColor: '#3B82F6',
+    borderColor: colors.primary,
   },
   radioButtonInner: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
   },
   typeLabel: {
     fontSize: 15,
-    color: '#374151',
+    color: colors.textSecondary,
   },
   typeLabelSelected: {
-    color: '#1D4ED8',
+    color: colors.primaryDark,
     fontWeight: '600',
   },
   textInput: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: spacing.lg,
     fontSize: 16,
-    color: '#111827',
-    backgroundColor: '#fff',
+    color: colors.text,
+    backgroundColor: colors.surface,
+    minHeight: touch.minSize,
   },
   messageInput: {
-    minHeight: 160,
+    minHeight: 140,
+    textAlignVertical: 'top',
   },
   charCount: {
     fontSize: 12,
-    color: '#6B7280',
-    marginTop: 6,
+    color: colors.textMuted,
+    marginTop: spacing.sm,
     textAlign: 'right',
   },
-  footer: {
-    flexDirection: 'row',
-    gap: 12,
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    backgroundColor: '#fff',
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  submitButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 8,
-    backgroundColor: '#3B82F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  submitButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
 });
-

@@ -8,6 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
+import { shadows } from '../theme';
 
 // Using Open-Meteo API (free, no API key required)
 const WEATHER_API_URL = 'https://api.open-meteo.com/v1/forecast';
@@ -224,11 +225,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 16,
     marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    ...shadows.card,
   },
   content: {
     flexDirection: 'row',

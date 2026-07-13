@@ -79,6 +79,19 @@ serve(async (req) => {
       throw new Error('Invite has expired')
     }
 
+    const { data: inviteProject, error: inviteProjectError } = await supabaseAdmin
+      .from('projects')
+      .select('id, name, trashed_at')
+      .eq('id', invite.project_id)
+      .maybeSingle()
+    if (inviteProjectError) throw inviteProjectError
+    if (!inviteProject || inviteProject.trashed_at) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'This project is no longer available' }),
+        { status: 410, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+
     const { data: existingCollab } = await supabaseAdmin
       .from('project_collaborators')
       .select('id')
@@ -146,17 +159,11 @@ serve(async (req) => {
       })
       .eq('id', invite.id)
 
-    const { data: project } = await supabaseAdmin
-      .from('projects')
-      .select('id, name')
-      .eq('id', invite.project_id)
-      .single()
-
     return new Response(
       JSON.stringify({
         success: true,
         projectId: invite.project_id,
-        projectName: project?.name,
+        projectName: inviteProject.name,
         organizationId: invite.organization_id,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

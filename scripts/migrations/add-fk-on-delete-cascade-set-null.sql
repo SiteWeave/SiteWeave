@@ -13,7 +13,7 @@ JOIN tasks t ON t.id = td.task_id;
 
 -- ============================================================================
 -- Security Definer: get_accessible_project_ids() for RLS performance
--- Run the policy updates in apps/web/schema.sql (replace project_id IN (SELECT id FROM public.projects) with project_id IN (SELECT get_accessible_project_ids()) in applicable policies). This migration only adds the function.
+-- Run the policy updates in schema.sql (repository root; replace project_id IN (SELECT id FROM public.projects) with project_id IN (SELECT get_accessible_project_ids()) in applicable policies). This migration only adds the function.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION get_accessible_project_ids()
 RETURNS SETOF UUID AS $$

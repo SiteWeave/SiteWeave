@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
 import LiveActivityIndicator from './LiveActivityIndicator';
 import EditableProfileAvatar from './EditableProfileAvatar';
+import { VIEW_ROUTE_PATHS } from '../config/routes';
 
 const ICONS = {
     Dashboard: <Icon path="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" />,
@@ -23,8 +25,21 @@ function Sidebar() {
     const { t } = useTranslation();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
+    const navigate = useNavigate();
+    const location = useLocation();
     const [isCollapsed, setIsCollapsed] = useState(false);
     const projects = state.projects || [];
+
+    const navigateForView = (targetView, { projectId = null } = {}) => {
+        if (projectId) {
+            navigate(`/projects/${projectId}/tasks`);
+            return;
+        }
+        const route = VIEW_ROUTE_PATHS[targetView];
+        if (!route) return;
+        if (location.pathname === route) return;
+        navigate(route);
+    };
 
     const handleLogout = async () => {
         try {
@@ -84,9 +99,16 @@ function Sidebar() {
         { id: 'Settings', view: 'Settings' }
     ];
 
+    const stopSidebarWheelPropagation = (event) => {
+        event.stopPropagation();
+    };
+
     return (
-        <aside className={`${isCollapsed ? 'w-16' : 'w-64'} min-w-16 bg-white flex flex-col flex-shrink-0 border-r border-gray-100 transition-all duration-300`}>
-            <div className="h-16 flex items-center px-5 font-bold text-xl text-gray-800 border-b border-gray-100">
+        <aside
+            className={`${isCollapsed ? 'w-16' : 'w-64'} min-w-16 h-screen sticky top-0 bg-white flex flex-col flex-shrink-0 border-r border-gray-100 overflow-hidden overscroll-y-contain transition-all duration-300`}
+            onWheel={stopSidebarWheelPropagation}
+        >
+            <div className="shrink-0 h-16 flex items-center px-5 font-bold text-xl text-gray-800 border-b border-gray-100">
                 {!isCollapsed && (
                     <span>SiteWeave</span>
                 )}
@@ -101,7 +123,7 @@ function Sidebar() {
             </div>
             {/* Organization Display */}
             {!isCollapsed && (
-              <div className="px-5 py-3 border-b border-gray-200">
+              <div className="shrink-0 px-5 py-3 border-b border-gray-200">
                 {state.currentOrganization ? (
                   <>
                     <p className="text-xs text-gray-500 uppercase tracking-wide">{t('sidebar.organization')}</p>
@@ -126,7 +148,7 @@ function Sidebar() {
                 )}
               </div>
             )}
-            <nav className="flex-1 px-3 py-2 space-y-1" data-onboarding="sidebar-nav" role="navigation" aria-label={t('sidebar.main_navigation')}>
+            <nav className="flex-1 min-h-0 px-3 py-2 space-y-1 overflow-y-auto overscroll-y-contain" data-onboarding="sidebar-nav" role="navigation" aria-label={t('sidebar.main_navigation')}>
                 {navItems.map(item => (
                     <div key={item.id}>
                         <button type="button" 
@@ -135,13 +157,21 @@ function Sidebar() {
                                     ? state.activeView
                                     : item.view;
                                 dispatch({type: 'SET_VIEW', payload: targetView});
+                                let nextProjectId = state.selectedProjectId;
                                 // Clear selected project when navigating away from Projects view
                                 if (item.view !== 'Projects' && state.selectedProjectId) {
                                     dispatch({type: 'SET_PROJECT', payload: null});
+                                    nextProjectId = null;
                                 }
                                 // Auto-select first project when clicking Projects if none is selected
                                 if (item.view === 'Projects' && !state.selectedProjectId && projects.length > 0) {
-                                    dispatch({type: 'SET_PROJECT', payload: projects[0].id});
+                                    nextProjectId = projects[0].id;
+                                    dispatch({type: 'SET_PROJECT', payload: nextProjectId});
+                                }
+                                if (item.view === 'Projects' && nextProjectId) {
+                                    navigateForView('Projects', { projectId: nextProjectId });
+                                } else {
+                                    navigateForView(targetView);
                                 }
                             }}
                             data-onboarding={item.id.toLowerCase()}
@@ -173,6 +203,7 @@ function Sidebar() {
                                             if (state.activeView !== 'Projects') {
                                                 dispatch({type: 'SET_VIEW', payload: 'Projects'});
                                             }
+                                            navigateForView('Projects', { projectId: p.id });
                                         }}
                                         className={`block text-sm py-1 truncate w-full text-left ${state.selectedProjectId === p.id ? 'text-blue-600 font-semibold' : 'text-gray-500 hover:text-gray-800'}`}
                                         aria-label={t('common.select_project', { name: p.name })}
@@ -185,7 +216,7 @@ function Sidebar() {
                     </div>
                 ))}
             </nav>
-             <div className="p-4 border-t border-gray-200 space-y-3">
+             <div className="shrink-0 p-4 border-t border-gray-200 space-y-3">
                 <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
                     {isCollapsed ? (
                         <EditableProfileAvatar

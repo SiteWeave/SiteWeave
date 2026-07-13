@@ -13,6 +13,15 @@ import PermissionGuard from './PermissionGuard';
 import MsProjectImportModal from './MsProjectImportModal';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 
+const DEFAULT_SMART_NOTIFICATION_FIELDS = {
+    task_notifications_use_org_defaults: false,
+    task_start_notifications_enabled: false,
+    task_start_notification_lead_days: null,
+    notification_email_batching_enabled: true,
+    notification_batch_window_minutes: 5,
+    dependency_notifications_enabled: true,
+};
+
 const PROJECT_STATUS_OPTIONS = [
     PROJECT_STATUS_CANONICAL.planning,
     PROJECT_STATUS_CANONICAL.in_progress,
@@ -52,14 +61,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
     const [duplicateProjectNumber, setDuplicateProjectNumber] = useState('');
     const [isDuplicating, setIsDuplicating] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
-    const [taskNotifUseOrgDefaults, setTaskNotifUseOrgDefaults] = useState(false);
-    const [taskNotifEnabled, setTaskNotifEnabled] = useState(false);
-    const [taskNotifLeadDays, setTaskNotifLeadDays] = useState('14, 7');
-    const [projectBatchingEnabled, setProjectBatchingEnabled] = useState(true);
-    const [projectBatchWindowMinutes, setProjectBatchWindowMinutes] = useState(5);
-    const [dependencyNotifEnabled, setDependencyNotifEnabled] = useState(true);
     const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
-    const [smartTaskNotifOpen, setSmartTaskNotifOpen] = useState(false);
     const actionsMenuRef = useRef(null);
 
     const isEditMode = !!project;
@@ -109,19 +111,6 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             setStartDate(project.start_date || '');
             setDueDate(project.due_date || '');
             setNextMilestone(project.next_milestone || '');
-            setTaskNotifUseOrgDefaults(project.task_notifications_use_org_defaults !== false);
-            setTaskNotifEnabled(project.task_start_notifications_enabled !== false);
-            setProjectBatchingEnabled(project.notification_email_batching_enabled !== false);
-            setProjectBatchWindowMinutes(
-                Number.isFinite(Number(project.notification_batch_window_minutes))
-                    ? Math.max(1, Math.min(60, Number(project.notification_batch_window_minutes)))
-                    : 5
-            );
-            setDependencyNotifEnabled(project.dependency_notifications_enabled !== false);
-            const leadDays = Array.isArray(project.task_start_notification_lead_days) && project.task_start_notification_lead_days.length > 0
-                ? project.task_start_notification_lead_days
-                : [14, 7];
-            setTaskNotifLeadDays(leadDays.join(', '));
             
             // Load existing project contacts
             const existingContacts = state.contacts
@@ -140,12 +129,6 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             setProjectTypeCustom('');
             setSelectedContacts([]);
             setEmailAddresses([]);
-            setTaskNotifUseOrgDefaults(false);
-            setTaskNotifEnabled(false);
-            setTaskNotifLeadDays('14, 7');
-            setProjectBatchingEnabled(true);
-            setProjectBatchWindowMinutes(5);
-            setDependencyNotifEnabled(true);
         }
     }, [project, state.contacts, state.userContactId, ownerContactId]);
 
@@ -159,15 +142,6 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
         document.addEventListener('mousedown', onDocMouseDown);
         return () => document.removeEventListener('mousedown', onDocMouseDown);
     }, [actionsMenuOpen]);
-
-    const parseLeadDays = (raw) => {
-        const values = String(raw || '')
-            .split(',')
-            .map((part) => parseInt(part.trim(), 10))
-            .filter((num) => Number.isFinite(num) && num >= 0 && num <= 365);
-        const deduped = Array.from(new Set(values));
-        return deduped.length > 0 ? deduped.sort((a, b) => b - a) : [14, 7];
-    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -187,12 +161,9 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             start_date: start_date || null,
             due_date: due_date || null,
             next_milestone: next_milestone || null,
-            task_notifications_use_org_defaults: taskNotifUseOrgDefaults,
-            task_start_notifications_enabled: taskNotifUseOrgDefaults ? null : taskNotifEnabled,
-            task_start_notification_lead_days: taskNotifUseOrgDefaults ? null : parseLeadDays(taskNotifLeadDays),
-            notification_email_batching_enabled: projectBatchingEnabled,
-            notification_batch_window_minutes: Math.max(1, Math.min(60, Number(projectBatchWindowMinutes) || 5)),
-            dependency_notifications_enabled: dependencyNotifEnabled,
+            ...(isEditMode
+                ? {}
+                : DEFAULT_SMART_NOTIFICATION_FIELDS),
             selectedContacts: ownerAugmentedContacts,
             emailAddresses: emailAddresses.filter((email) => email !== userEmail),
         };
@@ -389,6 +360,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
             <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
                     <h2 className="text-2xl font-bold min-w-0">{isEditMode ? t('projectModal.edit_project') : t('projectModal.create_project')}</h2>
+                    {isEditMode && (
                     <div className="relative shrink-0" ref={actionsMenuRef}>
                         <button
                             type="button"
@@ -405,66 +377,29 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                                 role="menu"
                                 className="absolute right-0 z-30 mt-1 min-w-[14rem] rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-lg"
                             >
-                                <button
-                                    type="button"
-                                    role="menuitem"
-                                    className="w-full px-3 py-2 text-left text-gray-800 hover:bg-gray-50"
-                                    onClick={() => {
-                                        setSmartTaskNotifOpen(true);
-                                        setActionsMenuOpen(false);
-                                    }}
-                                >
-                                    {t('projectModal.smart_task_notifications')}
-                                </button>
-                                {isEditMode && (
-                                    <PermissionGuard permission="can_create_projects">
-                                        <button
-                                            type="button"
-                                            role="menuitem"
-                                            className="w-full px-3 py-2 text-left text-gray-800 hover:bg-gray-50"
-                                            onClick={() => {
-                                                setDuplicateName(`${project.name}${t('projectModal.copy_suffix')}`);
-                                                setDuplicateAddress(project.address || '');
-                                                setDuplicateProjectNumber(project.project_number || '');
-                                                setDuplicateStartDate('');
-                                                setShowDuplicateDialog(true);
-                                                setActionsMenuOpen(false);
-                                            }}
-                                        >
-                                            {t('projectModal.duplicate_project')}
-                                        </button>
-                                    </PermissionGuard>
-                                )}
+                                <PermissionGuard permission="can_create_projects">
+                                    <button
+                                        type="button"
+                                        role="menuitem"
+                                        className="w-full px-3 py-2 text-left text-gray-800 hover:bg-gray-50"
+                                        onClick={() => {
+                                            setDuplicateName(`${project.name}${t('projectModal.copy_suffix')}`);
+                                            setDuplicateAddress(project.address || '');
+                                            setDuplicateProjectNumber(project.project_number || '');
+                                            setDuplicateStartDate('');
+                                            setShowDuplicateDialog(true);
+                                            setActionsMenuOpen(false);
+                                        }}
+                                    >
+                                        {t('projectModal.duplicate_project')}
+                                    </button>
+                                </PermissionGuard>
                             </div>
                         )}
                     </div>
+                    )}
                 </div>
                 <form onSubmit={handleSubmit}>
-                    {isEditMode && project && state.currentOrganization && (
-                        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-700">
-                            <span className="font-medium text-slate-800">{t('projectModal.smart_emails_label')} </span>
-                            {project.task_notifications_use_org_defaults !== false ? (
-                                <>
-                                    {t('projectModal.using_org_defaults', {
-                                        status: state.currentOrganization.task_start_notifications_enabled !== false
-                                            ? t('projectModal.on')
-                                            : t('projectModal.off'),
-                                    })}
-                                </>
-                            ) : project.task_start_notifications_enabled !== false ? (
-                                <>{t('projectModal.on_for_project')}</>
-                            ) : (
-                                <>{t('projectModal.off_for_project')}</>
-                            )}{' '}
-                            <button
-                                type="button"
-                                className="font-semibold text-blue-600 hover:text-blue-800"
-                                onClick={() => setSmartTaskNotifOpen(true)}
-                            >
-                                {t('projectModal.edit_notification_settings')}
-                            </button>
-                        </div>
-                    )}
                     <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[7fr_3fr] lg:grid-cols-1">
                         <div className="min-w-0 lg:col-span-1">
                             <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.project_name')}</label>
@@ -557,87 +492,6 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                         presets={datePresets}
                         className="mb-4"
                     />
-
-                    {smartTaskNotifOpen && (
-                    <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
-                        <div className="mb-3 flex items-start justify-between gap-2">
-                            <h3 className="text-sm font-semibold text-gray-800">{t('projectModal.smart_notif_title')}</h3>
-                            <button
-                                type="button"
-                                onClick={() => setSmartTaskNotifOpen(false)}
-                                className="shrink-0 rounded px-2 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-200"
-                            >
-                                {t('common.close')}
-                            </button>
-                        </div>
-                        <p className="text-xs text-gray-500 mb-3">
-                            {t('projectModal.smart_notif_desc')}
-                        </p>
-                        <label className="flex items-center gap-2 text-sm text-gray-700 mb-2">
-                            <input
-                                type="checkbox"
-                                checked={taskNotifUseOrgDefaults}
-                                onChange={(e) => setTaskNotifUseOrgDefaults(e.target.checked)}
-                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            {t('projectModal.use_org_defaults')}
-                        </label>
-                        {!taskNotifUseOrgDefaults && (
-                            <div className="space-y-2">
-                                <label className="flex items-center gap-2 text-sm text-gray-700">
-                                    <input
-                                        type="checkbox"
-                                        checked={taskNotifEnabled}
-                                        onChange={(e) => setTaskNotifEnabled(e.target.checked)}
-                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                    />
-                                    {t('projectModal.email_before_start')}
-                                </label>
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1">{t('projectModal.lead_days_label')}</label>
-                                    <input
-                                        type="text"
-                                        value={taskNotifLeadDays}
-                                        onChange={(e) => setTaskNotifLeadDays(e.target.value)}
-                                        className="w-full p-2 border rounded-lg text-sm"
-                                        placeholder={t('projectModal.lead_days_placeholder')}
-                                    />
-                                </div>
-                            </div>
-                        )}
-                        <div className="space-y-2 mt-3 pt-3 border-t border-gray-200">
-                            <label className="flex items-center gap-2 text-sm text-gray-700">
-                                <input
-                                    type="checkbox"
-                                    checked={projectBatchingEnabled}
-                                    onChange={(e) => setProjectBatchingEnabled(e.target.checked)}
-                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                                {t('projectModal.batch_notifications')}
-                            </label>
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">{t('projectModal.batch_window_label')}</label>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    max="60"
-                                    value={projectBatchWindowMinutes}
-                                    onChange={(e) => setProjectBatchWindowMinutes(e.target.value)}
-                                    className="w-full p-2 border rounded-lg text-sm"
-                                />
-                            </div>
-                            <label className="flex items-center gap-2 text-sm text-gray-700">
-                                <input
-                                    type="checkbox"
-                                    checked={dependencyNotifEnabled}
-                                    onChange={(e) => setDependencyNotifEnabled(e.target.checked)}
-                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                                {t('projectModal.email_on_dependency_unlock')}
-                            </label>
-                        </div>
-                    </div>
-                    )}
 
                     <div className="mb-6">
                         <label className="block text-sm font-semibold mb-2 text-gray-600">

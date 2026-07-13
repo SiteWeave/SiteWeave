@@ -2,7 +2,10 @@ import {
   parseLocalDateOnly,
   addDaysToDateOnly,
   formatLocalDateRange,
+  calculatePhaseProgressFromTasks,
 } from '@siteweave/core-logic';
+
+export { calculatePhaseProgressFromTasks };
 
 /** Default phase template (order 1..n). */
 export const DEFAULT_PHASE_TEMPLATE = [
@@ -19,22 +22,6 @@ export const DEFAULT_PHASE_TEMPLATE_NAMES = DEFAULT_PHASE_TEMPLATE.map((p) => p.
 
 /** @deprecated Use DEFAULT_PHASE_TEMPLATE_NAMES */
 export const DEFAULT_CONSTRUCTION_PHASE_NAMES = DEFAULT_PHASE_TEMPLATE_NAMES;
-
-/**
- * Average task % complete for a phase (uses percent_complete; completed tasks count as 100).
- * @param {Array<{ completed?: boolean, percent_complete?: number|null }>} taskList
- * @returns {number} 0–100
- */
-export function calculatePhaseProgressFromTasks(taskList) {
-    if (!taskList?.length) return 0;
-    const sum = taskList.reduce((acc, task) => {
-        const pct = task.completed
-            ? 100
-            : Math.max(0, Math.min(100, Number(task.percent_complete ?? 0) || 0));
-        return acc + pct;
-    }, 0);
-    return Math.round(sum / taskList.length);
-}
 
 function getTaskEndDateForRollup(task) {
     if (task?.due_date) return task.due_date;

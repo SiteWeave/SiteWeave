@@ -4,6 +4,7 @@ import { formatRelativeTime } from '@siteweave/i18n';
 import { updateStreamPost, deleteStreamPost, enrichStreamPost } from '@siteweave/core-logic';
 import { useToast } from '../../context/ToastContext';
 import StreamReplyThread from './StreamReplyThread';
+import DailyLogStreamBody from './DailyLogStreamBody';
 import Avatar from '../Avatar';
 
 const TYPE_STYLES = {
@@ -174,17 +175,23 @@ export default function StreamPostCard({
           {post.title ? (
             <h3 className="mb-2 text-base font-semibold text-slate-900">{post.title}</h3>
           ) : null}
-          <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-            {displayBody}
-          </div>
-          {isLongBody ? (
-            <button
-              type="button"
-              onClick={() => setBodyExpanded((v) => !v)}
-              className="mt-1 text-xs font-medium text-blue-600 hover:text-blue-700"
-            >
-              {bodyExpanded ? t('stream.show_less') : t('stream.show_more')}
-            </button>
+          {post.post_type === 'daily_log' && post.payload?.sections ? (
+            <DailyLogStreamBody post={post} />
+          ) : (
+            <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+              {displayBody}
+            </div>
+          )}
+          {post.post_type !== 'daily_log' || !post.payload?.sections ? (
+            isLongBody ? (
+              <button
+                type="button"
+                onClick={() => setBodyExpanded((v) => !v)}
+                className="mt-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
+                {bodyExpanded ? t('stream.show_less') : t('stream.show_more')}
+              </button>
+            ) : null
           ) : null}
         </>
       )}

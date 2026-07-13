@@ -225,8 +225,17 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
     
     // Helper functions for attendees
     const availableContacts = useMemo(() => {
-        return contacts.filter(c => c.email && !attendeeEmails.includes(c.email.toLowerCase()));
-    }, [contacts, attendeeEmails]);
+        return contacts.filter((contact) => {
+            if (!contact.email || attendeeEmails.includes(contact.email.toLowerCase())) {
+                return false;
+            }
+            if (!projectId) return true;
+            return (
+                contact.project_contacts &&
+                contact.project_contacts.some((pc) => pc.project_id === projectId)
+            );
+        });
+    }, [contacts, attendeeEmails, projectId]);
 
     const addAttendeeFromContact = (contact) => {
         if (contact.email && !attendeeEmails.includes(contact.email.toLowerCase())) {

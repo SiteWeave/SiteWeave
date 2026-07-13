@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     slug TEXT UNIQUE NOT NULL,
-    task_start_notifications_enabled BOOLEAN NOT NULL DEFAULT true,
+    task_start_notifications_enabled BOOLEAN NOT NULL DEFAULT false,
     task_start_notification_lead_days INTEGER[] NOT NULL DEFAULT ARRAY[14, 7],
     workspace_type TEXT NOT NULL DEFAULT 'business' CHECK (workspace_type IN ('personal', 'business')),
     max_projects INTEGER,
@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS organizations (
     progress_report_send_hour INTEGER NOT NULL DEFAULT 8 CHECK (progress_report_send_hour >= 0 AND progress_report_send_hour <= 23),
     progress_report_timezone TEXT NOT NULL DEFAULT 'America/New_York',
     default_send_assignment_email BOOLEAN NOT NULL DEFAULT false,
+    trial_ends_at TIMESTAMPTZ,
+    trial_reminder_mid_sent_at TIMESTAMPTZ,
+    trial_reminder_final_sent_at TIMESTAMPTZ,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     created_by_user_id UUID REFERENCES auth.users(id),
     setup_wizard_completed_at TIMESTAMPTZ,
@@ -69,13 +72,36 @@ CREATE TABLE IF NOT EXISTS projects (
     milestones JSONB,
     notification_count INTEGER DEFAULT 0,
     color TEXT,
-    task_notifications_use_org_defaults BOOLEAN NOT NULL DEFAULT true,
+    task_notifications_use_org_defaults BOOLEAN NOT NULL DEFAULT false,
     task_start_notifications_enabled BOOLEAN,
     task_start_notification_lead_days INTEGER[],
     dependency_scheduling_mode TEXT NOT NULL DEFAULT 'auto' CHECK (dependency_scheduling_mode IN ('auto', 'manual')),
     organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    punch_list_signed_off_at TIMESTAMP WITH TIME ZONE,
+    punch_list_signed_off_by_name TEXT,
+    punch_list_signature JSONB
 );
+
+-- Opaque guest links for punch list / closeout review (no login)
+CREATE TABLE IF NOT EXISTS project_closeout_review_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    token_hash TEXT NOT NULL UNIQUE,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    created_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE public.project_closeout_review_tokens IS 'Hashed tokens for guest punch list / closeout review pages (no login).';
+
+CREATE INDEX IF NOT EXISTS idx_project_closeout_review_tokens_project
+    ON public.project_closeout_review_tokens(project_id);
+
+CREATE INDEX IF NOT EXISTS idx_project_closeout_review_tokens_expires
+    ON public.project_closeout_review_tokens(expires_at);
 
 -- Smart Task Notification delivery log (idempotency + audit)
 CREATE TABLE IF NOT EXISTS task_notification_history (
@@ -109,7 +135,7 @@ CREATE TABLE IF NOT EXISTS task_dependency_notification_history (
 );
 
 ALTER TABLE organizations
-ADD COLUMN IF NOT EXISTS task_start_notifications_enabled BOOLEAN NOT NULL DEFAULT true;
+ADD COLUMN IF NOT EXISTS task_start_notifications_enabled BOOLEAN NOT NULL DEFAULT false;
 
 ALTER TABLE organizations
 ADD COLUMN IF NOT EXISTS task_start_notification_lead_days INTEGER[] NOT NULL DEFAULT ARRAY[14, 7];
@@ -185,6 +211,33 @@ ADD COLUMN IF NOT EXISTS project_phase_id UUID REFERENCES public.project_phases(
 ALTER TABLE tasks
 ADD COLUMN IF NOT EXISTS notify_assignee_email BOOLEAN NOT NULL DEFAULT false;
 
+ALTER TABLE tasks
+ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+
+ALTER TABLE public.project_issues
+  ADD COLUMN IF NOT EXISTS assigned_to_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+
+ALTER TABLE public.project_issues
+  ADD COLUMN IF NOT EXISTS related_task_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE public.project_issues
+  ADD COLUMN IF NOT EXISTS location TEXT;
+
+ALTER TABLE public.project_issues
+  ADD COLUMN IF NOT EXISTS before_photo_path TEXT;
+
+ALTER TABLE public.project_issues
+  ADD COLUMN IF NOT EXISTS after_photo_path TEXT;
+
+ALTER TABLE public.projects
+  ADD COLUMN IF NOT EXISTS punch_list_signed_off_at TIMESTAMPTZ;
+
+ALTER TABLE public.projects
+  ADD COLUMN IF NOT EXISTS punch_list_signed_off_by_name TEXT;
+
+ALTER TABLE public.projects
+  ADD COLUMN IF NOT EXISTS punch_list_signature JSONB;
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tasks_percent_complete_range') THEN
@@ -195,13 +248,14 @@ BEGIN
 END $$;
 
 COMMENT ON COLUMN public.tasks.percent_complete IS '0-100 schedule progress; when set, completed should reflect percent_complete >= 100';
+COMMENT ON COLUMN public.tasks.completed_at IS 'Timestamp when the task was marked complete (completed = true). Cleared when uncompleted.';
 COMMENT ON COLUMN public.tasks.project_phase_id IS 'Optional project phase; when set, phase progress is derived from completed/total tasks for that phase.';
 
 CREATE INDEX IF NOT EXISTS idx_tasks_project_phase_id ON public.tasks(project_id, project_phase_id)
 WHERE project_phase_id IS NOT NULL;
 
 ALTER TABLE projects
-ADD COLUMN IF NOT EXISTS task_notifications_use_org_defaults BOOLEAN NOT NULL DEFAULT true;
+ADD COLUMN IF NOT EXISTS task_notifications_use_org_defaults BOOLEAN NOT NULL DEFAULT false;
 
 ALTER TABLE projects
 ADD COLUMN IF NOT EXISTS task_start_notifications_enabled BOOLEAN;
@@ -226,6 +280,33 @@ CREATE TABLE IF NOT EXISTS contacts (
     phone TEXT,
     organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE
 );
+
+CREATE OR REPLACE FUNCTION public.contact_phone_digits(p TEXT)
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public
+AS $$
+  SELECT CASE
+    WHEN d IS NULL OR length(d) < 7 THEN NULL
+    WHEN length(d) = 11 AND left(d, 1) = '1' THEN substring(d FROM 2)
+    ELSE d
+  END
+  FROM (
+    SELECT NULLIF(regexp_replace(COALESCE(p, ''), '\D', '', 'g'), '') AS d
+  ) s;
+$$;
+
+COMMENT ON FUNCTION public.contact_phone_digits IS
+  'Digit-only phone key for duplicate detection; US 11-digit numbers collapse to 10.';
+
+CREATE UNIQUE INDEX IF NOT EXISTS contacts_unique_org_email
+ON public.contacts (organization_id, lower(btrim(email)))
+WHERE email IS NOT NULL AND btrim(email) <> '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS contacts_unique_org_phone_digits
+ON public.contacts (organization_id, public.contact_phone_digits(phone))
+WHERE public.contact_phone_digits(phone) IS NOT NULL;
 
 -- Profiles Table (Links auth.users to contacts and stores roles)
 CREATE TABLE IF NOT EXISTS profiles (
@@ -421,8 +502,23 @@ CREATE TABLE IF NOT EXISTS project_issues (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     due_date DATE,
     resolved_at TIMESTAMP WITH TIME ZONE,
-    created_by_user_id UUID REFERENCES auth.users(id)
+    created_by_user_id UUID REFERENCES auth.users(id),
+    assigned_to_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    related_task_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    location TEXT,
+    before_photo_path TEXT,
+    after_photo_path TEXT
 );
+
+COMMENT ON COLUMN public.project_issues.assigned_to_user_id IS 'Single triage owner for the issue';
+COMMENT ON COLUMN public.project_issues.related_task_ids IS 'Optional UUID[] of related schedule tasks';
+COMMENT ON COLUMN public.project_issues.location IS 'Optional area/room for punch list grouping (e.g. Kitchen, Unit 2B)';
+COMMENT ON COLUMN public.project_issues.before_photo_path IS 'Storage path in message_files bucket for deficiency photo';
+COMMENT ON COLUMN public.project_issues.after_photo_path IS 'Storage path in message_files bucket for completion proof';
+
+COMMENT ON COLUMN public.projects.punch_list_signed_off_at IS 'Client/owner punch list walkthrough sign-off timestamp';
+COMMENT ON COLUMN public.projects.punch_list_signed_off_by_name IS 'Name entered on client punch list review page';
+COMMENT ON COLUMN public.projects.punch_list_signature IS 'Optional signature payload from client review (typed name, strokes, etc.)';
 
 -- Project Phases Table
 CREATE TABLE IF NOT EXISTS project_phases (
@@ -483,7 +579,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     percent_complete INTEGER,
     project_phase_id UUID REFERENCES public.project_phases(id) ON DELETE SET NULL,
     notify_assignee_email BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    completed_at TIMESTAMP WITH TIME ZONE
 );
 
 -- Task Photos Table
@@ -753,6 +850,90 @@ CREATE INDEX IF NOT EXISTS sms_phone_consent_status_idx
 
 COMMENT ON TABLE public.sms_phone_consent IS 'Twilio SMS double opt-in: one row per E.164; status drives substantive SMS sends.';
 
+ALTER TABLE public.sms_phone_consent
+    ADD COLUMN IF NOT EXISTS consent_method TEXT
+        CHECK (consent_method IS NULL OR consent_method IN ('web_form', 'sms_reply'));
+
+COMMENT ON COLUMN public.sms_phone_consent.consent_method IS 'How consent was obtained: web_form or sms_reply.';
+
+-- Shareable web consent links (supabase/migrations/20260708180000)
+CREATE TABLE IF NOT EXISTS public.sms_consent_requests (
+    token TEXT PRIMARY KEY,
+    phone_e164 TEXT NOT NULL,
+    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    contact_id UUID REFERENCES public.contacts(id) ON DELETE SET NULL,
+    created_by UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'confirmed', 'expired', 'revoked')),
+    expires_at TIMESTAMPTZ NOT NULL,
+    confirmed_at TIMESTAMPTZ,
+    consent_method TEXT CHECK (consent_method IS NULL OR consent_method IN ('web_form', 'sms_reply')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS sms_consent_requests_phone_org_idx
+    ON public.sms_consent_requests (phone_e164, organization_id);
+
+CREATE INDEX IF NOT EXISTS sms_consent_requests_status_expires_idx
+    ON public.sms_consent_requests (status, expires_at);
+
+COMMENT ON TABLE public.sms_consent_requests IS 'PM-generated shareable links for web SMS consent (Twilio via website opt-in).';
+
+-- Mobile app store version thresholds (read by all clients before login)
+CREATE TABLE IF NOT EXISTS public.mobile_release_config (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    min_native_version TEXT NOT NULL DEFAULT '1.0.0',
+    latest_native_version TEXT NOT NULL DEFAULT '1.0.3',
+    ios_store_url TEXT NOT NULL DEFAULT 'https://apps.apple.com/app/id6756014286',
+    android_store_url TEXT NOT NULL DEFAULT 'https://play.google.com/store/apps/details?id=com.siteweave.mobile',
+    force_update BOOLEAN NOT NULL DEFAULT false,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.mobile_release_config (id)
+VALUES ('default')
+ON CONFLICT (id) DO NOTHING;
+
+-- Edge function rate limiting; no client access
+CREATE TABLE IF NOT EXISTS public.rate_limit_buckets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bucket_key TEXT NOT NULL UNIQUE,
+    request_count INTEGER NOT NULL DEFAULT 1,
+    window_start TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limit_buckets_window
+    ON public.rate_limit_buckets (window_start);
+
+COMMENT ON TABLE public.rate_limit_buckets IS 'Edge function rate limiting; no client access';
+
+-- Legacy multi-org membership (profiles.organization_id is canonical for most flows)
+CREATE TABLE IF NOT EXISTS public.organization_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('Admin', 'PM', 'Team Member', 'Subcontractor')),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (organization_id, user_id)
+);
+
+-- In-app user feedback submissions
+CREATE TABLE IF NOT EXISTS public.user_feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    user_email TEXT,
+    user_name TEXT,
+    feedback_type TEXT NOT NULL CHECK (feedback_type IN ('bug', 'feature', 'general')),
+    subject TEXT NOT NULL,
+    message TEXT NOT NULL,
+    app_version TEXT,
+    status TEXT DEFAULT 'new' CHECK (status IN ('new', 'reviewed', 'resolved', 'archived')),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- Progress reports (scripts/migrations/add-progress-reports.sql + migrations)
 CREATE TABLE IF NOT EXISTS public.progress_report_schedules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -777,7 +958,9 @@ CREATE TABLE IF NOT EXISTS public.progress_report_schedules (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     last_sent_at TIMESTAMP WITH TIME ZONE,
-    next_send_at TIMESTAMP WITH TIME ZONE
+    next_send_at TIMESTAMP WITH TIME ZONE,
+    send_hour INTEGER NOT NULL DEFAULT 8 CHECK (send_hour >= 0 AND send_hour <= 23),
+    send_timezone TEXT NOT NULL DEFAULT 'America/New_York'
 );
 
 CREATE TABLE IF NOT EXISTS public.progress_report_recipients (
@@ -838,7 +1021,7 @@ COMMENT ON TABLE public.organization_branding IS 'Stores branding configuration 
 CREATE TABLE IF NOT EXISTS public.content_reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     reported_by_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    content_type TEXT NOT NULL CHECK (content_type IN ('message', 'profile', 'project', 'task', 'comment', 'file', 'stream_post', 'task_comment')),
+    content_type TEXT NOT NULL CHECK (content_type IN ('message', 'profile', 'project', 'task', 'comment', 'file', 'stream_post', 'task_comment', 'issue_comment')),
     content_id UUID NOT NULL,
     reported_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     reason TEXT NOT NULL CHECK (reason IN ('spam', 'harassment', 'inappropriate', 'violence', 'hate_speech', 'other')),
@@ -1544,6 +1727,207 @@ RETURNS TEXT AS $$
   SELECT email FROM auth.users WHERE id = auth.uid();
 $$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
+-- Project IDs the current user may access (matches projects SELECT policy)
+CREATE OR REPLACE FUNCTION public.get_accessible_project_ids()
+RETURNS SETOF UUID
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT id
+  FROM public.projects
+  WHERE organization_id = public.get_user_organization_id()
+    AND (
+      public.is_user_admin()
+      OR project_manager_id = auth.uid()
+      OR created_by_user_id = auth.uid()
+      OR id IN (
+        SELECT project_id
+        FROM public.project_contacts
+        WHERE organization_id = public.get_user_organization_id()
+          AND (
+            (contact_id = public.get_user_contact_id() AND public.get_user_contact_id() IS NOT NULL)
+            OR contact_id IN (
+              SELECT c.id
+              FROM public.contacts c
+              WHERE LOWER(c.email) = LOWER(public.get_user_email())
+                AND c.organization_id = public.get_user_organization_id()
+            )
+          )
+      )
+      OR id IN (
+        SELECT project_id
+        FROM public.project_collaborators
+        WHERE user_id = auth.uid()
+          AND organization_id = public.get_user_organization_id()
+      )
+    );
+$$;
+
+-- Legacy organization_members helpers (used by organization_members RLS)
+CREATE OR REPLACE FUNCTION public.get_user_organizations()
+RETURNS UUID[]
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT ARRAY_AGG(organization_id)
+  FROM public.organization_members
+  WHERE user_id = auth.uid();
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_user_role_in_org(org_id UUID)
+RETURNS TEXT
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT role
+  FROM public.organization_members
+  WHERE user_id = auth.uid() AND organization_id = org_id;
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_org_admin(org_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.organization_members
+    WHERE user_id = auth.uid()
+      AND organization_id = org_id
+      AND role = 'Admin'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.user_has_access_to_organization(org_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.organization_members
+    WHERE user_id = auth.uid()
+      AND organization_id = org_id
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.user_has_access_to_project(project_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.projects p
+    INNER JOIN public.organization_members om ON om.organization_id = p.organization_id
+    WHERE p.id = project_id
+      AND om.user_id = auth.uid()
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.has_project_access(project_uuid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.projects p
+    JOIN public.profiles pf ON p.organization_id = pf.organization_id
+    WHERE p.id = project_uuid AND pf.id = auth.uid()
+  ) OR EXISTS (
+    SELECT 1 FROM public.project_collaborators
+    WHERE project_id = project_uuid AND user_id = auth.uid()
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_project_collaborator(project_uuid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.project_collaborators
+    WHERE project_id = project_uuid AND user_id = auth.uid()
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_organization_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles p
+    JOIN public.roles r ON p.role_id = r.id
+    WHERE p.id = auth.uid()
+      AND r.permissions->>'can_manage_users' = 'true'
+      AND r.is_system_role = true
+      AND r.name = 'OrganizationAdmin'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_project_id(project_name TEXT)
+RETURNS UUID
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  v_project_id UUID;
+BEGIN
+  SELECT id INTO v_project_id FROM public.projects WHERE name = project_name LIMIT 1;
+  RETURN v_project_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.user_can_delete_projects(check_organization_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  user_org_id UUID;
+  user_role_id UUID;
+  role_permissions JSONB;
+BEGIN
+  SELECT organization_id INTO user_org_id
+  FROM public.profiles
+  WHERE id = auth.uid();
+
+  IF user_org_id IS NULL OR user_org_id != check_organization_id THEN
+    RETURN FALSE;
+  END IF;
+
+  SELECT role_id INTO user_role_id
+  FROM public.profiles
+  WHERE id = auth.uid();
+
+  IF user_role_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  SELECT permissions INTO role_permissions
+  FROM public.roles
+  WHERE id = user_role_id;
+
+  IF role_permissions IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  RETURN COALESCE((role_permissions->>'can_delete_projects')::boolean, false);
+END;
+$$;
+
 -- Helper function to check if current user is admin
 -- Super admin, legacy "Admin" role name, or canonical "Org Admin" role name (required for org UPDATE RLS, e.g. setup_wizard_completed_at)
 CREATE OR REPLACE FUNCTION is_user_admin()
@@ -1552,6 +1936,15 @@ RETURNS BOOLEAN AS $$
     (SELECT is_super_admin FROM public.profiles WHERE id = auth.uid()),
     false
   ) OR COALESCE((SELECT get_user_role()) IN ('Admin', 'Org Admin'), false);
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+
+-- Platform developer (SiteWeave team) — not org admin
+CREATE OR REPLACE FUNCTION is_platform_developer()
+RETURNS BOOLEAN AS $$
+  SELECT COALESCE(
+    (SELECT is_super_admin FROM public.profiles WHERE id = auth.uid()),
+    false
+  );
 $$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Helper function to check if current user can view a specific role
@@ -1750,8 +2143,31 @@ ALTER TABLE profiles ADD CONSTRAINT profiles_role_check CHECK (role IN ('Admin',
 ALTER TABLE project_contacts ADD COLUMN IF NOT EXISTS role TEXT;
 
 -- ============================================================================
--- WORKSPACE TIER ENFORCEMENT (supabase/migrations/20260518120000)
+-- WORKSPACE TIER ENFORCEMENT (supabase/migrations/20260518120000 + trial)
 -- ============================================================================
+
+ALTER TABLE public.organizations
+  ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS trial_reminder_mid_sent_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS trial_reminder_final_sent_at TIMESTAMPTZ;
+
+COMMENT ON COLUMN public.organizations.trial_ends_at IS
+  'Personal workspaces only. When set and in the future, org gets full business-tier feature access.';
+COMMENT ON COLUMN public.organizations.trial_reminder_mid_sent_at IS
+  'When the mid-trial (7 days remaining) reminder email was sent.';
+COMMENT ON COLUMN public.organizations.trial_reminder_final_sent_at IS
+  'When the final (1 day remaining) trial reminder email was sent.';
+
+CREATE OR REPLACE FUNCTION public.org_has_active_personal_trial(org_row public.organizations)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT org_row.workspace_type = 'personal'
+    AND org_row.trial_ends_at IS NOT NULL
+    AND org_row.trial_ends_at > now();
+$$;
 
 CREATE OR REPLACE FUNCTION public.enforce_personal_workspace_project_limit()
 RETURNS TRIGGER
@@ -1769,6 +2185,10 @@ BEGIN
   END IF;
 
   IF org_row.workspace_type IS DISTINCT FROM 'personal' THEN
+    RETURN NEW;
+  END IF;
+
+  IF public.org_has_active_personal_trial(org_row) THEN
     RETURN NEW;
   END IF;
 
@@ -1847,6 +2267,10 @@ BEGIN
   WHERE p.id = pid;
 
   IF NOT FOUND OR org_row.workspace_type IS DISTINCT FROM 'personal' THEN
+    RETURN COALESCE(NEW, OLD);
+  END IF;
+
+  IF public.org_has_active_personal_trial(org_row) THEN
     RETURN COALESCE(NEW, OLD);
   END IF;
 
@@ -1949,6 +2373,46 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.recompute_project_phase_dates(p_phase_id UUID)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_start DATE;
+  v_end DATE;
+BEGIN
+  IF p_phase_id IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT
+    MIN(t.start_date) FILTER (WHERE t.start_date IS NOT NULL),
+    MAX(
+      COALESCE(
+        t.due_date,
+        CASE
+          WHEN t.start_date IS NOT NULL THEN
+            (t.start_date + (GREATEST(COALESCE(t.duration_days, 1), 1) - 1))::date
+          ELSE NULL
+        END
+      )
+    ) FILTER (
+      WHERE t.start_date IS NOT NULL OR t.due_date IS NOT NULL
+    )
+  INTO v_start, v_end
+  FROM public.tasks t
+  WHERE t.project_phase_id = p_phase_id;
+
+  UPDATE public.project_phases
+  SET start_date = v_start,
+      end_date = v_end,
+      updated_at = now()
+  WHERE id = p_phase_id;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.tasks_after_change_refresh_phase_progress()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -1961,6 +2425,7 @@ BEGIN
   IF op = 'DELETE' THEN
     IF OLD.project_phase_id IS NOT NULL THEN
       PERFORM public.recompute_project_phase_progress(OLD.project_phase_id);
+      PERFORM public.recompute_project_phase_dates(OLD.project_phase_id);
     END IF;
     RETURN OLD;
   END IF;
@@ -1968,11 +2433,13 @@ BEGIN
   IF op = 'UPDATE' AND OLD.project_phase_id IS DISTINCT FROM NEW.project_phase_id THEN
     IF OLD.project_phase_id IS NOT NULL THEN
       PERFORM public.recompute_project_phase_progress(OLD.project_phase_id);
+      PERFORM public.recompute_project_phase_dates(OLD.project_phase_id);
     END IF;
   END IF;
 
   IF op IN ('INSERT', 'UPDATE') AND NEW.project_phase_id IS NOT NULL THEN
     PERFORM public.recompute_project_phase_progress(NEW.project_phase_id);
+    PERFORM public.recompute_project_phase_dates(NEW.project_phase_id);
   END IF;
 
   RETURN NEW;
@@ -1981,9 +2448,203 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_tasks_refresh_phase_progress ON public.tasks;
 CREATE TRIGGER trg_tasks_refresh_phase_progress
-AFTER INSERT OR DELETE OR UPDATE OF completed, project_phase_id, project_id ON public.tasks
+AFTER INSERT OR DELETE OR UPDATE OF completed, project_phase_id, project_id, start_date, due_date, duration_days ON public.tasks
 FOR EACH ROW
 EXECUTE FUNCTION public.tasks_after_change_refresh_phase_progress();
+
+-- Track when each task was marked complete (supabase/migrations/20260709140000)
+CREATE OR REPLACE FUNCTION public.tasks_sync_completed_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.completed IS TRUE THEN
+    IF TG_OP = 'INSERT' OR OLD.completed IS DISTINCT FROM TRUE THEN
+      NEW.completed_at := now();
+    END IF;
+  ELSE
+    NEW.completed_at := NULL;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tasks_sync_completed_at ON public.tasks;
+CREATE TRIGGER tasks_sync_completed_at
+  BEFORE INSERT OR UPDATE ON public.tasks
+  FOR EACH ROW
+  EXECUTE FUNCTION public.tasks_sync_completed_at();
+
+CREATE INDEX IF NOT EXISTS idx_tasks_completed_at
+  ON public.tasks (completed_at DESC NULLS LAST)
+  WHERE completed IS TRUE;
+
+-- ============================================================================
+-- ISSUE WORKFLOW TRIGGERS
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.handle_step_completion()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  next_step_id INTEGER;
+  issue_id INTEGER;
+BEGIN
+  IF NEW.status = 'completed' AND (OLD.status IS NULL OR OLD.status != 'completed') THEN
+    issue_id := NEW.issue_id;
+
+    SELECT id INTO next_step_id
+    FROM issue_steps
+    WHERE issue_id = NEW.issue_id
+      AND step_order > NEW.step_order
+      AND status = 'pending'
+    ORDER BY step_order
+    LIMIT 1;
+
+    IF next_step_id IS NOT NULL THEN
+      UPDATE project_issues
+      SET current_step_id = next_step_id,
+          updated_at = NOW()
+      WHERE id = issue_id;
+    ELSE
+      UPDATE project_issues
+      SET status = 'closed',
+          current_step_id = NULL,
+          resolved_at = NOW(),
+          updated_at = NOW()
+      WHERE id = issue_id;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.set_initial_current_step()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  first_step_id INTEGER;
+BEGIN
+  SELECT id INTO first_step_id
+  FROM issue_steps
+  WHERE issue_id = NEW.id
+    AND step_order = 1
+  LIMIT 1;
+
+  IF first_step_id IS NOT NULL THEN
+    UPDATE project_issues
+    SET current_step_id = first_step_id
+    WHERE id = NEW.id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.cleanup_old_typing_indicators()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  DELETE FROM public.typing_indicators
+  WHERE updated_at < NOW() - INTERVAL '5 seconds';
+  RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.enforce_single_organization()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  existing_org_count INTEGER;
+BEGIN
+  IF NEW.role = 'Subcontractor' THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT COUNT(*) INTO existing_org_count
+  FROM public.organization_members
+  WHERE user_id = NEW.user_id
+    AND organization_id != NEW.organization_id
+    AND role != 'Subcontractor';
+
+  IF existing_org_count > 0 THEN
+    RAISE EXCEPTION 'User with role % can only belong to one organization', NEW.role;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS update_event_categories_updated_at ON public.event_categories;
+CREATE TRIGGER update_event_categories_updated_at
+  BEFORE UPDATE ON public.event_categories
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_issue_steps_updated_at ON public.issue_steps;
+CREATE TRIGGER update_issue_steps_updated_at
+  BEFORE UPDATE ON public.issue_steps
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS handle_step_completion_trigger ON public.issue_steps;
+CREATE TRIGGER handle_step_completion_trigger
+  AFTER UPDATE ON public.issue_steps
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_step_completion();
+
+DROP TRIGGER IF EXISTS update_project_issues_updated_at ON public.project_issues;
+CREATE TRIGGER update_project_issues_updated_at
+  BEFORE UPDATE ON public.project_issues
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS set_initial_current_step_trigger ON public.project_issues;
+CREATE TRIGGER set_initial_current_step_trigger
+  AFTER INSERT ON public.project_issues
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_initial_current_step();
+
+DROP TRIGGER IF EXISTS update_project_phases_updated_at ON public.project_phases;
+CREATE TRIGGER update_project_phases_updated_at
+  BEFORE UPDATE ON public.project_phases
+  FOR EACH ROW
+  EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS cleanup_typing_indicators_trigger ON public.typing_indicators;
+CREATE TRIGGER cleanup_typing_indicators_trigger
+  AFTER INSERT OR UPDATE ON public.typing_indicators
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION public.cleanup_old_typing_indicators();
+
+DROP TRIGGER IF EXISTS enforce_single_org_trigger ON public.organization_members;
+CREATE TRIGGER enforce_single_org_trigger
+  BEFORE INSERT ON public.organization_members
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_single_organization();
 
 -- ============================================================================
 -- ACTIVITY HISTORY PERMISSION (supabase/migrations/20260502140000)
@@ -2334,8 +2995,10 @@ DROP POLICY IF EXISTS "messages_read_only_deprecated" ON public.messages;
 DROP POLICY IF EXISTS "message_channels_read_only_deprecated" ON public.message_channels;
 DROP POLICY IF EXISTS "Users can see their own reports" ON public.content_reports;
 DROP POLICY IF EXISTS "Admins can see all reports" ON public.content_reports;
+DROP POLICY IF EXISTS "Platform developers can see all reports" ON public.content_reports;
 DROP POLICY IF EXISTS "Users can create reports" ON public.content_reports;
 DROP POLICY IF EXISTS "Admins can update reports" ON public.content_reports;
+DROP POLICY IF EXISTS "Platform developers can update reports" ON public.content_reports;
 DROP POLICY IF EXISTS "Users can see their own blocks" ON public.blocked_users;
 DROP POLICY IF EXISTS "Users can create blocks" ON public.blocked_users;
 DROP POLICY IF EXISTS "Users can delete their own blocks" ON public.blocked_users;
@@ -2358,6 +3021,15 @@ DROP POLICY IF EXISTS "Users can create schedule import templates for their orga
 DROP POLICY IF EXISTS "Users can update their organization schedule import templates" ON public.schedule_import_templates;
 DROP POLICY IF EXISTS "Users can delete their organization schedule import templates" ON public.schedule_import_templates;
 DROP POLICY IF EXISTS "sms_phone_consent_select_authenticated" ON public.sms_phone_consent;
+DROP POLICY IF EXISTS "sms_consent_requests_select_org_scoped" ON public.sms_consent_requests;
+DROP POLICY IF EXISTS "Anyone can read mobile release config" ON public.mobile_release_config;
+DROP POLICY IF EXISTS "Users can see members of their organizations" ON public.organization_members;
+DROP POLICY IF EXISTS "System and org admins can add members" ON public.organization_members;
+DROP POLICY IF EXISTS "Org admins can update member roles" ON public.organization_members;
+DROP POLICY IF EXISTS "Org admins can remove members" ON public.organization_members;
+DROP POLICY IF EXISTS "Users can only see their own feedback" ON public.user_feedback;
+DROP POLICY IF EXISTS "Org admins can see all feedback" ON public.user_feedback;
+DROP POLICY IF EXISTS "Users can create their own feedback" ON public.user_feedback;
 DROP POLICY IF EXISTS "Users can see activity with permission and scope" ON public.activity_log;
 DROP POLICY IF EXISTS "Users can create activity logs for accessible scope" ON public.activity_log;
 
@@ -2401,6 +3073,12 @@ ALTER TABLE task_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE schedule_import_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE task_notification_guest_shares ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sms_phone_consent ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sms_consent_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mobile_release_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rate_limit_buckets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE organization_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_feedback ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_closeout_review_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE progress_report_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE progress_report_recipients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE progress_report_history ENABLE ROW LEVEL SECURITY;
@@ -3650,6 +4328,35 @@ AS $$
   );
 $$;
 
+CREATE OR REPLACE FUNCTION public.user_can_access_task_photos(task_uuid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    auth.uid() IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.tasks t
+      WHERE t.id = task_uuid
+        AND (
+          (
+            t.organization_id IS NOT NULL
+            AND t.organization_id = (SELECT public.get_user_organization_id())
+            AND (SELECT public.get_user_organization_id()) IS NOT NULL
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM public.project_collaborators pc
+            WHERE pc.user_id = auth.uid()
+              AND pc.project_id = t.project_id
+          )
+        )
+    );
+$$;
+
 CREATE OR REPLACE FUNCTION public.can_access_task_photo_object(file_path TEXT, require_manage BOOLEAN DEFAULT false)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -3696,11 +4403,7 @@ BEGIN
     RETURN false;
   END IF;
 
-  IF require_manage THEN
-    RETURN public.can_manage_task(parsed_task_id);
-  END IF;
-
-  RETURN public.can_view_task(parsed_task_id);
+  RETURN public.user_can_access_task_photos(parsed_task_id);
 END;
 $$;
 
@@ -3759,32 +4462,41 @@ USING (
 );
 
 DROP POLICY IF EXISTS "Users can see task photos for visible tasks" ON public.task_photos;
-CREATE POLICY "Users can see task photos for visible tasks"
+DROP POLICY IF EXISTS "Users can upload task photos for visible tasks" ON public.task_photos;
+DROP POLICY IF EXISTS "Users can manage task photos for editable tasks" ON public.task_photos;
+DROP POLICY IF EXISTS "Org members can view task photos" ON public.task_photos;
+CREATE POLICY "Org members can view task photos"
 ON public.task_photos
 FOR SELECT
-USING (public.can_view_task(task_id));
+TO authenticated
+USING (public.user_can_access_task_photos(task_id));
 
-DROP POLICY IF EXISTS "Users can manage task photos for editable tasks" ON public.task_photos;
-CREATE POLICY "Users can manage task photos for editable tasks"
+DROP POLICY IF EXISTS "Org members can upload task photos" ON public.task_photos;
+CREATE POLICY "Org members can upload task photos"
 ON public.task_photos
 FOR INSERT
+TO authenticated
 WITH CHECK (
-  public.can_manage_task(task_id)
+  public.user_can_access_task_photos(task_id)
   AND uploaded_by_user_id = auth.uid()
 );
 
 DROP POLICY IF EXISTS "Users can update task photos for editable tasks" ON public.task_photos;
-CREATE POLICY "Users can update task photos for editable tasks"
+DROP POLICY IF EXISTS "Org members can update task photos" ON public.task_photos;
+CREATE POLICY "Org members can update task photos"
 ON public.task_photos
 FOR UPDATE
-USING (public.can_manage_task(task_id))
-WITH CHECK (public.can_manage_task(task_id));
+TO authenticated
+USING (public.user_can_access_task_photos(task_id))
+WITH CHECK (public.user_can_access_task_photos(task_id));
 
 DROP POLICY IF EXISTS "Users can delete task photos for editable tasks" ON public.task_photos;
-CREATE POLICY "Users can delete task photos for editable tasks"
+DROP POLICY IF EXISTS "Org members can delete task photos" ON public.task_photos;
+CREATE POLICY "Org members can delete task photos"
 ON public.task_photos
 FOR DELETE
-USING (public.can_manage_task(task_id));
+TO authenticated
+USING (public.user_can_access_task_photos(task_id));
 
 -- ============================================================================
 -- TASK_DEPENDENCIES TABLE POLICIES
@@ -4154,6 +4866,10 @@ CREATE INDEX IF NOT EXISTS idx_channel_reads_channel_id ON channel_reads(channel
 CREATE INDEX IF NOT EXISTS idx_project_issues_project_id ON project_issues(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_issues_status ON project_issues(status);
 CREATE INDEX IF NOT EXISTS idx_project_issues_priority ON project_issues(priority);
+CREATE INDEX IF NOT EXISTS idx_project_issues_assigned_to_user_id ON project_issues(assigned_to_user_id);
+CREATE INDEX IF NOT EXISTS idx_project_issues_location
+  ON public.project_issues(project_id, location)
+  WHERE location IS NOT NULL;
 
 -- RLS-specific indexes
 CREATE INDEX IF NOT EXISTS idx_projects_project_manager_id ON projects(project_manager_id);
@@ -4758,24 +5474,98 @@ GRANT SELECT ON TABLE public.sms_phone_consent TO authenticated;
 GRANT ALL ON TABLE public.sms_phone_consent TO service_role;
 
 -- ============================================================================
+-- SMS CONSENT REQUESTS (shareable web consent links)
+-- ============================================================================
+CREATE POLICY "sms_consent_requests_select_org_scoped"
+ON public.sms_consent_requests FOR SELECT TO authenticated
+USING (
+  public.get_user_organization_id() IS NOT NULL
+  AND organization_id = public.get_user_organization_id()
+);
+
+GRANT SELECT ON TABLE public.sms_consent_requests TO authenticated;
+GRANT ALL ON TABLE public.sms_consent_requests TO service_role;
+
+-- ============================================================================
+-- MOBILE RELEASE CONFIG
+-- ============================================================================
+CREATE POLICY "Anyone can read mobile release config"
+ON public.mobile_release_config FOR SELECT TO anon, authenticated
+USING (true);
+
+-- ============================================================================
+-- RATE LIMIT BUCKETS (service role only)
+-- ============================================================================
+REVOKE ALL ON public.rate_limit_buckets FROM PUBLIC;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.rate_limit_buckets TO service_role;
+
+-- ============================================================================
+-- PROJECT CLOSEOUT REVIEW TOKENS (service role only)
+-- ============================================================================
+REVOKE ALL ON public.project_closeout_review_tokens FROM PUBLIC;
+REVOKE ALL ON public.project_closeout_review_tokens FROM anon, authenticated;
+GRANT ALL ON TABLE public.project_closeout_review_tokens TO service_role;
+
+-- ============================================================================
+-- ORGANIZATION MEMBERS (legacy)
+-- ============================================================================
+CREATE POLICY "Users can see members of their organizations"
+ON public.organization_members FOR SELECT
+USING (organization_id IN (SELECT unnest(public.get_user_organizations())));
+
+CREATE POLICY "System and org admins can add members"
+ON public.organization_members FOR INSERT
+WITH CHECK (true OR public.is_org_admin(organization_id));
+
+CREATE POLICY "Org admins can update member roles"
+ON public.organization_members FOR UPDATE
+USING (public.is_org_admin(organization_id));
+
+CREATE POLICY "Org admins can remove members"
+ON public.organization_members FOR DELETE
+USING (public.is_org_admin(organization_id));
+
+-- ============================================================================
+-- USER FEEDBACK
+-- ============================================================================
+CREATE POLICY "Users can only see their own feedback"
+ON public.user_feedback FOR SELECT
+USING (user_id = auth.uid());
+
+CREATE POLICY "Org admins can see all feedback"
+ON public.user_feedback FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.organization_members
+    WHERE organization_members.user_id = auth.uid()
+      AND organization_members.role = 'Admin'
+  )
+);
+
+CREATE POLICY "Users can create their own feedback"
+ON public.user_feedback FOR INSERT
+WITH CHECK (user_id = auth.uid() OR user_id IS NULL);
+
+-- ============================================================================
 -- MODERATION POLICIES
 -- ============================================================================
 CREATE POLICY "Users can see their own reports"
 ON public.content_reports FOR SELECT
 USING (reported_by_user_id = auth.uid());
 
-CREATE POLICY "Admins can see all reports"
+CREATE POLICY "Platform developers can see all reports"
 ON public.content_reports FOR SELECT
-USING (public.get_user_role() = 'Admin');
+USING (public.is_platform_developer());
 
 CREATE POLICY "Users can create reports"
 ON public.content_reports FOR INSERT
 WITH CHECK (reported_by_user_id = auth.uid());
 
-CREATE POLICY "Admins can update reports"
+CREATE POLICY "Platform developers can update reports"
 ON public.content_reports FOR UPDATE
-USING (public.get_user_role() = 'Admin')
-WITH CHECK (public.get_user_role() = 'Admin');
+USING (public.is_platform_developer())
+WITH CHECK (public.is_platform_developer());
 
 CREATE POLICY "Users can see their own blocks"
 ON public.blocked_users FOR SELECT

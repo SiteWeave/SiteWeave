@@ -7,11 +7,25 @@ import { useToast } from '../context/ToastContext'
 import Avatar from '../components/Avatar'
 import Icon from '../components/Icon'
 import TrialCountdownBanner from '../components/TrialCountdownBanner'
+import NotificationCenterBell from '../components/NotificationCenterBell'
+import GlobalSearch from '../components/GlobalSearch'
 
 export default function AppShell({ session }) {
   const { state, dispatch } = useAppContext()
   const { addToast } = useToast()
   const navigate = useNavigate()
+  const [searchOpen, setSearchOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email || 'User'
   const roleLabel =
@@ -58,12 +72,27 @@ export default function AppShell({ session }) {
   return (
     <div className="min-h-screen bg-slate-100" data-testid="app-shell">
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] min-h-screen">
-        <aside className="hidden lg:flex flex-col h-screen sticky top-0 overflow-hidden border-r border-slate-200 bg-white/95 backdrop-blur-xs">
+        <aside
+          className="hidden lg:flex flex-col h-screen sticky top-0 overflow-hidden overscroll-y-contain border-r border-slate-200 bg-white/95 backdrop-blur-xs"
+          onWheel={(event) => event.stopPropagation()}
+        >
           <div className="h-16 px-6 border-b border-slate-200 flex items-center justify-between">
             <Link to="/" className="text-lg font-bold tracking-tight text-slate-900">SiteWeave</Link>
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold">
-              WEB
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"
+                aria-label="Search"
+                data-testid="open-global-search"
+              >
+                <Icon path="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" className="w-5 h-5" />
+              </button>
+              <NotificationCenterBell />
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold">
+                WEB
+              </span>
+            </div>
           </div>
           <div className="px-4 py-3 border-b border-slate-200">
             {state.currentOrganization ? (
@@ -93,7 +122,7 @@ export default function AppShell({ session }) {
               </>
             )}
           </div>
-          <nav className="px-3 py-3 space-y-1 flex-1 min-h-0 overflow-y-auto">
+          <nav className="px-3 py-3 space-y-1 flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
             {PRIMARY_NAV_ITEMS.map((item) => (
               <NavLink
                 key={item.to}
@@ -168,6 +197,7 @@ export default function AppShell({ session }) {
           </main>
         </div>
       </div>
+      <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   )
 }

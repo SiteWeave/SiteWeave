@@ -2,6 +2,10 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
 import Avatar from './Avatar';
+import { SmsConsentStatusBadge } from './SmsConsentActions';
+import SmsConsentActions from './SmsConsentActions';
+import { supabaseClient } from '../context/AppContext';
+
 function ContactCard({
     contact,
     onAction,
@@ -11,6 +15,9 @@ function ContactCard({
     showActions = false,
     onAssignToProject,
     variant = 'default',
+    smsConsentStatus = null,
+    organizationId = null,
+    onSmsConsentStatusChange = null,
 }) {
     const { t } = useTranslation();
     const isTradePartner = variant === 'trade_partner' || contact.type === 'Subcontractor';
@@ -46,6 +53,7 @@ function ContactCard({
     };
 
     const hasManagementActions = showActions && (onEdit || onDelete || onAssignToProject);
+    const showSmsConsentSection = showActions && organizationId && contact.phone;
     const displayName = isTradePartner && contact.company
         ? contact.company
         : contact.name;
@@ -54,8 +62,9 @@ function ContactCard({
         : contact.role;
 
     return (
-        <li className="flex flex-col gap-3 p-3 rounded-lg hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3 flex-1 min-w-0">
+        <li className="flex flex-col gap-3 p-3 rounded-lg hover:bg-gray-50">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
                 <div className="relative shrink-0">
                     {contact.avatar_url ? (
                         <img src={contact.avatar_url} alt={displayName} className="w-10 h-10 rounded-full object-cover" />
@@ -91,6 +100,9 @@ function ContactCard({
                                     : t('contacts.add_email_for_reminders')}
                             </span>
                         )}
+                        {smsConsentStatus ? (
+                            <SmsConsentStatusBadge status={smsConsentStatus} />
+                        ) : null}
                         {contact.workContext?.assignedProjectNames?.length > 0 && (
                             <span className="text-xs text-gray-500 truncate">
                                 {t('team.assigned_projects', { projects: contact.workContext.assignedProjectNames.join(', ') })}
@@ -98,9 +110,9 @@ function ContactCard({
                         )}
                     </div>
                 </div>
-            </div>
+                </div>
 
-            <div className="flex flex-wrap items-center gap-2 shrink-0 sm:justify-end">
+                <div className="flex flex-wrap items-center gap-2 shrink-0 sm:justify-end">
                 <ActionButton />
 
                 {hasManagementActions && (
@@ -138,6 +150,20 @@ function ContactCard({
                     </div>
                 )}
             </div>
+            </div>
+            {showSmsConsentSection && (
+                <div className="w-full pl-[52px]">
+                    <SmsConsentActions
+                        supabaseClient={supabaseClient}
+                        organizationId={organizationId}
+                        phone={contact.phone}
+                        contactId={contact.id}
+                        smsConsentStatus={smsConsentStatus}
+                        onConsentStatusChange={onSmsConsentStatusChange}
+                        compact
+                    />
+                </div>
+            )}
         </li>
     );
 }

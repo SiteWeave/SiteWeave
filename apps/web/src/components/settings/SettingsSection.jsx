@@ -43,7 +43,7 @@ export function SettingsPrimaryButton({ children, className = '', type = 'button
   return (
     <button
       type={type}
-      className={`inline-flex items-center justify-center rounded-md bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+      className={`inline-flex items-center justify-center rounded-md bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed btn-smooth ${className}`}
       {...props}
     >
       {children}
@@ -55,7 +55,7 @@ export function SettingsSecondaryButton({ children, className = '', ...props }) 
   return (
     <button
       type="button"
-      className={`inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+      className={`inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed btn-smooth ${className}`}
       {...props}
     >
       {children}
@@ -67,7 +67,7 @@ export function SettingsDangerButton({ children, className = '', ...props }) {
   return (
     <button
       type="button"
-      className={`inline-flex items-center justify-center rounded-md border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+      className={`inline-flex items-center justify-center rounded-md border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed btn-smooth ${className}`}
       {...props}
     >
       {children}

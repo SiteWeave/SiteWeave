@@ -1,49 +1,46 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Modal, ScrollView, Alert, TextInput, Animated, Dimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, Alert } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
+import BottomSheet from './ui/BottomSheet';
 import PressableWithFade from './PressableWithFade';
-import ModalScrim from './ui/ModalScrim';
+import { Text } from './ui/Text';
 import { useAuth } from '../context/AuthContext';
 import { reportContent, REPORT_REASONS } from '@siteweave/core-logic';
 import { useHaptics } from '../hooks/useHaptics';
+import { colors, spacing, touch } from '../theme';
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
-
-export default function ReportContentModal({ visible, onClose, contentType, contentId, reportedUserId, reportedUserName }) {
+export default function ReportContentModal({
+  visible,
+  onClose,
+  contentType,
+  contentId,
+  reportedUserId,
+  reportedUserName,
+}) {
+  const { t } = useTranslation();
   const { user, supabase } = useAuth();
-  const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const [selectedReason, setSelectedReason] = useState(null);
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const sheetTranslateY = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (visible) {
-      sheetTranslateY.setValue(1);
-      requestAnimationFrame(() => {
-        Animated.timing(sheetTranslateY, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }).start();
-      });
-    } else {
-      sheetTranslateY.setValue(1);
-    }
-  }, [visible, sheetTranslateY]);
+    if (!visible) return;
+    setSelectedReason(null);
+    setDescription('');
+  }, [visible]);
 
   const handleSubmit = async () => {
     if (!selectedReason) {
-      Alert.alert('Required', 'Please select a reason for reporting this content.');
+      Alert.alert(t('common.error'), t('mobile.report_content_reason_required'));
       return;
     }
 
     try {
       haptics.medium();
       setSubmitting(true);
-      
+
       await reportContent(supabase, {
         contentType,
         contentId,
@@ -54,24 +51,20 @@ export default function ReportContentModal({ visible, onClose, contentType, cont
       });
 
       haptics.success();
-      Alert.alert(
-        'Report Submitted',
-        'Thank you for your report. We will review it and take appropriate action.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              setSelectedReason(null);
-              setDescription('');
-              onClose();
-            },
+      Alert.alert(t('mobile.report_content_success_title'), t('mobile.report_content_success_body'), [
+        {
+          text: t('common.confirm'),
+          onPress: () => {
+            setSelectedReason(null);
+            setDescription('');
+            onClose();
           },
-        ]
-      );
+        },
+      ]);
     } catch (error) {
       console.error('Error reporting content:', error);
       haptics.error();
-      Alert.alert('Error', 'Failed to submit report. Please try again.');
+      Alert.alert(t('common.error'), t('mobile.report_content_error'));
     } finally {
       setSubmitting(false);
     }
@@ -87,271 +80,140 @@ export default function ReportContentModal({ visible, onClose, contentType, cont
   };
 
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent={true}
-      animationType="none"
-      onRequestClose={handleClose}
+      title={t('mobile.report_content_title')}
+      onClose={handleClose}
+      primaryLabel={t('mobile.report_content_submit')}
+      onPrimary={handleSubmit}
+      primaryDisabled={!selectedReason || submitting}
+      primaryLoading={submitting}
+      snap="medium"
+      expandOnFocus
+      stickyPrimary
+      testID="report-content-sheet"
     >
-      <View style={styles.container}>
-        <ModalScrim onPress={handleClose} opacity={0.5} />
-        <Animated.View
-          style={[
-            styles.modalContent,
-            { paddingTop: insets.top, paddingBottom: insets.bottom },
-            {
-              transform: [
-                {
-                  translateY: sheetTranslateY.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, SCREEN_HEIGHT],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <View style={styles.header}>
-            <Text style={styles.title}>Report Content</Text>
-            <PressableWithFade
-              style={styles.closeButton}
-              onPress={handleClose}
-              disabled={submitting}
-            >
-              <Ionicons name="close" size={24} color="#111827" />
-            </PressableWithFade>
+      <BottomSheet.Scroll>
+        {reportedUserName ? (
+          <View style={styles.infoSection}>
+            <Text variant="bodyMedium" style={styles.infoText}>
+              {t('mobile.report_content_from', { name: reportedUserName })}
+            </Text>
           </View>
+        ) : null}
 
-          <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-            {reportedUserName && (
-              <View style={styles.infoSection}>
-                <Text style={styles.infoText}>
-                  Reporting content from: <Text style={styles.boldText}>{reportedUserName}</Text>
-                </Text>
+        <Text variant="caption" style={styles.label}>
+          {t('mobile.report_content_reason_label')}
+        </Text>
+        {REPORT_REASONS.map((reason) => (
+          <PressableWithFade
+            key={reason.value}
+            style={[styles.reasonOption, selectedReason === reason.value && styles.reasonOptionSelected]}
+            onPress={() => {
+              haptics.selection();
+              setSelectedReason(reason.value);
+            }}
+            disabled={submitting}
+          >
+            <View style={styles.reasonContent}>
+              <View
+                style={[
+                  styles.radioButton,
+                  selectedReason === reason.value && styles.radioButtonSelected,
+                ]}
+              >
+                {selectedReason === reason.value ? <View style={styles.radioButtonInner} /> : null}
               </View>
-            )}
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Reason for Report</Text>
-              {REPORT_REASONS.map((reason) => (
-                <PressableWithFade
-                  key={reason.value}
-                  style={[
-                    styles.reasonOption,
-                    selectedReason === reason.value && styles.reasonOptionSelected,
-                  ]}
-                  onPress={() => {
-                    haptics.selection();
-                    setSelectedReason(reason.value);
-                  }}
-                  disabled={submitting}
-                >
-                  <View style={styles.reasonContent}>
-                    <View style={[
-                      styles.radioButton,
-                      selectedReason === reason.value && styles.radioButtonSelected,
-                    ]}>
-                      {selectedReason === reason.value && (
-                        <View style={styles.radioButtonInner} />
-                      )}
-                    </View>
-                    <Text style={[
-                      styles.reasonLabel,
-                      selectedReason === reason.value && styles.reasonLabelSelected,
-                    ]}>
-                      {reason.label}
-                    </Text>
-                  </View>
-                </PressableWithFade>
-              ))}
-            </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Additional Details (Optional)</Text>
-              <TextInput
-                style={styles.textInput}
-                value={description}
-                onChangeText={setDescription}
-                placeholder="Provide any additional context..."
-                placeholderTextColor="#9CA3AF"
-                multiline
-                numberOfLines={4}
-                editable={!submitting}
-                textAlignVertical="top"
-              />
-            </View>
-          </ScrollView>
-
-          <View style={styles.footer}>
-            <PressableWithFade
-              style={[styles.cancelButton, submitting && styles.buttonDisabled]}
-              onPress={handleClose}
-              disabled={submitting}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </PressableWithFade>
-            <PressableWithFade
-              style={[
-                styles.submitButton,
-                (!selectedReason || submitting) && styles.buttonDisabled,
-              ]}
-              onPress={handleSubmit}
-              disabled={!selectedReason || submitting}
-            >
-              <Text style={styles.submitButtonText}>
-                {submitting ? 'Submitting...' : 'Submit Report'}
+              <Text
+                style={[
+                  styles.reasonLabel,
+                  selectedReason === reason.value && styles.reasonLabelSelected,
+                ]}
+              >
+                {reason.label}
               </Text>
-            </PressableWithFade>
-          </View>
-        </Animated.View>
-      </View>
-    </Modal>
+            </View>
+          </PressableWithFade>
+        ))}
+
+        <Text variant="caption" style={styles.label}>
+          {t('mobile.report_content_details_label')}
+        </Text>
+        <BottomSheet.Input
+          style={styles.textInput}
+          value={description}
+          onChangeText={setDescription}
+          placeholder={t('mobile.report_content_details_placeholder')}
+          placeholderTextColor={colors.textSubtle}
+          multiline
+          numberOfLines={4}
+          editable={!submitting}
+          textAlignVertical="top"
+        />
+      </BottomSheet.Scroll>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '90%',
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  scrollView: {
-    flex: 1,
-  },
   infoSection: {
-    padding: 20,
-    backgroundColor: '#F3F4F6',
-    marginBottom: 8,
+    padding: spacing.md,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 12,
+    marginBottom: spacing.md,
   },
-  infoText: {
-    fontSize: 14,
-    color: '#4B5563',
-  },
-  boldText: {
-    fontWeight: '600',
-    color: '#111827',
-  },
-  section: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 12,
+  infoText: { color: colors.textSecondary },
+  label: {
+    color: colors.textSubtle,
+    fontWeight: '500',
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
   },
   reasonOption: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginBottom: 8,
-    backgroundColor: '#F9FAFB',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: 12,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
+    minHeight: touch.minRowHeight,
+    justifyContent: 'center',
   },
   reasonOptionSelected: {
-    backgroundColor: '#DBEAFE',
-    borderColor: '#3B82F6',
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
   },
-  reasonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  reasonContent: { flexDirection: 'row', alignItems: 'center' },
   radioButton: {
     width: 20,
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: '#9CA3AF',
-    marginRight: 12,
+    borderColor: colors.textSubtle,
+    marginRight: spacing.md,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  radioButtonSelected: {
-    borderColor: '#3B82F6',
-  },
+  radioButtonSelected: { borderColor: colors.primary },
   radioButtonInner: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.primary,
   },
-  reasonLabel: {
-    fontSize: 16,
-    color: '#111827',
-  },
-  reasonLabelSelected: {
-    fontWeight: '600',
-  },
+  reasonLabel: { fontSize: 16, color: colors.text, flex: 1 },
+  reasonLabelSelected: { fontWeight: '600' },
   textInput: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: '#111827',
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: spacing.lg,
+    fontSize: 17,
+    fontWeight: '500',
+    color: colors.text,
     minHeight: 100,
-    backgroundColor: '#F9FAFB',
-  },
-  footer: {
-    flexDirection: 'row',
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#4B5563',
-  },
-  submitButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: '#EF4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
+    backgroundColor: colors.surface,
+    textAlignVertical: 'top',
   },
 });
-

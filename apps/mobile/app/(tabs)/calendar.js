@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, FlatList, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, FlatList } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
@@ -7,23 +7,24 @@ import { fetchCalendarEvents, fetchUserIncompleteTasks, getCalendarLoadRange, is
 import { filterByOrganizationId } from '../../utils/orgScope';
 import DatePickerStrip from '../../components/DatePickerStrip';
 import PressableWithFade from '../../components/PressableWithFade';
-import EventModal from '../../components/EventModal';
+import EventSheet from '../../components/EventSheet';
+import Button from '../../components/ui/Button';
+import { useMobileExperience } from '../../context/MobileExperienceContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useHaptics } from '../../hooks/useHaptics';
 import AppHeader from '../../components/ui/AppHeader';
-import { TAB_BAR_CLEARANCE, scrollBottomPadding } from '../../components/ui/FloatingTabBar';
+import { scrollBottomPadding, contentTopInset } from '../../utils/layoutInsets';
 import { colors, spacing, touch, shadows } from '../../theme';
-import { useBranding } from '../../context/BrandingContext';
 import { SkeletonList } from '../../components/ui/Skeleton';
 
 export default function CalendarScreen() {
   const { t } = useTranslation();
   const { supabase, user, activeOrganization } = useAuth();
+  const { isManagerView } = useMobileExperience();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
-  const { primaryColor } = useBranding();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [dayItems, setDayItems] = useState([]);
   const [allEvents, setAllEvents] = useState([]);
@@ -224,70 +225,67 @@ export default function CalendarScreen() {
           </View>
         )}
         <PressableWithFade
-          style={styles.eventCard}
+          style={[styles.eventCard, isTask && styles.taskCardCompact]}
           onPress={handlePress}
-          activeOpacity={0.85}
+          static
           accessibilityRole="button"
           accessibilityLabel={item.title}
         >
-          <View style={[styles.eventColorBar, { backgroundColor: eventColor }]} />
-          <View style={styles.eventContent}>
-            <View style={styles.eventHeader}>
-              {isTask ? (
-                <View style={styles.taskBadge}>
-                  <Ionicons name="checkbox-outline" size={14} color={eventColor} />
-                  <Text style={[styles.taskBadgeText, { color: eventColor }]}>
-                    {t('mobile.calendar_task_badge', { defaultValue: 'Task due' })}
-                  </Text>
-                </View>
-              ) : (
+          {isTask ? (
+            <View style={styles.taskLineRow}>
+              <Ionicons name="checkbox-outline" size={18} color={eventColor} />
+              <Text style={styles.taskLineTitle} numberOfLines={1}>
+                {item.title}
+              </Text>
+              {item.percent_complete != null ? (
+                <Text style={[styles.taskLinePercent, { color: eventColor }]}>
+                  {Math.round(Number(item.percent_complete) || 0)}%
+                </Text>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.eventContent}>
+              <View style={styles.eventHeader}>
                 <>
+                  {item.category ? (
+                    <View style={[styles.categoryDot, { backgroundColor: eventColor }]} />
+                  ) : null}
                   <Text style={styles.eventTime}>{formatTime(item.start_time)}</Text>
                   {item.end_time && (
                     <Text style={styles.eventTimeEnd}> - {formatTime(item.end_time)}</Text>
                   )}
                 </>
+              </View>
+              <Text style={styles.eventTitle}>{item.title}</Text>
+              {item.location && (
+                <View style={styles.eventDetail}>
+                  <Ionicons name="location-outline" size={16} color="#4B5563" />
+                  <Text style={styles.eventDetailText}>{item.location}</Text>
+                </View>
+              )}
+              {item.category && (
+                <View style={styles.eventCategory}>
+                  <Text style={[styles.eventCategoryText, { color: eventColor }]}>
+                    {item.category}
+                  </Text>
+                </View>
+              )}
+              {item.project_id && (
+                <PressableWithFade
+                  style={styles.eventActionButton}
+                  onPress={() => {
+                    haptics.light();
+                    router.push(`/(tabs)/projects/${item.project_id}`);
+                  }}
+                >
+                  <Ionicons name="checkmark-done-outline" size={16} color="#1D4ED8" />
+                  <Text style={styles.eventActionText}>
+                    {t('mobile.open_project_tasks')}
+                  </Text>
+                </PressableWithFade>
               )}
             </View>
-            <Text style={styles.eventTitle}>{item.title}</Text>
-            {isTask && item.percent_complete != null ? (
-              <Text style={styles.eventDescription}>
-                {t('mobile.percent_complete', { percent: Math.round(Number(item.percent_complete) || 0) })}
-              </Text>
-            ) : null}
-            {!isTask && item.location && (
-              <View style={styles.eventDetail}>
-                <Ionicons name="location-outline" size={16} color="#4B5563" />
-                <Text style={styles.eventDetailText}>{item.location}</Text>
-              </View>
-            )}
-            {!isTask && item.description && (
-              <Text style={styles.eventDescription} numberOfLines={2}>
-                {item.description}
-              </Text>
-            )}
-            {!isTask && item.category && (
-              <View style={styles.eventCategory}>
-                <Text style={[styles.eventCategoryText, { color: eventColor }]}>
-                  {item.category}
-                </Text>
-              </View>
-            )}
-            {item.project_id && (
-              <PressableWithFade
-                style={styles.eventActionButton}
-                onPress={() => {
-                  haptics.light();
-                  router.push(`/(tabs)/projects/${item.project_id}`);
-                }}
-              >
-                <Ionicons name={isTask ? 'arrow-forward-outline' : 'checkmark-done-outline'} size={16} color="#1D4ED8" />
-                <Text style={styles.eventActionText}>
-                  {isTask ? t('mobile.open_task_project', { defaultValue: 'Open project' }) : t('mobile.open_project_tasks')}
-                </Text>
-              </PressableWithFade>
-            )}
-          </View>
+          )}
         </PressableWithFade>
       </View>
     );
@@ -298,36 +296,44 @@ export default function CalendarScreen() {
   const taskCount = (itemsByDate[dateStr] || []).filter((i) => i.itemType === 'task').length;
 
   return (
-    <View style={[styles.safeArea, { paddingTop: insets.top }]}>
+    <View style={[styles.safeArea, { paddingTop: contentTopInset(insets, spacing.sm) }]}>
       <View style={styles.container}>
-        <AppHeader title={t('mobile.calendar_title', { defaultValue: 'Calendar' })} />
-        <DatePickerStrip
-          selectedDate={selectedDate}
-          onDateSelect={setSelectedDate}
-          eventsByDate={itemsByDate}
-        />
-
-        {(eventCount > 0 || taskCount > 0) && (
-          <View style={styles.daySummary}>
-            <Text style={styles.daySummaryText}>
-              {t('mobile.calendar_day_summary', {
-                defaultValue: '{{events}} events · {{tasks}} tasks due',
-                events: eventCount,
-                tasks: taskCount,
-              })}
-            </Text>
-          </View>
-        )}
+        <AppHeader title={t('mobile.calendar_title', { defaultValue: 'Calendar' })} dense />
 
         <FlatList
+          style={styles.list}
           data={dayItems}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderDayItem}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.timelineContent,
             { paddingBottom: scrollBottomPadding(insets, spacing.lg) },
             dayItems.length === 0 && styles.timelineContentEmpty,
           ]}
+          ListHeaderComponent={
+            <View style={styles.listHeader}>
+              <DatePickerStrip
+                selectedDate={selectedDate}
+                onDateSelect={setSelectedDate}
+                eventsByDate={itemsByDate}
+                style={styles.dateStrip}
+              />
+
+              {(eventCount > 0 || taskCount > 0) && (
+                <View style={styles.daySummary}>
+                  <Text style={styles.daySummaryText}>
+                    {t('mobile.calendar_day_summary', {
+                      defaultValue: '{{events}} events · {{tasks}} tasks due',
+                      events: eventCount,
+                      tasks: taskCount,
+                    })}
+                  </Text>
+                </View>
+              )}
+            </View>
+          }
           ListEmptyComponent={
             loading ? (
               <View style={styles.skeletonWrap}>
@@ -340,35 +346,19 @@ export default function CalendarScreen() {
                   {t('mobile.calendar_empty_title', { defaultValue: 'Nothing scheduled' })}
                 </Text>
                 <Text style={styles.emptyText}>{t('mobile.no_events_day')}</Text>
-                <Text style={styles.emptyHint}>
-                  {t('mobile.calendar_empty_hint', {
-                    defaultValue: 'Add an event or set task due dates to see them here.',
-                  })}
-                </Text>
+                <Button
+                  label={t('mobile.calendar_add_event')}
+                  onPress={handleOpenCreate}
+                  style={styles.emptyButton}
+                  testID="calendar-empty-add-event"
+                />
               </View>
             )
           }
         />
       </View>
 
-      {/* FAB */}
-      <PressableWithFade
-        style={[styles.fab, { backgroundColor: primaryColor, bottom: TAB_BAR_CLEARANCE + spacing.md }]}
-        onPress={() => {
-          haptics.medium();
-          handleOpenCreate();
-        }}
-        activeOpacity={0.8}
-        hapticType="medium"
-        accessibilityRole="button"
-        accessibilityLabel="Add event"
-        testID="calendar-add-event"
-      >
-        <Ionicons name="add" size={28} color={colors.white} />
-      </PressableWithFade>
-
-      {/* Event Creation Modal */}
-      <EventModal
+      <EventSheet
         visible={showAddModal}
         onClose={() => {
           setShowAddModal(false);
@@ -393,6 +383,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     paddingHorizontal: spacing.lg,
   },
+  list: {
+    flex: 1,
+  },
+  listHeader: {
+    marginHorizontal: -spacing.lg,
+  },
+  dateStrip: {
+    marginTop: spacing.sm,
+  },
   timelineContent: {
     flexGrow: 1,
   },
@@ -400,6 +399,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   daySummary: {
+    marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -413,26 +413,44 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textSecondary,
   },
-  taskBadge: {
+  taskCardCompact: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    justifyContent: 'center',
+  },
+  taskLineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: spacing.sm,
+    minWidth: 0,
   },
-  taskBadgeText: {
+  taskLineTitle: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  taskLinePercent: {
     fontSize: 13,
     fontWeight: '700',
+    flexShrink: 0,
+    fontVariant: 'tabular-nums',
   },
   eventCard: {
-    flexDirection: 'row',
     backgroundColor: colors.surface,
     borderRadius: 16,
     marginBottom: spacing.md,
-    overflow: 'hidden',
     minHeight: touch.minRowHeight,
+    borderWidth: 1,
+    borderColor: colors.border,
     ...shadows.card,
   },
-  eventColorBar: {
-    width: 4,
+  categoryDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: spacing.sm,
   },
   eventContent: {
     flex: 1,
@@ -440,6 +458,7 @@ const styles = StyleSheet.create({
   },
   eventHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 8,
   },
   eventTime: {
@@ -543,25 +562,15 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     textAlign: 'center',
   },
+  emptyButton: {
+    marginTop: spacing.xl,
+    minWidth: 200,
+  },
   emptyHint: {
     fontSize: 14,
     color: colors.textMuted,
     marginTop: spacing.md,
     textAlign: 'center',
     lineHeight: 20,
-  },
-  fab: {
-    position: 'absolute',
-    right: spacing.xl,
-    width: touch.fabSize,
-    height: touch.fabSize,
-    borderRadius: touch.fabSize / 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
   },
 });

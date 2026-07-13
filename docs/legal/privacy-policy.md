@@ -1,6 +1,6 @@
 # SiteWeave Privacy Policy
 
-**Last Updated:** June 3, 2026
+**Last Updated:** July 10, 2026
 
 ---
 
@@ -22,6 +22,8 @@ We collect information that you provide directly to us, including:
 - Company and role information
 - Profile photos or avatars
 
+
+
 ### 2.2 Project and Work Data
 
 We collect and store:
@@ -34,12 +36,16 @@ We collect and store:
 - Files, documents, and photos uploaded to projects
 - Activity logs and usage data
 
+
+
 ### 2.3 Automatically Collected Information
 
 - Device information (device type, operating system)
 - Usage patterns and app interactions
 - IP address and location data (if applicable)
 - Authentication tokens and session information
+
+
 
 ### 2.4 SMS Program Data
 
@@ -53,6 +59,8 @@ If you receive project-related text messages from SiteWeave, we also process:
 We do not use SMS data for unrelated marketing or sell mobile numbers to third parties.
 
 ---
+
+
 
 ## 3. HOW WE USE YOUR INFORMATION
 
@@ -72,6 +80,8 @@ We use the collected information for the following purposes:
 
 ---
 
+
+
 ## 4. DATA STORAGE AND SECURITY
 
 Your data is stored securely using Supabase, a cloud database and authentication service. We implement industry-standard security measures including:
@@ -87,6 +97,8 @@ While we strive to protect your information, no method of transmission over the 
 
 ---
 
+
+
 ## 5. THIRD-PARTY SERVICES
 
 We use the following third-party services that may collect, process, or store your information:
@@ -95,22 +107,28 @@ We use the following third-party services that may collect, process, or store yo
 
 Provides backend database, authentication, and storage services.
 
-- Privacy Policy: https://supabase.com/privacy
+- Privacy Policy: [https://supabase.com/privacy](https://supabase.com/privacy)
 - Data is stored in secure cloud infrastructure
+
+
 
 ### 5.2 Google OAuth
 
 Used for Google account authentication.
 
-- Privacy Policy: https://policies.google.com/privacy
+- Privacy Policy: [https://policies.google.com/privacy](https://policies.google.com/privacy)
 - Google may collect information as described in their privacy policy
+
+
 
 ### 5.3 Microsoft OAuth
 
 Used for Microsoft account authentication.
 
-- Privacy Policy: https://privacy.microsoft.com/privacystatement
+- Privacy Policy: [https://privacy.microsoft.com/privacystatement](https://privacy.microsoft.com/privacystatement)
 - Microsoft may collect information as described in their privacy policy
+
+
 
 ### 5.4 Email Services
 
@@ -120,12 +138,16 @@ We may use email service providers (such as Resend) to send notifications. These
 
 We use Twilio to deliver transactional text messages to phone numbers you or your organization provide. Twilio processes phone numbers, message content, and delivery metadata as our service provider.
 
-- Privacy Policy: https://www.twilio.com/legal/privacy
+- Privacy Policy: [https://www.twilio.com/legal/privacy](https://www.twilio.com/legal/privacy)
 - We configure inbound handling for standard keywords including **HELP** and **STOP** (and equivalents such as STOPALL or UNSUBSCRIBE)
 
 ---
 
+
+
 ## 6. DATA SHARING AND DISCLOSURE
+
+
 
 ### 6.1 Within the Service
 
@@ -134,6 +156,8 @@ Your data is shared with:
 - Other team members assigned to the same projects
 - Project managers overseeing your assigned projects
 - Administrators with appropriate access levels
+
+
 
 ### 6.2 Third-Party Sharing
 
@@ -146,6 +170,8 @@ We do not sell, rent, or trade your personal information to third parties for ma
 
 ---
 
+
+
 ## 7. YOUR RIGHTS AND CHOICES
 
 Depending on your location, you may have the following rights:
@@ -155,11 +181,15 @@ Depending on your location, you may have the following rights:
 - Request access to your personal data
 - Receive a copy of your data in a portable format
 
+
+
 ### 7.2 Correction and Deletion
 
 - Request correction of inaccurate information
 - Request deletion of your personal data
 - Delete your account and associated data
+
+
 
 ### 7.3 Opt-Out and Restriction
 
@@ -167,10 +197,14 @@ Depending on your location, you may have the following rights:
 - Request restriction of processing
 - Withdraw consent where processing is based on consent
 
+
+
 ### 7.4 Objection
 
 - Object to processing of your personal data
 - Object to automated decision-making
+
+
 
 ### 7.5 SMS Choices
 
@@ -178,9 +212,11 @@ Depending on your location, you may have the following rights:
 - **Opt-out:** Reply **STOP** at any time to stop receiving SiteWeave SMS from our number. You may receive a one-time confirmation that you are unsubscribed.
 - **Help:** Reply **HELP** for program instructions and links to these policies.
 
-To exercise privacy rights, contact us at support@siteweave.org. We will respond within 30 days. You may also have the right to lodge a complaint with your local data protection authority.
+To exercise privacy rights, contact us at [support@siteweave.org](mailto:support@siteweave.org). We will respond within 30 days. You may also have the right to lodge a complaint with your local data protection authority.
 
 ---
+
+
 
 ## 8. DATA RETENTION
 
@@ -195,17 +231,23 @@ SMS consent records are retained as needed to honor opt-out requests and demonst
 
 ---
 
+
+
 ## 9. CHILDREN'S PRIVACY
 
 The Service is not intended for users under the age of 13 (or 16 in the European Union). We do not knowingly collect personal information from children. If you believe we have collected information from a child, please contact us immediately, and we will delete such information.
 
 ---
 
+
+
 ## 10. INTERNATIONAL DATA TRANSFERS
 
 Your information may be transferred to and processed in countries other than your country of residence. These countries may have different data protection laws. By using the Service, you consent to the transfer of your information to these countries. We take appropriate safeguards to ensure your data is protected in accordance with this Privacy Policy.
 
 ---
+
+
 
 ## 11. CALIFORNIA PRIVACY RIGHTS (CCPA)
 
@@ -218,6 +260,8 @@ If you are a California resident, you have additional rights under the Californi
 
 ---
 
+
+
 ## 12. EUROPEAN PRIVACY RIGHTS (GDPR)
 
 If you are located in the European Economic Area (EEA), you have rights under the General Data Protection Regulation (GDPR), including the rights listed in Section 7 above. Our legal basis for processing includes:
@@ -229,13 +273,76 @@ If you are located in the European Economic Area (EEA), you have rights under th
 
 ---
 
+
+
 ## 13. COOKIES AND TRACKING
 
 The Service may use cookies and similar tracking technologies. You can control cookie preferences through your device settings, though this may affect Service functionality.
 
 ---
 
-## 14. CHANGES TO THIS PRIVACY POLICY
+
+
+## 14. ARTIFICIAL INTELLIGENCE AND AUTOMATED DECISIONS
+
+SiteWeave **does not** use artificial intelligence, machine learning, generative AI, or similar automated systems to:
+
+- Create, modify, or generate content displayed to you or other users
+- Make decisions about your account access, employment, credit, housing, or other legal rights
+- Profile users or deliver personalized recommendations based on automated inference
+- Interact with you through chatbots, virtual assistants, or other AI-driven interfaces
+
+The Service is operated by conventional software that stores and displays information you and your organization provide. Features such as task reminders, notifications, and role-based permissions use predefined rules—not AI—to operate.
+
+If we introduce AI or materially automated decision-making in the future, we will update this Privacy Policy and our in-product disclosures **before** those features affect you, in line with Federal Trade Commission guidance on accurate AI disclosure and consumer protection. We will not represent the Service as AI-powered unless that representation is accurate and substantiated.
+
+We do not sell or share personal information for cross-context behavioral advertising, and we do not use your data to train third-party AI models.
+
+---
+
+
+
+## 15. PRIVACY NUTRITION LABEL (SUMMARY)
+
+This summary is designed to align with Apple App Store Privacy Nutrition Labels and give you a quick overview of our data practices. It supplements—but does not replace—the detailed sections above.
+
+### 15.1 Data Used to Track You
+
+**None.** We do not use your data to track you across third-party apps or websites for advertising purposes.
+
+### 15.2 Data Linked to You
+
+The following may be collected and linked to your identity:
+
+
+| Category         | Examples                                                   | Purposes                                                                               |
+| ---------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Contact Info** | Name, email address, phone number                          | Account creation, authentication, team collaboration, transactional SMS (with consent) |
+| **User Content** | Project data, tasks, messages, comments, photos, files     | Providing and improving the Service; collaboration within your organization            |
+| **Identifiers**  | User ID, authentication tokens, device type                | Account security, access control, session management                                   |
+| **Usage Data**   | App interactions, activity logs                            | Service operation, troubleshooting, security monitoring                                |
+| **Location**     | Approximate location (only if you enable weather features) | Displaying local weather conditions on supported screens                               |
+
+
+
+
+### 15.3 Data Not Linked to You
+
+We may collect limited diagnostic or aggregated usage information that is not linked to your identity, such as anonymized performance metrics used to maintain Service reliability.
+
+### 15.4 Third-Party Data Sharing for Advertising
+
+**None.** We do not sell personal information and do not share it with data brokers for cross-context behavioral advertising.
+
+### 15.5 Your Controls
+
+You can manage account data, delete your account, opt out of SMS (reply **STOP**), and control location access through your device settings. See Section 7 for additional rights.
+
+---
+
+
+
+## 16. CHANGES TO THIS PRIVACY POLICY
 
 We may update this Privacy Policy from time to time. We will notify you of material changes by:
 
@@ -248,19 +355,23 @@ Your continued use of the Service after changes constitutes acceptance of the up
 
 ---
 
-## 15. CONTACT US
+
+
+## 17. CONTACT US
 
 If you have questions, concerns, or requests regarding this Privacy Policy or our data practices, please contact us at:
 
-**Email:** support@siteweave.org
+**Email:** [support@siteweave.org](mailto:support@siteweave.org)
 
 ---
 
-## 16. SMS / TEXT MESSAGING PROGRAM
 
-This section describes our **transactional** SMS program for construction project teams.
 
-### 16.1 What We Send
+## 18. SMS / TEXT MESSAGING PROGRAM
+
+This section describes our **transactional** SMS program for construction project teams. Messages may be sent from a SiteWeave toll-free or other approved SMS number through Twilio.
+
+### 18.1 What We Send
 
 After you confirm opt-in, you may receive low-volume, event-driven texts related to your assigned work, such as:
 
@@ -270,28 +381,40 @@ After you confirm opt-in, you may receive low-volume, event-driven texts related
 
 We do **not** send promotional blast campaigns or unrelated marketing texts through this program.
 
-### 16.2 How Consent Works
+### 18.2 How Consent Works
 
-1. A project administrator adds your mobile number to a contact or task, or requests SMS consent from the app.
-2. We send a **one-time opt-in message** that explains the program, carrier charges, HELP/STOP instructions, and a link to our legal policies. Example: “{Organization} via (SiteWeave): Welcome! Reply YES {code} to confirm receiving project task SMS alerts. Msg&data rates may apply. HELP/STOP anytime. Terms/Privacy: www.siteweave.org/legal”
+**Primary path — web consent (no app required):**
+
+1. A project administrator adds your mobile number in SiteWeave and generates a **shareable consent link** (or QR code).
+2. You open the link on your phone browser, review the program disclosure, and check a box to agree to receive project-related SMS from that organization via SiteWeave.
+3. Until you submit that form, we do not send substantive project SMS to your number.
+
+**Alternate path — reply YES to a text:**
+
+1. A project administrator may instead trigger a one-time opt-in text from SiteWeave.
+2. The message explains the program, carrier charges, HELP/STOP instructions, and links to our legal policies. Example: “{Organization} via (SiteWeave): Welcome! Reply YES {code} to confirm receiving project task SMS alerts. Msg&data rates may apply. HELP/STOP anytime. Terms/Privacy: [www.siteweave.org/legal”](http://www.siteweave.org/legal”)
 3. You must reply **YES** (and may include a short verification code from the message) to confirm.
-4. Until you confirm, we do not send substantive project SMS to your number.
 
-### 16.3 Message Frequency and Charges
+In both cases, consent is recorded before any substantive project SMS is sent.
+
+### 18.3 Message Frequency and Charges
 
 Message frequency varies based on project activity (typically occasional, not on a fixed schedule). **Message and data rates may apply** according to your mobile carrier plan.
 
-### 16.4 Opt-Out and Help
+### 18.4 Opt-Out and Help
 
 - Reply **STOP** to cancel all SiteWeave SMS to your number.
 - Reply **HELP** for instructions and policy links.
-- You can also contact support@siteweave.org.
+- You can also contact [support@siteweave.org](mailto:support@siteweave.org).
 
-### 16.5 Administrator Responsibilities
+
+
+### 18.5 Administrator Responsibilities
 
 Organizations using SiteWeave should enter phone numbers only for individuals who expect project-related texts, and should direct assignees to reply YES when they receive the consent message.
 
-### 16.6 Related Policies
+### 18.6 Related Policies
 
-- Terms of Service: https://www.siteweave.org/legal/terms-of-service
-- Privacy Policy (this document): https://www.siteweave.org/legal/privacy-policy
+- Terms of Service: [https://www.siteweave.org/legal/terms-of-service](https://www.siteweave.org/legal/terms-of-service)
+- Privacy Policy (this document): [https://www.siteweave.org/legal/privacy-policy](https://www.siteweave.org/legal/privacy-policy)
+

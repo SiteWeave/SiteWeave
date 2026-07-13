@@ -300,5 +300,5 @@ CREATE INDEX IF NOT EXISTS idx_invitations_organization_id ON invitations(organi
 -- ============================================================================
 
 -- Note: RLS policies and helper functions should be updated separately
--- See schema.sql for complete RLS policy definitions
+-- See ../../../schema.sql for complete RLS policy definitions
 

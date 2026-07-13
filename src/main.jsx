@@ -1,4 +1,3 @@
-import './i18n/config'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { createHashRouter, RouterProvider } from 'react-router-dom'
@@ -7,6 +6,7 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 import RouteErrorElement from './components/RouteErrorElement.jsx'
 import { AppProvider } from './context/AppContext'
 import { ToastProvider } from './context/ToastContext'
+import { i18nReady } from './i18n/config'
 import './index.css'
 
 // Unregister any existing service workers to prevent caching issues
@@ -50,16 +50,16 @@ const router = createHashRouter([
   }
 ])
 
-createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <ToastProvider>
-        <AppProvider>
-          <RouterProvider router={router} />
-        </AppProvider>
-      </ToastProvider>
-    </ErrorBoundary>
-  </React.StrictMode>
-)
-
-
+i18nReady.then(() => {
+  createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <ToastProvider>
+          <AppProvider>
+            <RouterProvider router={router} />
+          </AppProvider>
+        </ToastProvider>
+      </ErrorBoundary>
+    </React.StrictMode>
+  )
+})

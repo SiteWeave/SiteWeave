@@ -1,14 +1,13 @@
-import en from './locales/en.json';
-import es from './locales/es.json';
-
-export const supportedLngs = ['en', 'es'];
-export const defaultNS = 'translation';
-export const lookupLocalStorage = 'i18nextLng';
-
-export const resources = {
-  en: { translation: en },
-  es: { translation: es },
-};
+export { supportedLngs, defaultNS, lookupLocalStorage } from './constants.js';
+export {
+  normalizeLng,
+  loadLocaleTranslation,
+  loadResourcesForLng,
+  loadAllLocaleResources,
+  ensureLocaleLoaded,
+  detectBrowserLng,
+  attachLazyLocaleLoader,
+} from './localeLoader.js';
 
 /** Canonical English status values stored in the DB */
 export const PROJECT_STATUS_CANONICAL = {
@@ -97,6 +96,17 @@ export function formatRelativeTime(dateString, t) {
   return t('activityHistory.time_ago_days', { count: Math.floor(diffInMinutes / 1440) });
 }
 
+/** Locale-aware date + time for stream posts (hour and minute only, no seconds). */
+export function formatStreamTimestamp(dateString, locale) {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(locale, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
 const EVENT_CATEGORY_LABEL_KEYS = {
   meeting: 'calendar.category_meeting',
   work: 'calendar.category_work',
@@ -157,5 +167,3 @@ export function getLocalizedFrequencyLabel(frequency, frequencyValue, t) {
   }
   return frequency;
 }
-
-export { en, es };

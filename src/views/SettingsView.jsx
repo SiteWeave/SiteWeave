@@ -10,7 +10,7 @@ import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
 import RoleManagement from '../components/RoleManagement';
 import packageJson from '../../package.json';
 import { getStoredCalendarToken } from '../utils/calendarIntegration';
-import { clearStaleSupabaseSession, isModerationAdmin } from '@siteweave/core-logic';
+import { clearStaleSupabaseSession, canAccessContentReports } from '@siteweave/core-logic';
 import ConfirmDialog from '../components/ConfirmDialog';
 import BlockedUsersPanel from '../components/moderation/BlockedUsersPanel';
 import ContentReportsPanel from '../components/moderation/ContentReportsPanel';
@@ -527,7 +527,7 @@ function SettingsView() {
               <h3 className="text-sm font-medium text-gray-900 mb-3">{t('settings.blocked_users')}</h3>
               <BlockedUsersPanel />
             </div>
-            {isModerationAdmin(state.userRole?.name) && (
+            {canAccessContentReports({ is_super_admin: state.isPlatformDeveloper }) && (
               <div className="pt-6 border-t border-gray-200">
                 <h3 className="text-sm font-medium text-gray-900 mb-3">{t('settings.content_reports')}</h3>
                 <ContentReportsPanel />

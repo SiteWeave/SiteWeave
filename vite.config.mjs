@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@siteweave/core-logic': path.resolve(__dirname, './packages/core-logic/src/index.js'),
         '@siteweave/i18n': path.resolve(__dirname, './packages/i18n/index.js'),
+        '@siteweave/onboarding-ui': path.resolve(__dirname, './packages/onboarding-ui/src/index.js'),
         'frappe-gantt/dist/frappe-gantt.css': path.resolve(__dirname, './node_modules/frappe-gantt/dist/frappe-gantt.css')
       }
     },
@@ -66,7 +67,21 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       rollupOptions: {
         input: path.resolve(__dirname, 'index.html'),
-        external: []
+        external: [],
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+              return 'react-vendor'
+            }
+            if (id.includes('node_modules/@supabase/')) {
+              return 'supabase-vendor'
+            }
+            if (id.includes('node_modules/frappe-gantt')) {
+              return 'gantt-vendor'
+            }
+            return undefined
+          },
+        },
       },
       terserOptions: {
         compress: {

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '../../components/ui/Text';
 import PressableWithFade from '../../components/PressableWithFade';
 import { colors, spacing } from '../../theme';
+import { sheetBottomPadding } from '../../utils/layoutInsets';
 
 const LOGO = require('../../assets/logo-vertical.png');
 const HERO = require('../../assets/onboarding-hero.jpg');
@@ -33,8 +34,8 @@ export default function AuthWelcomeScreen() {
       t,
       i18n,
       'mobile.auth_tagline',
-      'Weaving your projects into one seamless workflow',
-      'Tejiendo tus proyectos en un flujo de trabajo continuo',
+      'Keep your job sites on schedule — rain, tasks, and all.',
+      'Mantén tus obras a tiempo — lluvia, tareas y más.',
     ),
     getStarted: tm(t, i18n, 'mobile.auth_get_started', 'Get started', 'Comenzar'),
     alreadyHaveAccount: tm(
@@ -59,7 +60,7 @@ export default function AuthWelcomeScreen() {
 
   return (
     <View
-      style={[styles.container, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg }]}
+      style={[styles.container, { paddingTop: insets.top + spacing.lg, paddingBottom: sheetBottomPadding(insets) }]}
     >
       <ScrollView
         contentContainerStyle={styles.scroll}

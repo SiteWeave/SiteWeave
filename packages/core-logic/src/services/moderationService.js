@@ -3,6 +3,46 @@
  * Handles content reporting, user blocking, and Terms of Service
  */
 
+async function fetchReportUsersById(supabase, userIds) {
+  const uniqueIds = [...new Set((userIds || []).filter(Boolean))];
+  if (!uniqueIds.length) return {};
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, contact_id')
+    .in('id', uniqueIds);
+
+  if (profilesError) throw profilesError;
+  if (!profiles?.length) return {};
+
+  const contactIds = [...new Set(profiles.map((profile) => profile.contact_id).filter(Boolean))];
+  const contactMap = {};
+
+  if (contactIds.length) {
+    const { data: contacts, error: contactsError } = await supabase
+      .from('contacts')
+      .select('id, name, email')
+      .in('id', contactIds);
+
+    if (contactsError) throw contactsError;
+    (contacts || []).forEach((contact) => {
+      contactMap[contact.id] = contact;
+    });
+  }
+
+  const userMap = {};
+  profiles.forEach((profile) => {
+    const contact = profile.contact_id ? contactMap[profile.contact_id] : null;
+    userMap[profile.id] = {
+      id: profile.id,
+      email: contact?.email || null,
+      name: contact?.name || null,
+    };
+  });
+
+  return userMap;
+}
+
 /**
  * Report content (message, profile, etc.)
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
@@ -48,24 +88,7 @@ export async function reportContent(supabase, reportData) {
 export async function getContentReports(supabase, options = {}) {
   let query = supabase
     .from('content_reports')
-    .select(`
-      *,
-      reported_by:reported_by_user_id (
-        id,
-        email,
-        user_metadata
-      ),
-      reported_user:reported_user_id (
-        id,
-        email,
-        user_metadata
-      ),
-      reviewed_by:reviewed_by_user_id (
-        id,
-        email,
-        user_metadata
-      )
-    `)
+    .select('*')
     .order('created_at', { ascending: false });
 
   if (options.status) {
@@ -82,7 +105,21 @@ export async function getContentReports(supabase, options = {}) {
 
   const { data, error } = await query;
   if (error) throw error;
-  return data || [];
+
+  const reports = data || [];
+  const userIds = reports.flatMap((report) => [
+    report.reported_by_user_id,
+    report.reported_user_id,
+    report.reviewed_by_user_id,
+  ]);
+  const userMap = await fetchReportUsersById(supabase, userIds);
+
+  return reports.map((report) => ({
+    ...report,
+    reported_by: userMap[report.reported_by_user_id] || null,
+    reported_user: report.reported_user_id ? userMap[report.reported_user_id] || null : null,
+    reviewed_by: report.reviewed_by_user_id ? userMap[report.reviewed_by_user_id] || null : null,
+  }));
 }
 
 /**

@@ -1,6 +1,6 @@
 # SiteWeave Terms of Service
 
-**Last Updated:** June 3, 2026
+**Last Updated:** July 10, 2026
 
 ---
 
@@ -79,23 +79,58 @@ You agree NOT to:
 
 ---
 
-## 5. USER CONTENT
+## 5. USER CONTENT AND USER-GENERATED CONTENT (UGC)
 
 ### 5.1 Ownership
 
-You retain ownership of content you create, upload, or post ("User Content"). You grant us a worldwide, non-exclusive, royalty-free license to use, store, and display User Content to provide the Service.
+You retain ownership of content you create, upload, or post through the Service ("User Content"), including messages, comments, photos, files, project descriptions, and profile information. You grant SiteWeave a worldwide, non-exclusive, royalty-free, sublicensable license to host, store, reproduce, display, and distribute User Content solely as necessary to operate, secure, and improve the Service.
 
-### 5.2 Content Responsibility
+### 5.2 Your Responsibilities
 
-- You are solely responsible for your User Content
-- You represent that you have all necessary rights to your User Content
-- You agree that your User Content does not violate any third-party rights
+You are solely responsible for your User Content and for any consequences of posting or sharing it. You represent and warrant that:
 
-### 5.3 Content Removal
+- You own or have all necessary rights, licenses, and permissions to submit the User Content
+- Your User Content does not infringe any copyright, trademark, trade secret, privacy, publicity, or other rights of any person or entity
+- Your User Content complies with applicable law and these Terms
 
-- We reserve the right to remove any User Content that violates these Terms
-- We may remove content without prior notice
-- We are not obligated to monitor User Content but may do so
+You agree not to upload or share User Content that is unlawful, defamatory, harassing, hateful, fraudulent, misleading, sexually explicit, violent, or otherwise objectionable.
+
+### 5.3 No Endorsement; Platform Role
+
+SiteWeave is a collaboration platform, not the publisher or author of User Content. **We do not endorse, verify, or guarantee the accuracy, quality, safety, or legality of User Content posted by users or organizations.** Views expressed in User Content are those of the users who post them, not SiteWeave.
+
+To the fullest extent permitted by law, SiteWeave is not liable for User Content or for any loss or harm resulting from reliance on User Content, including project decisions made based on photos, messages, schedules, or field reports shared through the Service.
+
+### 5.4 Content Moderation and Removal
+
+We reserve the right, but have no obligation, to monitor, review, remove, restrict, or disable access to any User Content at any time, with or without notice, if we believe it violates these Terms, applicable law, or creates risk to users or the Service.
+
+You can report content you believe violates these Terms through in-app reporting tools (where available) or by contacting support@siteweave.org. We may investigate reports and take action at our sole discretion.
+
+### 5.5 Copyright and DMCA
+
+We respect intellectual property rights. If you believe content on the Service infringes your copyright, send a notice to our designated agent with:
+
+- Identification of the copyrighted work
+- Identification of the material you claim is infringing and its location in the Service
+- Your contact information
+- A statement of good-faith belief that use is not authorized
+- A statement, under penalty of perjury, that the information is accurate and you are authorized to act
+- Your physical or electronic signature
+
+**DMCA Agent:** support@siteweave.org (subject line: "DMCA Notice")
+
+We may remove or disable access to allegedly infringing material and may terminate accounts of repeat infringers in appropriate circumstances.
+
+If you believe your content was removed in error, you may submit a counter-notification with the information required under the DMCA. We will process notices and counter-notifications as provided by law.
+
+### 5.6 Organization Responsibility
+
+If you are an organization administrator, you are responsible for how your team uses the Service, including User Content uploaded under your projects and phone numbers added for SMS notifications. You agree to establish appropriate internal policies for your team and to respond promptly to valid takedown or moderation requests relating to your organization's use of the Service.
+
+### 5.7 Backup and Loss
+
+You are responsible for maintaining backups of important User Content. SiteWeave is not liable for any deletion, corruption, or loss of User Content, whether caused by user action, system failure, or account termination.
 
 ---
 
@@ -208,18 +243,52 @@ We may terminate or suspend your access immediately, without prior notice, for:
 
 ---
 
-## 14. DISPUTE RESOLUTION
+## 14. DISPUTE RESOLUTION AND BINDING ARBITRATION
 
-### 14.1 Governing Law
+**PLEASE READ THIS SECTION CAREFULLY. IT AFFECTS YOUR LEGAL RIGHTS, INCLUDING YOUR RIGHT TO FILE A LAWSUIT IN COURT AND TO HAVE A JURY TRIAL.**
 
-These Terms shall be governed by and construed in accordance with the laws of the State of Texas, without regard to conflict of law principles.
+### 14.1 Informal Resolution First
 
-### 14.2 Dispute Resolution Process
+Before starting arbitration or a court action (other than small claims), you agree to contact us at support@siteweave.org and attempt in good faith to resolve the dispute informally for at least **30 days**. Include your name, account email, a description of the dispute, and the relief you seek.
 
-- First, contact us to resolve disputes informally
-- If informal resolution fails, disputes shall be resolved through binding arbitration
-- Arbitration shall be conducted under the rules of the American Arbitration Association
-- You waive the right to a jury trial and class action
+### 14.2 Agreement to Arbitrate
+
+Except as set out in Sections 14.4 and 14.5, you and SiteWeave agree that any dispute, claim, or controversy arising out of or relating to these Terms, the Service, or your use of the Service (collectively, "Disputes") will be resolved by **binding individual arbitration**, not in court.
+
+Arbitration will be administered by the **American Arbitration Association (AAA)** under its **Consumer Arbitration Rules** (or, if those rules do not apply, the AAA Commercial Arbitration Rules), as modified by this Section 14. The AAA rules are available at https://www.adr.org.
+
+The arbitrator may award the same damages and relief that a court could award on an individual basis. The arbitrator's decision will be final and binding, and judgment on the award may be entered in any court of competent jurisdiction.
+
+### 14.3 Class Action and Jury Trial Waiver
+
+**You and SiteWeave waive any right to participate in a class action, class arbitration, private attorney general action, or other representative proceeding.** All Disputes must be brought only in an individual capacity. The arbitrator may not consolidate more than one person's claims and may not preside over any form of representative proceeding.
+
+**You and SiteWeave waive the right to a trial by jury** for any Dispute covered by this arbitration agreement.
+
+### 14.4 Exceptions
+
+Either party may:
+
+- Bring an individual action in **small claims court** if the claim qualifies and remains in that court
+- Seek **injunctive or equitable relief** in court to stop unauthorized use or abuse of the Service or infringement of intellectual property rights
+
+### 14.5 Opt-Out of Arbitration
+
+You may opt out of this arbitration agreement by sending a written notice to **support@siteweave.org** within **30 days** of first accepting these Terms (or within 30 days of a material update to this Section 14 if we notify you of the change). Include your name, account email, and a clear statement that you opt out of arbitration. If you opt out, the rest of these Terms still apply, and Disputes will be resolved in court as described in Section 14.6.
+
+### 14.6 Governing Law and Venue
+
+These Terms are governed by the laws of the **State of Texas**, without regard to conflict-of-law principles, except that the **Federal Arbitration Act** governs the interpretation and enforcement of this Section 14.
+
+If arbitration does not apply to a Dispute (for example, because you validly opted out or the claim is brought in small claims court), you agree that exclusive jurisdiction and venue for such Disputes will be in the state or federal courts located in **Texas**, and you consent to personal jurisdiction there.
+
+### 14.7 Time Limit to Bring Claims
+
+To the extent permitted by law, any Dispute must be filed within **one (1) year** after the event giving rise to the claim; otherwise, the claim is permanently barred.
+
+### 14.8 Severability of Arbitration Terms
+
+If any portion of this Section 14 is found unenforceable, the remainder will still apply. If the class action waiver in Section 14.3 is found unenforceable for a particular claim, that claim must be litigated in court and severed from arbitration; the rest of the Disputes will still be arbitrated.
 
 ---
 
@@ -276,18 +345,22 @@ By using the Service, you acknowledge that you have read, understood, and agree 
 
 ### 18.1 Program Description
 
-SiteWeave may send **transactional** text messages about project work to mobile numbers associated with contacts or assignees. Messages are sent through our SMS provider (Twilio) and are intended for operational notifications, not advertising.
+SiteWeave may send **transactional** text messages about project work to mobile numbers associated with contacts or assignees. Messages are sent from a SiteWeave toll-free or other approved number through our SMS provider (Twilio) and are intended for operational notifications, not advertising.
 
-### 18.2 Consent (Double Opt-In)
+### 18.2 Consent
 
-Before substantive messages are sent, the recipient receives an opt-in text that includes:
+Before substantive messages are sent, the recipient must affirmatively opt in using one of these methods:
+
+**Via website (primary):** A project administrator shares a link such as `https://www.siteweave.org/sms-consent/{token}`. The recipient opens it on a mobile browser, reviews disclosures (message types, frequency, Msg&data rates, HELP/STOP, Terms/Privacy), confirms the phone number shown, checks an agreement box, and submits.
+
+**Via text (alternate):** The recipient receives an opt-in text that includes:
 
 - A welcome and instructions to reply **YES** (with an optional verification code) to confirm project task SMS alerts
 - **Msg&data rates may apply**
 - **HELP/STOP** instructions
 - **Terms/Privacy:** www.siteweave.org/legal (our Terms of Service and Privacy Policy)
 
-Substantive SMS is not sent until the recipient confirms. If you receive an opt-in message, you are not required to reply YES; if you do not confirm, you will not receive project SMS (email or in-app notifications may still apply).
+Substantive SMS is not sent until the recipient confirms by web form or YES reply. If you do not confirm, you will not receive project SMS (email or in-app notifications may still apply).
 
 ### 18.3 Message Types and Frequency
 

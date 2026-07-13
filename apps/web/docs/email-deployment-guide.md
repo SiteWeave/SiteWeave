@@ -176,7 +176,7 @@ Run the database migration to add email fields and invitations table:
 
 ```bash
 # Option 1: Run the SQL directly in Supabase Dashboard
-# Copy the contents of schema.sql and run in SQL Editor
+# Copy the contents of ../../../schema.sql and run in SQL Editor
 
 # Option 2: Use Supabase CLI migration
 supabase db push

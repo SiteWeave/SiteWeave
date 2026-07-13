@@ -29,6 +29,7 @@ export default function DateField({
   minimumDate,
   maximumDate,
   testID,
+  allowClear = false,
 }) {
   const [showPicker, setShowPicker] = useState(false);
   const parsed = parseDate(value);
@@ -60,7 +61,7 @@ export default function DateField({
         <Text style={[styles.value, !parsed && styles.placeholder]}>{display}</Text>
         <Ionicons name="calendar-outline" size={22} color={colors.textMuted} />
       </PressableWithFade>
-      {parsed && !disabled ? (
+      {parsed && !disabled && allowClear ? (
         <PressableWithFade style={styles.clear} onPress={() => onChange?.(null)} testID={`${testID}-clear`}>
           <Text variant="caption" style={styles.clearText}>
             Clear

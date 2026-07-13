@@ -1,122 +1,116 @@
-import { View, Text, StyleSheet } from 'react-native';
-import PressableWithFade from './PressableWithFade';
+import { View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
+import PressableWithFade from './PressableWithFade';
+import { Text } from './ui/Text';
+import { colors, spacing, touch } from '../theme';
+import { useBranding } from '../context/BrandingContext';
 
-export default function PhaseAccordion({ phase, onAdjustProgress, isUpdating = false }) {
-  const progressValue = Number.isFinite(Number(phase.progress)) ? Number(phase.progress) : 0;
+export default function PhaseAccordion({
+  title,
+  progressPercent = 0,
+  taskCount = 0,
+  expanded = true,
+  onToggle,
+  children,
+  testID,
+}) {
+  const { t } = useTranslation();
+  const { primaryColor } = useBranding();
+  const progressValue = Math.max(0, Math.min(100, Number(progressPercent) || 0));
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.phaseName}>{phase.name}</Text>
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBar}>
-                <View 
-                  style={[
-                    styles.progressFill, 
-                    { width: `${progressValue}%` }
-                  ]} 
-                />
-              </View>
-              <Text style={styles.progressText}>{progressValue}%</Text>
-            </View>
-            <View style={styles.progressControls}>
-              <PressableWithFade
-                style={[styles.progressButton, isUpdating && styles.progressButtonDisabled]}
-                onPress={() => onAdjustProgress?.(phase, -5)}
-                disabled={isUpdating}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="remove" size={18} color="#1E3A8A" />
-              </PressableWithFade>
-              <Text style={styles.adjustmentText}>Adjust by 5%</Text>
-              <PressableWithFade
-                style={[styles.progressButton, isUpdating && styles.progressButtonDisabled]}
-                onPress={() => onAdjustProgress?.(phase, 5)}
-                disabled={isUpdating}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="add" size={18} color="#1E3A8A" />
-              </PressableWithFade>
-            </View>
+    <View style={styles.container} testID={testID}>
+      <PressableWithFade
+        style={styles.header}
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        testID={testID ? `${testID}-toggle` : undefined}
+      >
+        <View style={styles.headerTop}>
+          <View style={styles.titleWrap}>
+            <Text style={styles.phaseName} numberOfLines={2}>
+              {title}
+            </Text>
+            <Text style={styles.taskCount}>
+              {t('mobile.phase_task_count', { count: taskCount })}
+            </Text>
           </View>
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={colors.textMuted}
+          />
         </View>
-      </View>
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${progressValue}%`, backgroundColor: primaryColor }]} />
+          </View>
+          <Text style={styles.progressText}>{progressValue}%</Text>
+        </View>
+      </PressableWithFade>
+      {expanded ? <View style={styles.body}>{children}</View> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    overflow: 'hidden',
+    marginBottom: spacing.lg,
   },
   header: {
-    padding: 16,
+    paddingVertical: spacing.md,
+    minHeight: touch.minRowHeight,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  headerContent: {
+  headerTop: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.sm,
   },
-  headerLeft: {
+  titleWrap: {
     flex: 1,
+    minWidth: 0,
   },
   phaseName: {
-    fontSize: 18,
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  taskCount: {
+    fontSize: 13,
     fontWeight: '600',
-    color: '#111827',
-    marginBottom: 8,
+    color: colors.textMuted,
   },
   progressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
   },
   progressBar: {
     flex: 1,
     height: 6,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 3,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#3B82F6',
   },
   progressText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
+    fontWeight: '700',
+    color: colors.text,
     minWidth: 40,
+    textAlign: 'right',
+    fontVariant: 'tabular-nums',
   },
-  progressControls: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  progressButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#DBEAFE',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  progressButtonDisabled: {
-    opacity: 0.5,
-  },
-  adjustmentText: {
-    fontSize: 12,
-    color: '#4B5563',
-    fontWeight: '600',
+  body: {
+    paddingTop: spacing.xs,
   },
 });
-

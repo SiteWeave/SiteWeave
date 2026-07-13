@@ -61,6 +61,30 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Task photo paths use: {organization_id}/{project_id}/{task_id}/original/... or thumb/...
+CREATE OR REPLACE FUNCTION user_can_access_task_photos(task_uuid UUID)
+RETURNS BOOLEAN AS $$
+  SELECT
+    auth.uid() IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.tasks t
+      WHERE t.id = task_uuid
+        AND (
+          (
+            t.organization_id IS NOT NULL
+            AND t.organization_id = (SELECT public.get_user_organization_id())
+            AND (SELECT public.get_user_organization_id()) IS NOT NULL
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM public.project_collaborators pc
+            WHERE pc.user_id = auth.uid()
+              AND pc.project_id = t.project_id
+          )
+        )
+    );
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+
 CREATE OR REPLACE FUNCTION can_access_task_photo_object(file_path TEXT, require_manage BOOLEAN DEFAULT false)
 RETURNS BOOLEAN AS $$
 DECLARE
@@ -102,11 +126,7 @@ BEGIN
     RETURN false;
   END IF;
 
-  IF require_manage THEN
-    RETURN public.can_manage_task(parsed_task_id);
-  END IF;
-
-  RETURN public.can_view_task(parsed_task_id);
+  RETURN public.user_can_access_task_photos(parsed_task_id);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

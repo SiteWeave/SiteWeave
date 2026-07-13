@@ -1,7 +1,7 @@
 import { StyleSheet } from 'react-native';
 import PressableWithFade from '../PressableWithFade';
 import { Text } from './Text';
-import { colors, radius, touch } from '../../theme';
+import { colors, radius, spacing, touch } from '../../theme';
 import { useBranding } from '../../context/BrandingContext';
 
 export default function Button({
@@ -54,7 +54,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.button,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
   },
   secondary: { backgroundColor: colors.secondaryButton },
   ghost: { backgroundColor: 'transparent' },

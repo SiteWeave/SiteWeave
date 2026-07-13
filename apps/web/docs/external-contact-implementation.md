@@ -18,7 +18,7 @@ Phase 1 enables PMs to assign tasks to external contacts and automatically send 
 ### Features Implemented
 
 #### 1. Database Schema Updates
-- **File**: `schema.sql`
+- **File**: `../../../schema.sql` (repository root)
 - **Changes**:
   - Added `email TEXT` column to `contacts` table
   - Added `phone TEXT` column to `contacts` table
@@ -69,7 +69,7 @@ Phase 2 implements a full "Google Docs style" invitation system where external c
 ### Features Implemented
 
 #### 1. Invitations Database Schema
-- **File**: `schema.sql`
+- **File**: `../../../schema.sql` (repository root)
 - **Table**: `invitations`
   - Tracks invitation status (pending, accepted, expired, cancelled)
   - Links to projects, issues, and steps
@@ -257,7 +257,7 @@ supabase functions deploy send-invitation-email
 ```
 
 ### 3. Database Migration
-- Run `schema.sql` in Supabase SQL Editor
+- Run `../../../schema.sql` in Supabase SQL Editor
 - Verify tables and policies created
 - Check indexes are in place
 
@@ -314,7 +314,7 @@ supabase functions deploy send-invitation-email
 
 ## Files Modified
 
-1. `schema.sql` - Added email/phone columns, invitations table, policies
+1. `../../../schema.sql` - Added email/phone columns, invitations table, policies
 2. `src/components/FieldIssues.jsx` - Auto-send emails on assignment
 3. `src/components/ContactCard.jsx` - Email badge indicator
 4. `src/App.jsx` - Added React Router and invitation route

@@ -1,5 +1,5 @@
-import { View, Text, StyleSheet, ScrollView, SectionList, FlatList, Alert } from 'react-native';
-import { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, SectionList, Alert } from 'react-native';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../../context/AuthContext';
@@ -8,23 +8,40 @@ import {
   fetchTasksByProject,
   completeTask,
   updateTask,
+  createTask,
   computeWeightedProjectProgressPercent,
+  buildPhasesWithDerivedProgress,
+  calculatePhaseProgressFromTasks,
+  groupTasksByPhaseId,
   canManageTaskPhotos,
 } from '@siteweave/core-logic';
 import TaskCard from '../../../components/TaskCard';
-import TaskDetailModal from '../../../components/TaskDetailModal';
+import TaskDetailSheet from '../../../components/TaskDetailSheet';
+import PanelEmptyState from '../../../components/PanelEmptyState';
+import EditProjectSheet from '../../../components/EditProjectSheet';
+import ProgressReportsPanel from '../../../components/ProgressReportsPanel';
+import FieldIssueSheet from '../../../components/FieldIssueSheet';
+import PhaseAccordion from '../../../components/PhaseAccordion';
+import { useMobileExperience } from '../../../context/MobileExperienceContext';
 import ProgressBottomSheet from '../../../components/ProgressBottomSheet';
 import PhotoAttachSheet from '../../../components/PhotoAttachSheet';
 import { pickAndUploadTaskPhoto, resolveTaskOrganizationId } from '../../../utils/pickAndUploadTaskPhoto';
 import { colors, spacing, touch } from '../../../theme';
-import { TAB_BAR_CLEARANCE } from '../../../components/ui/FloatingTabBar';
+import { scrollBottomPadding, contentTopInset } from '../../../utils/layoutInsets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useBranding } from '../../../context/BrandingContext';
 import ProjectTeamModal from '../../../components/ProjectTeamModal';
 import PressableWithFade from '../../../components/PressableWithFade';
 import { enqueueOfflineAction, processOfflineQueue, getOfflineQueueSize } from '../../../utils/offlineQueue';
-import ProjectCollaborationPanel from '../../../components/ProjectCollaborationPanel';
+import { buildOfflineHandlers } from '../../../utils/offlineHandlers';
+import ProjectStreamPanel from '../../../components/ProjectStreamPanel';
+import FieldIssuesPanel from '../../../components/FieldIssuesPanel';
+import { useWorkspaceTier } from '../../../hooks/useWorkspaceTier';
+import ProjectSearchSheet from '../../../components/ProjectSearchSheet';
+import { markGettingStartedProjectOpened, markGettingStartedTaskCreated, markGettingStartedTaskUpdated } from '../../../utils/onboarding';
 import { SkeletonCard, SkeletonList } from '../../../components/ui/Skeleton';
+import { useSyncStatus } from '../../../context/SyncStatusContext';
 
 function resolveScopeOrganizationId({ activeOrganization, project, collaborationProjects, projectId }) {
   if (project?.organization_id) return project.organization_id;
@@ -35,8 +52,10 @@ function resolveScopeOrganizationId({ activeOrganization, project, collaboration
 
 export default function ProjectDetailScreen() {
   const { t } = useTranslation();
-  const { id: idParam } = useLocalSearchParams();
+  const { id: idParam, openInvite: openInviteParam } = useLocalSearchParams();
   const projectId = Array.isArray(idParam) ? idParam[0] : idParam;
+  const openInviteValue = Array.isArray(openInviteParam) ? openInviteParam[0] : openInviteParam;
+  const openInvite = openInviteValue === '1' || openInviteValue === 'true';
   const router = useRouter();
   const {
     supabase,
@@ -45,16 +64,26 @@ export default function ProjectDetailScreen() {
     isProjectCollaborator,
     collaborationProjects,
     syncPulse,
+    canEditProjects,
+    canCreateTasks,
+    canAssignTasks,
+    canManageProgressReports,
   } = useAuth();
-  const [scopeOrganizationId, setScopeOrganizationId] = useState(null);
+  const { isManagerView } = useMobileExperience();
+  const { isOnline } = useSyncStatus();
+  const { canExport } = useWorkspaceTier();
+  const { primaryColor } = useBranding();
   const insets = useSafeAreaInsets();
+  const tabScrollBottom = scrollBottomPadding(insets, spacing.lg);
+  const [scopeOrganizationId, setScopeOrganizationId] = useState(null);
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [phases, setPhases] = useState([]);
   const [activeTab, setActiveTab] = useState('tasks');
   const [loading, setLoading] = useState(true);
   const [showTeamModal, setShowTeamModal] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [showProjectSearch, setShowProjectSearch] = useState(false);
+  const [openTeamInvite, setOpenTeamInvite] = useState(false);
   const [photoUploadTaskId, setPhotoUploadTaskId] = useState(null);
   const [userContactId, setUserContactId] = useState(null);
   const subscriptionRef = useRef(null);
@@ -65,8 +94,16 @@ export default function ProjectDetailScreen() {
   const [showPhotoSheet, setShowPhotoSheet] = useState(false);
   const [detailTask, setDetailTask] = useState(null);
   const [showTaskDetail, setShowTaskDetail] = useState(false);
+  const [showCreateTask, setShowCreateTask] = useState(false);
   const [isSavingTask, setIsSavingTask] = useState(false);
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [offlineQueueCount, setOfflineQueueCount] = useState(0);
+  const [showEditProject, setShowEditProject] = useState(false);
+  const [showFieldIssue, setShowFieldIssue] = useState(false);
+  const [editingFieldIssue, setEditingFieldIssue] = useState(null);
+  const [expandedPhases, setExpandedPhases] = useState({});
+  const [pendingCompletionPhoto, setPendingCompletionPhoto] = useState(false);
+  const [taskPhotoRefreshKey, setTaskPhotoRefreshKey] = useState(0);
 
   const refreshOfflineQueueCount = async () => {
     const size = await getOfflineQueueSize();
@@ -74,10 +111,42 @@ export default function ProjectDetailScreen() {
   };
 
   useEffect(() => {
+    if (projectId && project) {
+      markGettingStartedProjectOpened().catch(() => {});
+    }
+  }, [projectId, project?.id]);
+
+  useEffect(() => {
+    if (projectId && project && openInvite && isManagerView && canEditProjects) {
+      setShowTeamModal(true);
+      setOpenTeamInvite(true);
+    }
+  }, [projectId, project?.id, openInvite, isManagerView, canEditProjects]);
+
+  useEffect(() => {
+    if (isManagerView) return;
+    if (activeTab === 'stream' || activeTab === 'reports') {
+      setActiveTab('tasks');
+    }
+  }, [isManagerView, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'photos') {
+      setActiveTab('tasks');
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     loadProjectData();
     flushOfflineProjectActions();
     refreshOfflineQueueCount();
   }, [projectId]);
+
+  useEffect(() => {
+    if (isOnline && projectId) {
+      loadProjectData();
+    }
+  }, [isOnline, projectId]);
 
   useEffect(() => {
     flushOfflineProjectActions();
@@ -99,8 +168,27 @@ export default function ProjectDetailScreen() {
         loadProjectData();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_issues', filter: `project_id=eq.${projectId}` }, () => {
-        if (activeTab === 'updates') loadProjectData();
+        if (activeTab === 'stream' || activeTab === 'fieldIssues') loadProjectData();
       })
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'project_lifecycle_events' },
+        (payload) => {
+          const event = payload.new;
+          const affectedProjectId = event.project_id || event.metadata?.project_id;
+          if (
+            String(affectedProjectId) === String(projectId)
+            && (event.action === 'trashed' || event.action === 'purged')
+          ) {
+            Alert.alert(
+              t('projectTrash.project_unavailable_title'),
+              t('projectTrash.project_unavailable_message'),
+              [{ text: t('common.ok'), onPress: () => router.replace('/(tabs)/projects') }],
+              { cancelable: false },
+            );
+          }
+        },
+      )
       .subscribe();
 
     subscriptionRef.current = channel;
@@ -110,32 +198,11 @@ export default function ProjectDetailScreen() {
         subscriptionRef.current = null;
       }
     };
-  }, [projectId, supabase, activeTab]);
+  }, [projectId, supabase, activeTab, router, t]);
 
   const flushOfflineProjectActions = async () => {
     if (!supabase) return;
-    await processOfflineQueue({
-      complete_task: async (payload) => {
-        await completeTask(supabase, payload.taskId);
-      },
-      update_phase_progress: async (payload) => {
-        await supabase
-          .from('project_phases')
-          .update({ progress: payload.progress, updated_at: new Date().toISOString() })
-          .eq('id', payload.phaseId)
-          .eq('organization_id', payload.organizationId);
-      },
-      update_task: async (payload) => {
-        await updateTask(supabase, payload.taskId, payload.updates);
-      },
-      update_issue_status: async (payload) => {
-        await supabase
-          .from('project_issues')
-          .update({ status: payload.nextStatus, updated_at: new Date().toISOString() })
-          .eq('id', payload.issueId)
-          .eq('organization_id', payload.organizationId);
-      },
-    }, {
+    await processOfflineQueue(buildOfflineHandlers(supabase), {
       onComplete: async () => {
         await loadProjectData();
         await refreshOfflineQueueCount();
@@ -185,6 +252,14 @@ export default function ProjectDetailScreen() {
         setProject(null);
         setScopeOrganizationId(null);
         setLoading(false);
+        if (isOnline && !projectData) {
+          Alert.alert(
+            t('projectTrash.project_unavailable_title'),
+            t('projectTrash.project_unavailable_message'),
+            [{ text: t('common.ok'), onPress: () => router.replace('/(tabs)/projects') }],
+            { cancelable: false },
+          );
+        }
         return;
       }
 
@@ -195,8 +270,12 @@ export default function ProjectDetailScreen() {
           console.error('Error fetching tasks:', err);
           return [];
         }),
-        supabase.from('project_phases').select('*').eq('project_id', projectId).eq('organization_id', orgId).order('order', { ascending: true }).then(
-          ({ data, error }) => {
+        supabase
+          .from('project_phases')
+          .select('*')
+          .eq('project_id', projectId)
+          .order('order', { ascending: true })
+          .then(({ data, error }) => {
             if (error) {
               console.error('Error fetching phases:', error);
               return { data: [], error };
@@ -212,13 +291,6 @@ export default function ProjectDetailScreen() {
       setProject(projectData);
       setTasks(tasksData || []);
       setPhases(phasesResult.data || []);
-
-      // Duration-weighted project % (same as web/desktop; prefers stored phase progress from DB)
-      if (phasesResult.data && phasesResult.data.length > 0) {
-        setProgress(computeWeightedProjectProgressPercent(phasesResult.data, projectData.due_date));
-      } else {
-        setProgress(0);
-      }
 
     } catch (error) {
       console.error('Error loading project data:', error);
@@ -270,9 +342,11 @@ export default function ProjectDetailScreen() {
         organizationId: orgId,
         userId: user?.id,
         mode,
+        isCompletionPhoto: pendingCompletionPhoto,
       });
       if (uploaded) {
         Alert.alert(t('common.success'), t('mobile.task_photo_attached', { defaultValue: 'Photo attached to task.' }));
+        setTaskPhotoRefreshKey((key) => key + 1);
         await loadProjectData();
       }
     } catch (error) {
@@ -280,6 +354,7 @@ export default function ProjectDetailScreen() {
       Alert.alert(t('common.error'), error.message || t('mobile.task_photo_upload_failed', { defaultValue: 'Could not upload photo.' }));
     } finally {
       setPhotoUploadTaskId(null);
+      setPendingCompletionPhoto(false);
       setShowPhotoSheet(false);
       setPhotoTask(null);
     }
@@ -333,6 +408,42 @@ export default function ProjectDetailScreen() {
     return sections;
   };
 
+  const phasesWithProgress = useMemo(
+    () => buildPhasesWithDerivedProgress(phases, tasks),
+    [phases, tasks],
+  );
+
+  const { unassignedTasks } = useMemo(
+    () => groupTasksByPhaseId(phases, tasks),
+    [phases, tasks],
+  );
+
+  const derivedProjectProgress = useMemo(() => {
+    if (!phasesWithProgress.length) return 0;
+    return computeWeightedProjectProgressPercent(phasesWithProgress, project?.due_date);
+  }, [phasesWithProgress, project?.due_date]);
+
+  useEffect(() => {
+    setExpandedPhases((prev) => {
+      const phaseIds = new Set(phases.map((phase) => phase.id));
+      const next = {};
+      for (const phase of phases) {
+        next[phase.id] = prev[phase.id] ?? true;
+      }
+      if (phaseIds.size > 0 || unassignedTasks.length > 0) {
+        next.unassigned = prev.unassigned ?? true;
+      }
+      return next;
+    });
+  }, [phases, unassignedTasks.length]);
+
+  const togglePhaseExpanded = (phaseKey) => {
+    setExpandedPhases((prev) => ({
+      ...prev,
+      [phaseKey]: !prev[phaseKey],
+    }));
+  };
+
   const getPriorityColor = (priority) => {
     switch (priority?.toLowerCase()) {
       case 'high':
@@ -372,12 +483,32 @@ export default function ProjectDetailScreen() {
 
   const handleProgressSave = async (updates) => {
     if (!progressTask?.id) return;
+    const reachedComplete = updates.percent_complete >= 100;
     try {
       setIsSavingProgress(true);
       await updateTask(supabase, progressTask.id, updates);
+      await markGettingStartedTaskUpdated();
       setShowProgressSheet(false);
+      const savedTask = progressTask;
       setProgressTask(null);
       await loadProjectData();
+      if (reachedComplete && canUploadPhotosForTask(savedTask)) {
+        Alert.alert(
+          t('mobile.completion_photo_title'),
+          t('mobile.completion_photo_message'),
+          [
+            { text: t('mobile.completion_photo_skip'), style: 'cancel' },
+            {
+              text: t('mobile.completion_photo_add'),
+              onPress: () => {
+                setPhotoTask(savedTask);
+                setPendingCompletionPhoto(true);
+                setShowPhotoSheet(true);
+              },
+            },
+          ],
+        );
+      }
     } catch (error) {
       console.error('Error updating progress:', error);
       await enqueueOfflineAction({
@@ -427,20 +558,58 @@ export default function ProjectDetailScreen() {
     }
   };
 
-  const renderTaskItem = ({ item }) => (
+  const handleTaskCreate = async (updates) => {
+    if (!project?.id || !user?.id) return;
+    try {
+      setIsCreatingTask(true);
+      await createTask(supabase, {
+        ...updates,
+        project_id: project.id,
+        organization_id: project.organization_id || scopeOrganizationId,
+      });
+      await markGettingStartedTaskCreated();
+      setShowCreateTask(false);
+      await loadProjectData();
+    } catch (error) {
+      console.error('Error creating task:', error);
+      await enqueueOfflineAction({
+        type: 'create_task',
+        payload: {
+          ...updates,
+          project_id: project.id,
+          organization_id: project.organization_id || scopeOrganizationId,
+        },
+      });
+      alert('Task creation queued for sync.');
+      setShowCreateTask(false);
+    } finally {
+      setIsCreatingTask(false);
+    }
+  };
+
+  const openCreateTaskSheet = () => setShowCreateTask(true);
+
+  const hasAnyTasks = tasks.length > 0;
+
+  const renderTaskCard = (task, { variant = 'default', isLast = false } = {}) => (
     <TaskCard
-      task={item}
+      key={task.id}
+      task={task}
+      variant={variant}
+      isLast={isLast}
       onPress={openTaskDetail}
-      onProgressPress={(task) => {
-        setProgressTask(task);
+      onProgressPress={(selectedTask) => {
+        setProgressTask(selectedTask);
         setShowProgressSheet(true);
       }}
       onPhotoPress={openPhotoSheet}
-      canManagePhotos={canUploadPhotosForTask(item)}
-      photoUploading={photoUploadTaskId === item.id}
-      testID={`task-card-${item.id}`}
+      canManagePhotos={canUploadPhotosForTask(task)}
+      photoUploading={photoUploadTaskId === task.id}
+      testID={`task-card-${task.id}`}
     />
   );
+
+  const renderTaskItem = ({ item }) => renderTaskCard(item);
 
 
   const getIssuePriorityColor = (priority) => {
@@ -520,7 +689,7 @@ export default function ProjectDetailScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.safeArea, { paddingTop: insets.top }]}>
+      <View style={[styles.safeArea, { paddingTop: contentTopInset(insets) }]}>
         <View style={styles.loadingContainer}>
           <SkeletonCard height={48} style={{ marginBottom: spacing.lg, width: '70%' }} />
           <SkeletonCard height={24} style={{ marginBottom: spacing.md, width: '100%' }} />
@@ -532,14 +701,13 @@ export default function ProjectDetailScreen() {
 
   if (!project) {
     return (
-      <View style={[styles.safeArea, { paddingTop: insets.top }]}>
+      <View style={[styles.safeArea, { paddingTop: contentTopInset(insets) }]}>
         <View style={styles.header}>
-          <PressableWithFade 
+          <PressableWithFade
             style={styles.backButton}
             onPress={() => router.back()}
-            activeOpacity={0.7}
           >
-            <Ionicons name="arrow-back" size={24} color="#111827" />
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
           </PressableWithFade>
         </View>
         <View style={styles.loadingContainer}>
@@ -549,78 +717,202 @@ export default function ProjectDetailScreen() {
     );
   }
 
-  const taskSections = groupTasksByStatus();
+  const taskSections = phases.length > 0 ? [] : groupTasksByStatus();
+
+  const projectTabs = [
+    { id: 'tasks', label: t('mobile.project_tasks_tab'), testID: 'project-tab-tasks' },
+    isManagerView
+      ? { id: 'stream', label: t('mobile.project_stream_tab'), testID: 'project-tab-stream' }
+      : null,
+    {
+      id: 'fieldIssues',
+      label: t('mobile.project_issues_punch_tab'),
+      accessibilityLabel: t('mobile.project_issues_punch_tab_full'),
+      testID: 'project-tab-field-issues',
+    },
+    isManagerView && canManageProgressReports
+      ? {
+          id: 'reports',
+          label: t('mobile.project_reports_tab'),
+          accessibilityLabel: t('mobile.project_reports_tab_full'),
+          testID: 'project-tab-reports',
+        }
+      : null,
+  ].filter(Boolean);
 
   return (
-    <View style={[styles.safeArea, { paddingTop: insets.top }]}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={{ paddingBottom: TAB_BAR_CLEARANCE + spacing.lg }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <PressableWithFade 
+    <View style={[styles.safeArea, { paddingTop: contentTopInset(insets) }]}>
+      <View style={styles.header}>
+          <PressableWithFade
             style={styles.backButton}
             onPress={() => router.back()}
-            activeOpacity={0.7}
           >
-            <Ionicons name="arrow-back" size={24} color="#111827" />
-          </PressableWithFade>
-          <View style={styles.headerRight}>
-            {offlineQueueCount > 0 ? (
-              <View style={styles.syncBadge}>
-                <Text style={styles.syncBadgeText}>{offlineQueueCount}</Text>
-              </View>
-            ) : null}
-            <PressableWithFade
-              style={styles.teamButton}
-              onPress={() => setShowTeamModal(true)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="people-outline" size={24} color="#3B82F6" />
-            </PressableWithFade>
-          </View>
-        </View>
-
-        <View style={styles.projectHeader}>
-          <Text style={styles.projectTitle}>{project.name}</Text>
-          <View style={styles.progressContainer}>
-            <Text style={styles.progressLabel}>{t('mobile.progress_label')}</Text>
-            <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: `${progress}%` }]} />
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </PressableWithFade>
+        <View style={styles.headerRight}>
+          {offlineQueueCount > 0 ? (
+            <View style={styles.syncBadge}>
+              <Text style={styles.syncBadgeText}>{offlineQueueCount}</Text>
             </View>
-            <Text style={styles.progressText}>{progress}%</Text>
+          ) : null}
+          <PressableWithFade
+            style={styles.headerActionBtn}
+            onPress={() => setShowProjectSearch(true)}
+            testID="project-search-button"
+            accessibilityLabel={t('mobile.project_search_placeholder')}
+          >
+            <Ionicons name="search-outline" size={24} color={primaryColor} />
+          </PressableWithFade>
+          {isManagerView ? (
+            <>
+              {canEditProjects ? (
+                <PressableWithFade
+                  style={styles.headerActionBtn}
+                  onPress={() => setShowEditProject(true)}
+                  testID="project-edit-button"
+                  accessibilityLabel={t('mobile.manage_edit_project')}
+                >
+                  <Ionicons name="create-outline" size={24} color={primaryColor} />
+                </PressableWithFade>
+              ) : null}
+              <PressableWithFade
+                style={styles.headerActionBtn}
+                onPress={() => setShowTeamModal(true)}
+                testID="project-team-button"
+                accessibilityLabel={t('mobile.manage_team')}
+              >
+                <Ionicons name="people-outline" size={24} color={primaryColor} />
+              </PressableWithFade>
+            </>
+          ) : null}
+        </View>
+      </View>
+
+      <View style={styles.projectHeader}>
+        <Text style={styles.projectTitle}>{project.name}</Text>
+        <View style={styles.progressContainer}>
+          <Text style={styles.progressLabel}>{t('mobile.progress_label')}</Text>
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${derivedProjectProgress}%`, backgroundColor: primaryColor }]} />
           </View>
+          <Text style={styles.progressText}>{derivedProjectProgress}%</Text>
         </View>
+      </View>
 
-        {/* Tabs */}
-        <View style={styles.tabs}>
-          <PressableWithFade
-            style={[styles.tab, activeTab === 'tasks' && styles.tabActive]}
-            onPress={() => setActiveTab('tasks')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.tabText, activeTab === 'tasks' && styles.tabTextActive]}>
-              {t('mobile.project_tasks_tab')}
-            </Text>
-          </PressableWithFade>
-          <PressableWithFade
-            style={[styles.tab, activeTab === 'updates' && styles.tabActive]}
-            onPress={() => setActiveTab('updates')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.tabText, activeTab === 'updates' && styles.tabTextActive]}>
-              {t('mobile.project_updates_tab')}
-            </Text>
-          </PressableWithFade>
-        </View>
+      <View style={styles.tabsBar}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          bounces={false}
+          style={styles.tabsScroll}
+          contentContainerStyle={styles.tabsContent}
+        >
+          {projectTabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <PressableWithFade
+                key={tab.id}
+                style={styles.tab}
+                onPress={() => setActiveTab(tab.id)}
+                testID={tab.testID}
+                accessibilityLabel={tab.accessibilityLabel || tab.label}
+              >
+                <Text
+                  style={[
+                    styles.tabText,
+                    isActive && [styles.tabTextActive, { color: primaryColor }],
+                  ]}
+                  numberOfLines={1}
+                >
+                  {tab.label}
+                </Text>
+                {isActive ? (
+                  <View style={[styles.tabIndicator, { backgroundColor: primaryColor }]} />
+                ) : null}
+              </PressableWithFade>
+            );
+          })}
+        </ScrollView>
+      </View>
 
-        {/* Tab Content */}
-        <View style={styles.tabContent}>
-          {activeTab === 'tasks' && (
-            <View>
-              {taskSections.length > 0 ? (
+      <View style={styles.tabBody}>
+        {activeTab === 'tasks' ? (
+          <ScrollView
+            style={styles.tabScroll}
+            contentContainerStyle={[styles.tabContent, { paddingBottom: tabScrollBottom }]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+              {canCreateTasks && hasAnyTasks ? (
+                <View style={styles.tasksHeaderRow}>
+                  <Text style={styles.tasksHeaderLabel}>{t('mobile.project_tasks_tab')}</Text>
+                  <PressableWithFade
+                    style={styles.taskAddCompact}
+                    onPress={openCreateTaskSheet}
+                    testID="task-new-compact"
+                    accessibilityLabel={t('mobile.tasks_create_first')}
+                  >
+                    <Ionicons name="add-circle-outline" size={26} color={primaryColor} />
+                  </PressableWithFade>
+                </View>
+              ) : null}
+              {phases.length > 0 ? (
+                <View style={styles.phasesSection}>
+                  {phasesWithProgress.map((phase) => (
+                    <PhaseAccordion
+                      key={phase.id}
+                      title={phase.name}
+                      progressPercent={phase.progress}
+                      taskCount={phase.tasks.length}
+                      expanded={expandedPhases[phase.id] !== false}
+                      onToggle={() => togglePhaseExpanded(phase.id)}
+                      testID={`phase-accordion-${phase.id}`}
+                    >
+                      {phase.tasks.length > 0
+                        ? phase.tasks.map((task, taskIndex) =>
+                            renderTaskCard(task, {
+                              variant: 'flat',
+                              isLast: taskIndex === phase.tasks.length - 1,
+                            }),
+                          )
+                        : null}
+                    </PhaseAccordion>
+                  ))}
+                  {unassignedTasks.length > 0 ? (
+                    <PhaseAccordion
+                      title={t('mobile.tasks_unassigned_phase')}
+                      progressPercent={calculatePhaseProgressFromTasks(unassignedTasks)}
+                      taskCount={unassignedTasks.length}
+                      expanded={expandedPhases.unassigned !== false}
+                      onToggle={() => togglePhaseExpanded('unassigned')}
+                      testID="phase-accordion-unassigned"
+                    >
+                      {unassignedTasks.map((task, taskIndex) =>
+                        renderTaskCard(task, {
+                          variant: 'flat',
+                          isLast: taskIndex === unassignedTasks.length - 1,
+                        }),
+                      )}
+                    </PhaseAccordion>
+                  ) : null}
+                  {phasesWithProgress.every((phase) => phase.tasks.length === 0) && unassignedTasks.length === 0 ? (
+                    canCreateTasks ? (
+                      <PanelEmptyState
+                        icon="checkbox-outline"
+                        title={t('mobile.tasks_empty_title')}
+                        hint={t('mobile.tasks_empty_hint')}
+                        ctaLabel={t('mobile.tasks_create_first')}
+                        onCta={openCreateTaskSheet}
+                        testID="tasks-empty-cta"
+                      />
+                    ) : (
+                      <View style={styles.emptyContainer}>
+                        <Text style={styles.emptyText}>{t('mobile.no_tasks')}</Text>
+                      </View>
+                    )
+                  ) : null}
+                </View>
+              ) : taskSections.length > 0 ? (
                 <SectionList
                   sections={taskSections}
                   keyExtractor={(item) => item.id}
@@ -633,42 +925,141 @@ export default function ProjectDetailScreen() {
                   scrollEnabled={false}
                 />
               ) : (
-                <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>{t('mobile.no_tasks')}</Text>
-                </View>
+                canCreateTasks ? (
+                  <PanelEmptyState
+                    icon="checkbox-outline"
+                    title={t('mobile.tasks_empty_title')}
+                    hint={t('mobile.tasks_empty_hint')}
+                    ctaLabel={t('mobile.tasks_create_first')}
+                    onCta={openCreateTaskSheet}
+                    testID="tasks-empty-cta"
+                  />
+                ) : (
+                  <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>{t('mobile.no_tasks')}</Text>
+                  </View>
+                )
               )}
-            </View>
-          )}
+          </ScrollView>
+        ) : null}
 
-          {activeTab === 'updates' && project && (
-            <ProjectCollaborationPanel
-              project={project}
-              supabase={supabase}
-              currentUserId={user?.id}
-            />
-          )}
+        {isManagerView && activeTab === 'stream' && project ? (
+          <ProjectStreamPanel
+            project={project}
+            supabase={supabase}
+            currentUserId={user?.id}
+            contentPaddingBottom={tabScrollBottom}
+          />
+        ) : null}
 
-        </View>
-      </ScrollView>
+        {activeTab === 'fieldIssues' && project ? (
+          <FieldIssuesPanel
+            project={project}
+            supabase={supabase}
+            currentUserId={user?.id}
+            projectTasks={tasks}
+            canExport={canExport}
+            contentPaddingBottom={tabScrollBottom}
+            onReportIssue={() => {
+              setEditingFieldIssue(null);
+              setShowFieldIssue(true);
+            }}
+            onEditIssue={(issue) => {
+              setEditingFieldIssue(issue);
+              setShowFieldIssue(true);
+            }}
+          />
+        ) : null}
+
+        {isManagerView && canManageProgressReports && activeTab === 'reports' && project ? (
+          <ProgressReportsPanel
+            embedded
+            active
+            supabase={supabase}
+            organizationId={scopeOrganizationId}
+            projectId={projectId}
+            projectName={project?.name}
+            userId={user?.id}
+            contentPaddingBottom={tabScrollBottom}
+          />
+        ) : null}
+      </View>
 
       <ProjectTeamModal
         visible={showTeamModal}
         projectId={projectId}
-        onClose={() => setShowTeamModal(false)}
+        project={project}
+        canInvite={isManagerView && canEditProjects}
+        openInviteOnMount={openTeamInvite}
+        onClose={() => {
+          setShowTeamModal(false);
+          setOpenTeamInvite(false);
+        }}
       />
-      <TaskDetailModal
+      <TaskDetailSheet
+        visible={showCreateTask}
+        mode="create"
+        project={project}
+        phases={phases}
+        supabase={supabase}
+        currentUserId={user?.id}
+        onClose={() => setShowCreateTask(false)}
+        onCreate={handleTaskCreate}
+        loading={isCreatingTask}
+      />
+      <TaskDetailSheet
         visible={showTaskDetail}
         task={detailTask}
         project={project}
+        phases={phases}
         supabase={supabase}
         currentUserId={user?.id}
-        viewerOrgId={scopeOrganizationId}
+        currentUser={user}
+        organizationName={activeOrganization?.name}
+        compact={!isManagerView}
+        canAssignTasks={isManagerView && canAssignTasks}
+        photoRefreshKey={taskPhotoRefreshKey}
         onClose={() => {
           setShowTaskDetail(false);
           setDetailTask(null);
         }}
         onSave={handleTaskDetailSave}
+        onTaskUpdated={(updated) => {
+          setDetailTask(updated);
+          setTasks((prev) => prev.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)));
+        }}
         loading={isSavingTask}
+      />
+      <EditProjectSheet
+        visible={showEditProject}
+        project={project}
+        supabase={supabase}
+        userId={user?.id}
+        onClose={() => setShowEditProject(false)}
+        onSaved={(updated) => {
+          setProject(updated);
+          setShowEditProject(false);
+        }}
+      />
+      <ProjectSearchSheet
+        visible={showProjectSearch}
+        onClose={() => setShowProjectSearch(false)}
+        projectName={project?.name}
+        tasks={tasks}
+        onSelectTask={openTaskDetail}
+      />
+      <FieldIssueSheet
+        visible={showFieldIssue}
+        onClose={() => {
+          setShowFieldIssue(false);
+          setEditingFieldIssue(null);
+        }}
+        supabase={supabase}
+        projectId={projectId}
+        organizationId={scopeOrganizationId}
+        userId={user?.id}
+        onCreated={loadProjectData}
+        issueToEdit={editingFieldIssue}
       />
       <ProgressBottomSheet
         visible={showProgressSheet}
@@ -744,10 +1135,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  teamButton: {
-    padding: 8,
-    minWidth: 44,
-    minHeight: 44,
+  headerActionBtn: {
+    padding: spacing.sm,
+    minWidth: touch.minSize,
+    minHeight: touch.minSize,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -790,38 +1181,99 @@ const styles = StyleSheet.create({
     color: '#111827',
     minWidth: 50,
   },
-  tabs: {
+  reportIssueBtn: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+    minHeight: touch.minSize,
+    paddingHorizontal: spacing.lg,
+    borderRadius: 12,
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  reportIssueText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  phasesSection: {
+    marginBottom: spacing.md,
+  },
+  tabsBar: {
+    flexShrink: 0,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    paddingHorizontal: 8,
-    gap: 8,
+    borderBottomColor: colors.border,
+  },
+  tabsScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+    height: touch.minRowHeight,
+  },
+  tabsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: touch.minRowHeight,
+    paddingHorizontal: spacing.sm,
   },
   tab: {
-    flex: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
+    position: 'relative',
+    paddingHorizontal: spacing.md,
+    height: touch.minRowHeight,
+    justifyContent: 'center',
     alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-    minHeight: 44,
   },
-  tabActive: {
-    borderBottomColor: '#3B82F6',
+  tabIndicator: {
+    position: 'absolute',
+    left: spacing.sm,
+    right: spacing.sm,
+    bottom: 0,
+    height: 2,
+    borderRadius: 1,
   },
   tabText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#6B7280',
+    color: colors.textMuted,
+    lineHeight: 18,
+    textAlign: 'center',
+    includeFontPadding: false,
   },
   tabTextActive: {
-    color: '#3B82F6',
+    fontWeight: '700',
+  },
+  tabBody: {
+    flex: 1,
+    flexShrink: 1,
+    minHeight: 0,
+    backgroundColor: colors.surface,
+    marginTop: spacing.sm,
+  },
+  tabScroll: {
+    flex: 1,
   },
   tabContent: {
-    padding: 16,
-    backgroundColor: '#fff',
-    marginTop: 8,
+    padding: spacing.lg,
+  },
+  tasksHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  tasksHeaderLabel: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  taskAddCompact: {
+    minWidth: touch.minSize,
+    minHeight: touch.minSize,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sectionHeader: {
     paddingVertical: 12,

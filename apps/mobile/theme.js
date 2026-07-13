@@ -54,16 +54,23 @@ export const typography = {
 
 export const shadows = {
   card: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  floatingNav: {
-    shadowColor: '#000',
+    shadowColor: '#94A3B8',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  cardSelected: {
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  floatingNav: {
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
     shadowRadius: 12,
     elevation: 8,
   },

@@ -58,11 +58,11 @@ All requested features have been successfully implemented and are ready for test
 ## Files Created/Modified
 
 ### Database (8 files)
-✅ `schema.sql` - Complete multi-tenant schema with RLS
+✅ `../../schema.sql` - Complete multi-tenant schema with RLS (repo root)
 ✅ `scripts/migrate-to-organizations.sql` - Migration script
 ✅ `scripts/seed-demo-account.sql` - Demo account for reviewers
 ✅ `scripts/setup-storage-policies.sql` - Storage security
-✅ `scripts/validate-schema.sql` - Schema validation
+✅ `../../scripts/validate-schema.sql` - Schema validation (repo root)
 
 ### Frontend Services (6 files)
 ✅ `src/utils/permissions.js` - Permission checking utilities
@@ -170,14 +170,14 @@ All requested features have been successfully implemented and are ready for test
 ### 1. Database
 ```bash
 # Option A: Fresh deployment (recommended)
-1. Run schema.sql in Supabase SQL Editor
-2. Run scripts/validate-schema.sql to verify
+1. Run ../../schema.sql in Supabase SQL Editor
+2. Run ../../scripts/validate-schema.sql to verify
 3. Run scripts/seed-demo-account.sql for demo
 4. Run scripts/setup-storage-policies.sql for storage
 
 # Option B: Migrate existing database
 1. Run scripts/migrate-to-organizations.sql
-2. Run scripts/validate-schema.sql to verify
+2. Run ../../scripts/validate-schema.sql to verify
 3. Run scripts/seed-demo-account.sql for demo
 4. Run scripts/setup-storage-policies.sql for storage
 ```
@@ -331,11 +331,11 @@ See `DEPLOYMENT-GUIDE-B2B.md` for troubleshooting guide.
 ### For Developers
 - `MULTI-TENANT-B2B-IMPLEMENTATION.md` - Complete technical documentation
 - `QUICK-REFERENCE-B2B.md` - Quick reference for common tasks
-- `schema.sql` - Database schema with comments
+- `../../schema.sql` - Database schema with comments
 
 ### For DevOps
 - `DEPLOYMENT-GUIDE-B2B.md` - Step-by-step deployment instructions
-- `scripts/validate-schema.sql` - Schema validation script
+- `../../scripts/validate-schema.sql` - Schema validation script
 - `scripts/migrate-to-organizations.sql` - Migration script
 
 ### For Users

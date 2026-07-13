@@ -1,8 +1,8 @@
 /**
  * Field weather strip: icon + temp/condition/location/precip, log action on the right.
  */
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, ActivityIndicator, Linking } from 'react-native';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -11,12 +11,14 @@ import PressableWithFade from '../PressableWithFade';
 import { Text } from './Text';
 import { colors, spacing } from '../../theme';
 import { useBranding } from '../../context/BrandingContext';
+import { hasCompletedLocationOnboarding } from '../../utils/onboarding';
 import {
   getConditionFromCode,
   getWeatherDescriptionKey,
   getWeatherIconName,
   isSnowWeatherCode,
 } from '../../utils/weatherDescriptions';
+import { publishWeatherWidgetPatch } from '../../utils/publishWidgetSnapshot';
 
 const WEATHER_API_URL = 'https://api.open-meteo.com/v1/forecast';
 const ICON_SIZE = 36;
@@ -43,23 +45,35 @@ export default function WeatherCard({ onPress, onLogWeather, testID = 'weather-c
   const [weather, setWeather] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [onboardingPending, setOnboardingPending] = useState(false);
 
-  useEffect(() => {
-    loadWeather();
-    const interval = setInterval(loadWeather, 30 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadWeather = async () => {
+  const loadWeather = useCallback(async ({ requestIfNeeded = false } = {}) => {
     try {
       setLoading(true);
       setError(null);
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      setPermissionDenied(false);
+      setOnboardingPending(false);
+
+      const onboardingDone = await hasCompletedLocationOnboarding();
+      if (!onboardingDone) {
+        setOnboardingPending(true);
+        setLoading(false);
+        return;
+      }
+
+      let { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted' && requestIfNeeded) {
+        const requested = await Location.requestForegroundPermissionsAsync();
+        status = requested.status;
+      }
       if (status !== 'granted') {
+        setPermissionDenied(true);
         setError(t('mobile.weather_location_required'));
         setLoading(false);
         return;
       }
+
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const { latitude, longitude } = loc.coords;
 
@@ -82,21 +96,30 @@ export default function WeatherCard({ onPress, onLogWeather, testID = 'weather-c
           ? Math.round(data.current.precipitation_probability)
           : null;
 
-      setWeather({
+      const nextWeather = {
         temperature: Math.round(data.current.temperature_2m),
         weatherCode: code,
         icon: getWeatherIconName(condition),
         locationLabel,
         precipProbability,
         precipIsSnow: isSnowWeatherCode(code),
-      });
+        condition,
+      };
+      setWeather(nextWeather);
+      publishWeatherWidgetPatch(nextWeather);
     } catch (e) {
       console.error(e);
       setError(t('mobile.weather_load_failed'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [t]);
+
+  useEffect(() => {
+    loadWeather();
+    const interval = setInterval(loadWeather, 30 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [loadWeather]);
 
   const logLabel = t('mobile.log_weather_short', { defaultValue: 'Log delay' });
 
@@ -128,6 +151,10 @@ export default function WeatherCard({ onPress, onLogWeather, testID = 'weather-c
     </PressableWithFade>
   ) : null;
 
+  const openSettings = () => {
+    Linking.openSettings().catch(() => {});
+  };
+
   return (
     <Card onPress={onPress} style={styles.card} testID={testID}>
       <View style={styles.row}>
@@ -135,14 +162,45 @@ export default function WeatherCard({ onPress, onLogWeather, testID = 'weather-c
           <View style={styles.weatherBlock}>
             <ActivityIndicator color={primaryColor} size="small" />
           </View>
+        ) : onboardingPending ? (
+          <View style={styles.weatherBlock}>
+            <View style={styles.iconColumn}>
+              <Ionicons name="cloud-outline" size={ICON_SIZE} color={colors.textMuted} />
+            </View>
+            <Text variant="bodyMedium" style={[styles.messageColumn]} numberOfLines={2}>
+              {t('mobile.weather_onboarding_pending')}
+            </Text>
+          </View>
         ) : error ? (
           <View style={styles.weatherBlock}>
             <View style={styles.iconColumn}>
               <Ionicons name="cloud-offline-outline" size={ICON_SIZE} color={colors.textMuted} />
             </View>
-            <Text variant="bodyMedium" style={[styles.error, styles.messageColumn]} numberOfLines={2}>
-              {error}
-            </Text>
+            <View style={styles.errorColumn}>
+              <Text variant="bodyMedium" style={styles.error} numberOfLines={2}>
+                {error}
+              </Text>
+              {permissionDenied ? (
+                <View style={styles.errorActions}>
+                  <PressableWithFade onPress={openSettings} testID="weather-open-settings">
+                    <Text style={[styles.errorActionText, { color: primaryColor }]}>
+                      {t('mobile.weather_open_settings')}
+                    </Text>
+                  </PressableWithFade>
+                  <PressableWithFade onPress={() => loadWeather({ requestIfNeeded: true })} testID="weather-retry">
+                    <Text style={[styles.errorActionText, { color: primaryColor }]}>
+                      {t('mobile.weather_retry')}
+                    </Text>
+                  </PressableWithFade>
+                </View>
+              ) : (
+                <PressableWithFade onPress={() => loadWeather({ requestIfNeeded: true })} testID="weather-retry">
+                  <Text style={[styles.errorActionText, { color: primaryColor }]}>
+                    {t('mobile.weather_retry')}
+                  </Text>
+                </PressableWithFade>
+              )}
+            </View>
           </View>
         ) : weather ? (
           <View style={styles.weatherBlock}>
@@ -217,6 +275,20 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     color: colors.textMuted,
+  },
+  errorColumn: {
+    flex: 1,
+    minWidth: 0,
+    gap: spacing.xs,
+  },
+  errorActions: {
+    flexDirection: 'row',
+    gap: spacing.lg,
+    marginTop: spacing.xs,
+  },
+  errorActionText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   tempRow: {
     flexDirection: 'row',

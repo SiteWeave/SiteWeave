@@ -1,0 +1,20 @@
+---
+description: Web UI rules for apps/web — maps design skills to Tailwind/CSS patterns
+globs: apps/web/**
+alwaysApply: false
+---
+
+# SiteWeave web
+
+When editing `apps/web/**`, follow existing Tailwind patterns and shared classes in [`apps/web/src/index.css`](../../apps/web/src/index.css).
+
+## Design skills → CSS
+
+- **make-interfaces-feel-better (Jakub)** — press scale constant is **`0.96`** (not `0.97`/`0.98`). Prefer `.app-action-primary` / `.app-action-secondary` for CTAs (includes press scale). Use `transition-transform` or explicit `transition-property` — never `transition-all`.
+- **Emil / Impeccable / Taste** — apply layout, hierarchy, and motion principles; use shared action classes rather than one-off button styles.
+
+## Press feedback
+
+- Primary/secondary buttons: use `app-action-primary` or `app-action-secondary` (built-in `scale(0.96)` on active).
+- Non-action buttons: add `btn-smooth` for the same press behavior.
+- `prefers-reduced-motion: reduce` is handled in `index.css` — preserve it when changing motion styles.

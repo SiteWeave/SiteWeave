@@ -18,7 +18,14 @@ export const REPORT_STATUS_COLORS = {
   dismissed: '#6B7280',
 };
 
-/** Matches Supabase RLS: get_user_role() = 'Admin' */
+/** Platform developers only (profiles.is_super_admin) — not org admins. */
+export function canAccessContentReports(profile) {
+  return profile?.is_super_admin === true;
+}
+
+/** @deprecated Use canAccessContentReports({ is_super_admin }) instead. */
 export function isModerationAdmin(profileRole) {
-  return profileRole === 'Admin';
+  return canAccessContentReports(
+    typeof profileRole === 'object' ? profileRole : { is_super_admin: false },
+  );
 }

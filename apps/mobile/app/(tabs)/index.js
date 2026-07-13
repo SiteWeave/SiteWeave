@@ -1,10 +1,9 @@
 import { View, Text, StyleSheet, ScrollView, RefreshControl, FlatList, Alert } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { filterByOrganizationId } from '../../utils/orgScope';
-import { fetchUnreadNotificationCount } from '../../utils/notifications';
 import { 
   fetchUserIncompleteTasks, 
   fetchTodayEvents, 
@@ -15,7 +14,6 @@ import {
   fetchUserProjectsWithProgress,
   loadWithFallback,
 } from '@siteweave/core-logic';
-import QuickActionsModal from '../../components/QuickActionsModal';
 import KPICarousel from '../../components/KPICarousel';
 import OverdueTasksModal from '../../components/OverdueTasksModal';
 import MyDayItemModal from '../../components/MyDayItemModal';
@@ -25,26 +23,43 @@ import { useBranding } from '../../context/BrandingContext';
 import ProjectCardCompact from '../../components/ProjectCardCompact';
 import ProfileDrawer from '../../components/ProfileDrawer';
 import PressableWithFade from '../../components/PressableWithFade';
+import GettingStartedChecklist from '../../components/GettingStartedChecklist';
+import PanelEmptyState from '../../components/PanelEmptyState';
 import WeatherCard from '../../components/ui/WeatherCard';
+import { useCreateAction } from '../../context/CreateActionContext';
+import { useMobileExperience } from '../../context/MobileExperienceContext';
 import WeatherShiftSheet from '../../components/WeatherShiftSheet';
-import Card from '../../components/ui/Card';
+import SiteDaySheet from '../../components/SiteDaySheet';
+import SyncStatusBanner from '../../components/SyncStatusBanner';
+import { useSyncStatus } from '../../context/SyncStatusContext';
 import { Text as UiText } from '../../components/ui/Text';
 import { colors, spacing, touch } from '../../theme';
-import { TAB_BAR_CLEARANCE, scrollBottomPadding } from '../../components/ui/FloatingTabBar';
+import { scrollBottomPadding, contentTopInset } from '../../utils/layoutInsets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import NotificationBadge from '../../components/ui/NotificationBadge';
+import { useNotificationCount } from '../../context/NotificationCountContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useHaptics } from '../../hooks/useHaptics';
 import { getCached, setCached } from '../../utils/persistentCache';
-import { SkeletonCard, SkeletonList } from '../../components/ui/Skeleton';
+import { buildMyDayItems, daysFromDueToToday } from '../../utils/myDay';
+import { countDueTodayTasks } from '../../utils/widgetSnapshot';
+import { publishHomeWidgetSnapshot } from '../../utils/publishWidgetSnapshot';
+import { getSiteDayStreak } from '../../utils/siteDayStreak';
+import i18n from '../../i18n';
+import { SkeletonList } from '../../components/ui/Skeleton';
 import Avatar from '../../components/ui/Avatar';
 
 export default function HomeScreen() {
   const { t } = useTranslation();
-  const { user, supabase, activeOrganization, isProjectCollaborator, collaborationProjects, profileAvatarUrl } = useAuth();
+  const { user, supabase, activeOrganization, isProjectCollaborator, collaborationProjects, profileAvatarUrl, canCreateProjects } = useAuth();
+  const { isManagerView, mode } = useMobileExperience();
   const { primaryColor } = useBranding();
   const router = useRouter();
+  const { action } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
+  const scrollRef = useRef(null);
+  const weatherCardY = useRef(0);
   const [tasks, setTasks] = useState([]);
   const [events, setEvents] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -52,11 +67,11 @@ export default function HomeScreen() {
   const [myDayItems, setMyDayItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showQuickActions, setShowQuickActions] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [showItemModal, setShowItemModal] = useState(false);
   const [showProfileDrawer, setShowProfileDrawer] = useState(false);
-  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const { unreadCount: unreadNotificationCount, refreshUnreadCount } = useNotificationCount();
+  const { isOnline, queueSize, flushQueue } = useSyncStatus();
   const [showWeatherShift, setShowWeatherShift] = useState(false);
   const [photoTask, setPhotoTask] = useState(null);
   const [showPhotoSheet, setShowPhotoSheet] = useState(false);
@@ -64,25 +79,39 @@ export default function HomeScreen() {
   const [showOverdueModal, setShowOverdueModal] = useState(false);
   const [overdueModalTasks, setOverdueModalTasks] = useState([]);
   const [overdueModalLoading, setOverdueModalLoading] = useState(false);
+  const [checklistRefreshKey, setChecklistRefreshKey] = useState(0);
+  const [showSiteDay, setShowSiteDay] = useState(false);
+  const [siteDayStreak, setSiteDayStreak] = useState(0);
+  const { openCreateProject, openSiteDay } = useCreateAction();
+
+  useEffect(() => {
+    if (action === 'site-day') {
+      openSiteDay();
+      router.setParams({ action: undefined });
+    }
+  }, [action, openSiteDay, router]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setSiteDayStreak(0);
+      return;
+    }
+    getSiteDayStreak(user.id).then(setSiteDayStreak).catch(() => setSiteDayStreak(0));
+  }, [user?.id, showSiteDay]);
 
   useEffect(() => {
     if (!supabase || !user) return;
     const channel = supabase
       .channel('user_notifications_home')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_notifications' }, async () => {
-        try {
-          const unreadCount = await fetchUnreadNotificationCount(supabase, { userId: user.id, email: user.email || '' });
-          setUnreadNotificationCount(unreadCount || 0);
-        } catch (error) {
-          console.error('Failed to refresh unread notification count:', error);
-        }
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_notifications' }, () => {
+        refreshUnreadCount();
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [supabase, user]);
+  }, [supabase, user, refreshUnreadCount]);
 
   const loadData = async () => {
     if (!user || !supabase || (!activeOrganization && !isProjectCollaborator)) {
@@ -116,7 +145,6 @@ export default function HomeScreen() {
         activeCount,
         completedCount,
         overdueCount,
-        unreadCount,
       ] = await Promise.all([
         loadWithFallback(
           () => fetchUserIncompleteTasks(supabase, user.id, undefined, { limit: 20, orderByDueDate: true }),
@@ -148,13 +176,9 @@ export default function HomeScreen() {
           null,
           { label: 'home_overdue_tasks_count' },
         ),
-        loadWithFallback(
-          () => fetchUnreadNotificationCount(supabase, { userId: user.id, email: user.email || '' }),
-          0,
-          { label: 'home_unread_notifications' },
-        ),
       ]);
       
+      refreshUnreadCount();
       const orgId = activeOrganization?.id;
       const orgTasks = orgId ? filterByOrganizationId(tasksData || [], orgId) : (tasksData || []);
       const orgEvents = orgId ? filterByOrganizationId(eventsData || [], orgId) : (eventsData || []);
@@ -179,51 +203,35 @@ export default function HomeScreen() {
         overdueTasks: overdueCount,
       };
       setKpis(nextKpis);
-      setUnreadNotificationCount(unreadCount || 0);
 
-      // Combine and prioritize My Day items (top 3)
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      // Prioritize tasks: due today first, then by priority
-      const prioritizedTasks = orgTasks
-        .map(task => ({
-          ...task,
-          type: 'task',
-          priorityScore: getTaskPriorityScore(task, today),
-        }))
-        .sort((a, b) => b.priorityScore - a.priorityScore);
-
-      // Prioritize events: by start time
-      const prioritizedEvents = orgEvents
-        .map(event => ({
-          ...event,
-          type: 'event',
-          priorityScore: new Date(event.start_time).getTime(),
-        }))
-        .sort((a, b) => a.priorityScore - b.priorityScore);
-
-      // Combine and take top 3
-      const combined = [...prioritizedTasks, ...prioritizedEvents]
-        .sort((a, b) => {
-          // Events happening soon get higher priority
-          if (a.type === 'event' && b.type === 'task') {
-            const eventTime = new Date(a.start_time || a.priorityScore);
-            const now = new Date();
-            // If event is within next 2 hours, prioritize it
-            if (eventTime.getTime() - now.getTime() < 2 * 60 * 60 * 1000) {
-              return -1;
-            }
-          }
-          return a.priorityScore - b.priorityScore;
-        })
-        .slice(0, 3);
-
-      setMyDayItems(combined);
+      setMyDayItems(
+        buildMyDayItems({
+          tasks: orgTasks,
+          events: orgEvents,
+          limit: 3,
+          maxOverdueDays: 7,
+        }),
+      );
       await setCached(user.id, cacheResource, {
         projects: orgProjects,
         tasks: orgTasks,
         kpis: nextKpis,
+      });
+
+      await publishHomeWidgetSnapshot({
+        tasks: orgTasks,
+        events: orgEvents,
+        projects: orgProjects,
+        kpis: {
+          ...nextKpis,
+          dueToday: countDueTodayTasks(orgTasks),
+          overdue: overdueCount ?? 0,
+        },
+        locale: i18n.language,
+        experienceMode: mode,
+        primaryColor,
+        sync: { isOnline, pendingCount: queueSize },
+        unreadNotifications: unreadNotificationCount,
       });
     } catch (error) {
       console.error('Error loading data:', error);
@@ -232,43 +240,13 @@ export default function HomeScreen() {
     }
   };
 
-  const getTaskPriorityScore = (task, today) => {
-    let score = 0;
-    
-    // Due today gets high priority
-    if (task.due_date) {
-      const dueDate = new Date(task.due_date);
-      dueDate.setHours(0, 0, 0, 0);
-      if (dueDate.getTime() === today.getTime()) {
-        score += 1000;
-      } else if (dueDate.getTime() < today.getTime()) {
-        score += 2000; // Overdue gets highest
-      }
-    }
-
-    // Priority adds to score
-    switch (task.priority?.toLowerCase()) {
-      case 'high':
-        score += 100;
-        break;
-      case 'medium':
-        score += 50;
-        break;
-      case 'low':
-        score += 10;
-        break;
-    }
-
-    return score;
-  };
-
   useEffect(() => {
     loadData();
   }, [user, activeOrganization, isProjectCollaborator, collaborationProjects, supabase]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await Promise.all([loadData(), flushQueue({ silent: true })]);
     setRefreshing(false);
   };
 
@@ -280,6 +258,20 @@ export default function HomeScreen() {
 
   const handleItemComplete = () => {
     loadData(); // Refresh data after completion
+  };
+
+  const showWeatherCard = () => {
+    haptics.light();
+    scrollRef.current?.scrollTo({
+      y: Math.max(0, weatherCardY.current - spacing.lg),
+      animated: true,
+    });
+  };
+
+  const openWeatherLog = () => {
+    haptics.light();
+    showWeatherCard();
+    setShowWeatherShift(true);
   };
 
   const openTaskPhotoSheet = (task) => {
@@ -344,6 +336,15 @@ export default function HomeScreen() {
     }
   };
 
+  const handleOpenCreateProject = () => {
+    openCreateProject({
+      onCreated: () => {
+        loadData();
+        setChecklistRefreshKey((k) => k + 1);
+      },
+    });
+  };
+
   const getUserName = () => {
     if (user?.user_metadata?.full_name) {
       return user.user_metadata.full_name.split(' ')[0]; // First name only
@@ -360,41 +361,64 @@ export default function HomeScreen() {
     const canAddPhoto = isTask && item.project_id && !item.completed;
     const photoBusy = photoUploadTaskId === item.id;
 
+    let dueLabel = null;
+    let dueOverdue = false;
+    if (isTask && item.due_date) {
+      const offset = daysFromDueToToday(item.due_date);
+      if (offset === 0) {
+        dueLabel = t('mobile.my_day_due_today');
+      } else if (offset != null && offset > 0) {
+        dueOverdue = true;
+        dueLabel = new Date(`${item.due_date}T12:00:00`).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+        });
+      } else {
+        dueLabel = new Date(`${item.due_date}T12:00:00`).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+        });
+      }
+    }
+
+    const eventTimeLabel = isEvent && item.start_time
+      ? new Date(item.start_time).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        })
+      : null;
+
     return (
       <PressableWithFade
         style={styles.myDayItem}
         onPress={() => handleItemPress(item)}
-        activeOpacity={0.7}
+        static
         hapticType="light"
       >
         <View style={styles.myDayItemContent}>
-          <View style={styles.myDayItemLeft}>
-            {isTask && (
-              <Ionicons name="checkbox-outline" size={24} color="#3B82F6" />
-            )}
-            {isEvent && (
-              <Ionicons name="calendar-outline" size={24} color="#10B981" />
-            )}
-            <View style={styles.myDayItemText}>
-              <Text style={styles.myDayItemTitle} numberOfLines={1}>
-                {item.text || item.title}
-              </Text>
-              {isTask && item.due_date && (
-                <Text style={styles.myDayItemSubtitle}>
-                  Due: {new Date(item.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </Text>
-              )}
-              {isEvent && item.start_time && (
-                <Text style={styles.myDayItemSubtitle}>
-                  {new Date(item.start_time).toLocaleTimeString('en-US', { 
-                    hour: 'numeric', 
-                    minute: '2-digit',
-                    hour12: true 
-                  })}
-                </Text>
-              )}
-            </View>
-          </View>
+          {isTask ? (
+            <Ionicons name="checkbox-outline" size={20} color="#3B82F6" style={styles.myDayIcon} />
+          ) : null}
+          {isEvent ? (
+            <Ionicons name="calendar-outline" size={20} color="#10B981" style={styles.myDayIcon} />
+          ) : null}
+          <Text style={styles.myDayItemTitle} numberOfLines={1}>
+            {item.text || item.title}
+          </Text>
+          {dueLabel ? (
+            <Text
+              style={[styles.myDayDueChip, dueOverdue && styles.myDayOverdue]}
+              numberOfLines={1}
+            >
+              {dueOverdue ? t('mobile.my_day_overdue', { date: dueLabel }) : dueLabel}
+            </Text>
+          ) : null}
+          {eventTimeLabel ? (
+            <Text style={styles.myDayDueChip} numberOfLines={1}>
+              {eventTimeLabel}
+            </Text>
+          ) : null}
           <View style={styles.myDayItemActions}>
             {canAddPhoto ? (
               <PressableWithFade
@@ -409,12 +433,12 @@ export default function HomeScreen() {
               >
                 <Ionicons
                   name="camera-outline"
-                  size={22}
+                  size={20}
                   color={photoBusy ? colors.textSubtle : primaryColor}
                 />
               </PressableWithFade>
             ) : null}
-            <Ionicons name="chevron-forward" size={20} color="#4B5563" />
+            <Ionicons name="chevron-forward" size={18} color="#4B5563" />
           </View>
         </View>
       </PressableWithFade>
@@ -426,8 +450,9 @@ export default function HomeScreen() {
   );
 
   return (
-    <View style={[styles.safeArea, { paddingTop: insets.top }]}>
+    <View style={[styles.safeArea, { paddingTop: contentTopInset(insets) }]}>
       <ScrollView
+        ref={scrollRef}
         style={styles.container}
         contentContainerStyle={{ paddingBottom: scrollBottomPadding(insets, spacing.xxl) }}
         refreshControl={<RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} />}
@@ -445,31 +470,26 @@ export default function HomeScreen() {
               <Text style={styles.greeting}>{t('mobile.hello', { name: getUserName() })}</Text>
             </View>
             <View style={styles.headerButtons}>
-              <PressableWithFade 
-                style={styles.notificationButton}
+              <PressableWithFade
+                style={styles.inboxButton}
                 onPress={() => {
                   haptics.light();
                   router.push('/(tabs)/notifications');
                 }}
-                activeOpacity={0.7}
                 hapticType="light"
+                testID="home-inbox-button"
+                accessibilityRole="button"
+                accessibilityLabel={t('mobile.tab_inbox')}
               >
-                <Ionicons name="notifications-outline" size={24} color="#111827" />
-                {unreadNotificationCount > 0 && (
-                  <View style={styles.notificationBadge}>
-                    <Text style={styles.notificationBadgeText}>
-                      {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
-                    </Text>
-                  </View>
-                )}
+                <Ionicons name="mail-outline" size={24} color="#111827" />
+                <NotificationBadge count={unreadNotificationCount} testID="home-inbox-badge" />
               </PressableWithFade>
-              <PressableWithFade 
+              <PressableWithFade
                 style={styles.profileButton}
                 onPress={() => {
                   haptics.light();
                   setShowProfileDrawer(true);
                 }}
-                activeOpacity={0.7}
                 hapticType="light"
               >
                 <Avatar
@@ -482,9 +502,43 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <WeatherCard onLogWeather={() => setShowWeatherShift(true)} />
+        <GettingStartedChecklist
+          firstProjectId={projects[0]?.id}
+          projectCount={projects.length}
+          taskCount={tasks.length}
+          canCreateProjects={canCreateProjects && isManagerView}
+          isManagerView={isManagerView}
+          onCreateProject={handleOpenCreateProject}
+          onInviteCrew={() => {
+            if (projects[0]?.id) {
+              router.push(`/(tabs)/projects/${projects[0].id}?openInvite=1`);
+            } else if (canCreateProjects) {
+              handleOpenCreateProject();
+            }
+          }}
+          onAddTask={() => {
+            if (projects[0]?.id) {
+              router.push(`/(tabs)/projects/${projects[0].id}`);
+            } else if (canCreateProjects) {
+              handleOpenCreateProject();
+            } else {
+              router.push('/(tabs)/projects');
+            }
+          }}
+          refreshKey={checklistRefreshKey}
+        />
 
-        {/* Section A: KPIs Carousel */}
+        <SyncStatusBanner />
+
+        <View
+          onLayout={(event) => {
+            weatherCardY.current = event.nativeEvent.layout.y;
+          }}
+        >
+          <WeatherCard onLogWeather={projects.length > 0 ? openWeatherLog : undefined} />
+        </View>
+
+        {isManagerView ? (
         <View style={styles.kpiSection}>
           <KPICarousel
             activeProjects={kpis.activeProjects}
@@ -493,11 +547,31 @@ export default function HomeScreen() {
             onOverduePress={openOverdueModal}
           />
         </View>
+        ) : null}
 
         {/* Section B: My Day — hidden when loaded and nothing to show */}
         {(loading || myDayItems.length > 0) && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('mobile.my_day_section')}</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>{t('mobile.my_day_section')}</Text>
+              {projects.length > 0 ? (
+                <PressableWithFade
+                  style={styles.siteDayBtn}
+                  onPress={() => {
+                    haptics.light();
+                    setShowSiteDay(true);
+                  }}
+                  testID="home-site-day"
+                >
+                  <Text style={styles.siteDayBtnText}>{t('mobile.site_day_title')}</Text>
+                </PressableWithFade>
+              ) : null}
+            </View>
+            {siteDayStreak > 1 ? (
+              <Text style={styles.streakText} testID="home-site-day-streak">
+                {t('mobile.site_day_streak', { count: siteDayStreak })}
+              </Text>
+            ) : null}
             {loading && myDayItems.length === 0 ? (
               <SkeletonList count={3} rowHeight={64} />
             ) : (
@@ -516,19 +590,17 @@ export default function HomeScreen() {
           <UiText variant="sectionTitle" style={styles.sectionTitle}>
             {t('mobile.recently_visited')}
           </UiText>
-          <Card style={styles.recentsCard}>
-            {loading && projects.length === 0 ? (
-              <View style={{ gap: spacing.md, padding: spacing.sm }}>
-                <SkeletonCard height={72} />
-                <SkeletonCard height={72} />
-              </View>
-            ) : projects.length > 0 ? (
-              projects.slice(0, 5).map((p, i) => (
+          {loading && projects.length === 0 ? (
+            <SkeletonList count={2} rowHeight={72} />
+          ) : projects.length > 0 ? (
+            <View style={styles.recentsList}>
+              {projects.slice(0, 5).map((p, i) => (
                 <PressableWithFade
                   key={p.id}
                   style={[styles.recentRow, i < Math.min(projects.length, 5) - 1 && styles.recentRowBorder]}
                   onPress={() => router.push(`/(tabs)/projects/${p.id}`)}
                   testID={`home-recent-${p.id}`}
+                  static
                 >
                   <View style={styles.recentIcon}>
                     <Ionicons name="folder-outline" size={22} color={colors.primary} />
@@ -543,40 +615,31 @@ export default function HomeScreen() {
                   </View>
                   <Ionicons name="chevron-forward" size={20} color={colors.textSubtle} />
                 </PressableWithFade>
-              ))
-            ) : (
-              <Text style={styles.emptyText}>{t('mobile.no_projects_assigned')}</Text>
-            )}
-            <PressableWithFade
-              style={styles.seeAll}
-              onPress={() => router.push('/(tabs)/projects')}
-              testID="home-see-all-projects"
-            >
-              <Text style={styles.seeAllText}>{t('mobile.see_all_projects')}</Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.primary} />
-            </PressableWithFade>
-          </Card>
+              ))}
+            </View>
+          ) : isManagerView && canCreateProjects ? (
+            <PanelEmptyState
+              icon="folder-open-outline"
+              title={t('mobile.no_projects_assigned')}
+              hint={t('mobile.projects_empty_hint')}
+              ctaLabel={t('mobile.create_project_title')}
+                onCta={handleOpenCreateProject}
+              testID="home-empty-create-project"
+            />
+          ) : (
+            <Text style={styles.emptyText}>{t('mobile.no_projects_assigned')}</Text>
+          )}
+          <PressableWithFade
+            style={styles.seeAll}
+            onPress={() => router.push('/(tabs)/projects')}
+            testID="home-see-all-projects"
+          >
+            <Text style={styles.seeAllText}>{t('mobile.see_all_projects')}</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+          </PressableWithFade>
         </View>
       </ScrollView>
 
-      {/* FAB */}
-      <PressableWithFade
-        style={[styles.fab, { bottom: TAB_BAR_CLEARANCE + spacing.md }]}
-        onPress={() => {
-          haptics.medium();
-          setShowQuickActions(true);
-        }}
-        activeOpacity={0.8}
-        hapticType="medium"
-      >
-        <Text style={styles.fabText}>+</Text>
-      </PressableWithFade>
-
-      {/* Modals */}
-      <QuickActionsModal
-        visible={showQuickActions}
-        onClose={() => setShowQuickActions(false)}
-      />
       <OverdueTasksModal
         visible={showOverdueModal}
         onClose={() => setShowOverdueModal(false)}
@@ -618,10 +681,23 @@ export default function HomeScreen() {
         visible={showWeatherShift}
         onClose={() => setShowWeatherShift(false)}
         supabase={supabase}
-        organizationId={activeOrganization?.id}
+        organizationId={activeOrganization?.id || projects[0]?.organization_id}
         userId={user?.id}
         projects={projects}
-        onSaved={loadData}
+        onSaved={() => {
+          setChecklistRefreshKey((value) => value + 1);
+          loadData();
+        }}
+      />
+      <SiteDaySheet
+        visible={showSiteDay}
+        onClose={() => setShowSiteDay(false)}
+        supabase={supabase}
+        userId={user?.id}
+        organizationId={activeOrganization?.id || projects[0]?.organization_id}
+        projects={projects}
+        tasks={tasks}
+        onPosted={loadData}
       />
     </View>
   );
@@ -636,18 +712,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  recentsCard: { padding: 0, overflow: 'hidden', marginTop: spacing.sm },
+  recentsList: {
+    marginTop: spacing.sm,
+  },
   recentRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.lg,
+    paddingVertical: spacing.md,
     gap: spacing.md,
-    minHeight: 56,
+    minHeight: touch.minRowHeight,
   },
   recentRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
   recentIcon: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: 10,
     backgroundColor: colors.primaryLight,
     alignItems: 'center',
@@ -655,15 +733,16 @@ const styles = StyleSheet.create({
   },
   recentText: { flex: 1 },
   recentTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
-  recentSub: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
+  recentSub: { fontSize: 14, color: colors.textMuted, marginTop: 2, fontVariant: 'tabular-nums' },
   seeAll: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.md,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xs,
     minHeight: touch.minSize,
+    marginTop: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
@@ -696,30 +775,13 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: 'center',
   },
-  notificationButton: {
+  inboxButton: {
     padding: 8,
     minWidth: 44,
     minHeight: 44,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
-  },
-  notificationBadge: {
-    position: 'absolute',
-    top: 2,
-    right: 0,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#DC2626',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-  },
-  notificationBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
   },
   profileButton: {
     padding: 4,
@@ -756,54 +818,84 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     marginTop: 8,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    gap: spacing.sm,
+  },
+  siteDayBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 20,
+    backgroundColor: colors.primaryLight,
+    minHeight: touch.minSize - 12,
+    justifyContent: 'center',
+  },
+  siteDayBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  streakText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.secondary,
+    marginBottom: spacing.sm,
+  },
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: '#4B5563',
-    marginBottom: 12,
+    marginBottom: 0,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    flex: 1,
   },
   myDayItem: {
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
-    minHeight: 44,
+    minHeight: touch.minRowHeight,
   },
   myDayItemContent: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.sm,
+    minWidth: 0,
   },
-  myDayItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 12,
-  },
-  myDayItemText: {
-    flex: 1,
+  myDayIcon: {
+    flexShrink: 0,
   },
   myDayItemActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
+    flexShrink: 0,
   },
   myDayPhotoBtn: {
-    minWidth: touch.minSize,
-    minHeight: touch.minSize,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
   myDayItemTitle: {
+    flex: 1,
+    minWidth: 0,
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 4,
   },
-  myDayItemSubtitle: {
-    fontSize: 14,
-    color: '#4B5563',
+  myDayDueChip: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    maxWidth: 96,
+    flexShrink: 0,
+  },
+  myDayOverdue: {
+    color: '#DC2626',
   },
   emptyText: {
     fontSize: 14,
@@ -811,24 +903,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 20,
   },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#3B82F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  fabText: {
-    color: '#fff',
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
 });
+
+
+
+
+
+
+
+
+
+
+

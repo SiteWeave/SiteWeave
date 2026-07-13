@@ -12,6 +12,7 @@ import {
     updateTaskPhoto,
     uploadTaskPhotoSet,
     normalizeAssigneePhone,
+    isSmsNotificationsEnabled,
     TASK_LIST_COLUMNS,
 } from '@siteweave/core-logic';
 import TaskItem from '../components/TaskItem';
@@ -33,7 +34,10 @@ import {
     formatPhaseDateRange,
 } from '../utils/projectPhasesUtils';
 import ProjectSidebar from '../components/ProjectSidebar';
+import ProjectSidebarPhases from '../components/phases/ProjectSidebarPhases';
 import ProjectModal from '../components/ProjectModal';
+import ProjectSmartNotificationsCard from '../components/ProjectSmartNotificationsCard';
+import ProjectSmartNotificationsModal from '../components/ProjectSmartNotificationsModal';
 import ShareModal from '../components/ShareModal';
 import SaveAsTemplateModal from '../components/SaveAsTemplateModal';
 import MsProjectImportModal from '../components/MsProjectImportModal';
@@ -77,6 +81,7 @@ import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
 import Icon from '../components/Icon';
 import { formatLocalDateOnly } from '../utils/dateHelpers';
 import { SkeletonList } from '../components/ui/Skeleton';
+import SmsConsentLinkPrompt from '../components/SmsConsentLinkPrompt';
 
 function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const { t, i18n } = useTranslation();
@@ -112,8 +117,11 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [showTaskModal, setShowTaskModal] = useState(false);
     const [isCreatingTask, setIsCreatingTask] = useState(false);
     const [pingingTaskId, setPingingTaskId] = useState(null);
+    const [smsConsentLinkTarget, setSmsConsentLinkTarget] = useState(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [taskToDelete, setTaskToDelete] = useState(null);
+    const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+    const [bulkDeleteTaskIds, setBulkDeleteTaskIds] = useState([]);
     const [showPhaseDeleteConfirm, setShowPhaseDeleteConfirm] = useState(false);
     const [phaseToDelete, setPhaseToDelete] = useState(null);
     const [selectedTasks, setSelectedTasks] = useState([]);
@@ -212,6 +220,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
     const [showProjectModal, setShowProjectModal] = useState(false);
+    const [showSmartNotificationsModal, setShowSmartNotificationsModal] = useState(false);
+    const [smartNotifActivateOnOpen, setSmartNotifActivateOnOpen] = useState(false);
     const [isSavingProject, setIsSavingProject] = useState(false);
     const [fieldIssuesCount, setFieldIssuesCount] = useState(0);
     const [photoActionTaskIds, setPhotoActionTaskIds] = useState({});
@@ -523,7 +533,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         }
         return base.map((t) => {
             const n = normalizeAssigneePhone(String(t.contacts?.phone || '').trim(), { defaultRegion: 'US' });
-            const assignee_sms_consent = n.isValid && n.e164 ? cmap.get(n.e164) || 'none' : null;
+            const assignee_sms_consent =
+                n.isValid && n.e164 ? cmap.get(n.e164) || 'none' : null;
             return { ...t, assignee_sms_consent };
         });
     };
@@ -938,6 +949,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     }, [phaseToDelete, deletePhase]);
 
     const handleRequestAssigneeSmsConsent = async (task, { forceResend = false } = {}) => {
+        if (!isSmsNotificationsEnabled()) return;
         const fallbackContact = task.assignee_id
             ? contacts.find((contact) => contact.id === task.assignee_id)
             : null;
@@ -989,11 +1001,31 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         }
     };
 
+    const handleShareSmsConsentLink = (task) => {
+        const fallbackContact = task.assignee_id
+            ? contacts.find((contact) => contact.id === task.assignee_id)
+            : null;
+        const rawPhone = String(task.contacts?.phone || fallbackContact?.phone || '').trim();
+        const normalizedPhone = normalizeAssigneePhone(rawPhone, { defaultRegion: 'US' });
+        if (!normalizedPhone.isValid || !project?.organization_id) {
+            addToast(t('sms.no_valid_phone'), 'warning');
+            return;
+        }
+        setSmsConsentLinkTarget({
+            taskId: task.id,
+            phone: rawPhone,
+            contactId: task.assignee_id || fallbackContact?.id || null,
+            organizationId: project.organization_id,
+            smsConsentStatus: task.assignee_sms_consent || 'none',
+        });
+    };
+
     const handlePingAssignee = async (task) => {
         if (!canPing) {
             setUpgradeFeature('pings');
             return;
         }
+        const smsEnabled = isSmsNotificationsEnabled();
         const fallbackContact = task.assignee_id
             ? contacts.find((contact) => contact.id === task.assignee_id)
             : null;
@@ -1001,16 +1033,21 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         const rawPhone = String(task.contacts?.phone || fallbackContact?.phone || '').trim();
         const normalizedPhone = normalizeAssigneePhone(rawPhone, { defaultRegion: 'US' });
         const phone = normalizedPhone.isValid ? normalizedPhone.e164 : null;
-        if ((!email || !email.includes('@')) && !phone) {
+        if (!smsEnabled) {
+            if (!email || !email.includes('@')) {
+                addToast(t('sms.no_contact'), 'warning');
+                return;
+            }
+        } else if ((!email || !email.includes('@')) && !phone) {
             addToast(t('sms.no_contact'), 'warning');
             return;
         }
 
         const deliveryChannels = [];
         if (email && email.includes('@')) deliveryChannels.push('email');
-        if (phone && task.assignee_sms_consent === 'confirmed') deliveryChannels.push('sms');
+        if (smsEnabled && phone && task.assignee_sms_consent === 'confirmed') deliveryChannels.push('sms');
         if (deliveryChannels.length === 0) {
-            if (phone && !(email && email.includes('@'))) {
+            if (smsEnabled && phone && !(email && email.includes('@'))) {
                 addToast(t('sms.requires_consent'), 'warning');
             } else {
                 addToast(t('sms.no_contact'), 'warning');
@@ -1019,7 +1056,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         }
 
         const emailAsked = deliveryChannels.includes('email');
-        const smsAsked = deliveryChannels.includes('sms');
+        const smsAsked = smsEnabled && deliveryChannels.includes('sms');
 
         const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
         for (const ch of deliveryChannels) {
@@ -1095,7 +1132,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         channel: 'email',
                     });
                 }
-                if (channels.sms && phone) {
+                if (smsEnabled && channels.sms && phone) {
                     await logTaskAssigneeEmailSent({
                         task,
                         user: state.user,
@@ -1121,7 +1158,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             }
             if (res.success) {
                 const ch = channels;
-                if (ch.email && ch.sms) {
+                if (smsEnabled && ch.email && ch.sms) {
                     const sid = manualReminderResult?.sms?.sid;
                     addToast(
                         sid
@@ -1129,7 +1166,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             : t('toast.reminder_sent_email_sms'),
                         'success',
                     );
-                } else if (ch.sms && !ch.email) {
+                } else if (smsEnabled && ch.sms && !ch.email) {
                     const sid = manualReminderResult?.sms?.sid;
                     addToast(
                         sid
@@ -1142,7 +1179,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 } else {
                     addToast(t('toast.reminder_not_delivered'), 'warning');
                 }
-                if (smsAsked && phone && !ch.sms) {
+                if (smsEnabled && smsAsked && phone && !ch.sms) {
                     addToast(
                         t('toast.sms_not_sent', {
                             reason: res.error || t('toast.sms_not_sent_default_reason'),
@@ -1150,9 +1187,9 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         'warning',
                     );
                 }
-                if (!phone && rawPhone) {
+                if (smsEnabled && !phone && rawPhone) {
                     addToast(t('toast.sms_skipped_invalid_phone'), 'warning');
-                } else if (!phone && !rawPhone && emailAsked && ch.email) {
+                } else if (smsEnabled && !phone && !rawPhone && emailAsked && ch.email) {
                     addToast(t('toast.sms_skipped_no_phone'), 'info');
                 }
             } else {
@@ -2089,6 +2126,20 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         }
     };
 
+    const requestBulkDelete = (taskIds) => {
+        setBulkDeleteTaskIds(taskIds);
+        setShowBulkDeleteConfirm(true);
+    };
+
+    const confirmBulkDelete = async () => {
+        const ids = bulkDeleteTaskIds;
+        setShowBulkDeleteConfirm(false);
+        setBulkDeleteTaskIds([]);
+        if (ids?.length) {
+            await handleBulkDelete(ids);
+        }
+    };
+
     const handleBulkDelete = async (taskIds) => {
         try {
             const targetTasks = taskIds
@@ -2428,6 +2479,17 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 />
             )}
 
+            {showSmartNotificationsModal && (
+                <ProjectSmartNotificationsModal
+                    project={project}
+                    activateOnOpen={smartNotifActivateOnOpen}
+                    onClose={() => {
+                        setShowSmartNotificationsModal(false);
+                        setSmartNotifActivateOnOpen(false);
+                    }}
+                />
+            )}
+
             {showProjectModal && (
                 <ProjectModal
                     onClose={() => setShowProjectModal(false)}
@@ -2469,12 +2531,14 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 {/* Main content — full width on Gantt and Tasks (sidebar hidden) */}
                 <div
                     className={
-                        activeTab === 'gantt' || activeTab === 'tasks' || activeTab === 'updates' ? 'lg:col-span-5' : 'lg:col-span-3'
+                        activeTab === 'gantt' || activeTab === 'tasks' || activeTab === 'updates' || activeTab === 'activity'
+                            ? 'lg:col-span-5'
+                            : 'lg:col-span-3'
                     }
                 >
                     {/* Tab Navigation */}
-                    <div className="border-b border-gray-200 mb-6">
-                        <nav className="-mb-px flex flex-wrap gap-x-5 gap-y-2">
+                    <div className="mb-6 flex flex-col gap-3 border-b border-gray-200 sm:flex-row sm:items-end sm:justify-between">
+                        <nav className="-mb-px flex min-w-0 flex-1 flex-wrap gap-x-5 gap-y-2">
                             <button type="button"
                                 onClick={() => selectTab('tasks')}
                                 className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
@@ -2528,6 +2592,20 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             </button>
                             )}
                         </nav>
+                        <ProjectSmartNotificationsCard
+                            variant="inline"
+                            project={project}
+                            organization={state.currentOrganization}
+                            canEdit={canEditProjects}
+                            onConfigure={
+                                canEditProjects
+                                    ? ({ activate } = {}) => {
+                                          setSmartNotifActivateOnOpen(Boolean(activate));
+                                          setShowSmartNotificationsModal(true);
+                                      }
+                                    : undefined
+                            }
+                        />
                     </div>
 
                     {/* Tab Content */}
@@ -2717,7 +2795,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                 <TaskBulkActions
                                     selectedTasks={selectedTasks}
                                     onBulkComplete={handleBulkComplete}
-                                    onBulkDelete={handleBulkDelete}
+                                    onBulkDelete={requestBulkDelete}
                                     onClearSelection={() => setSelectedTasks([])}
                                 />
                                 {phasesLoading && allTasks.length === 0 ? (
@@ -2828,7 +2906,12 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                                     onOpenDependencyDrawer={setDependencyDrawerTaskId}
                                                                                     onPingAssignee={handlePingAssignee}
                                                                                     pingLocked={!canPing}
-                                                                                    onRequestAssigneeSmsConsent={handleRequestAssigneeSmsConsent}
+                                                                                    onRequestAssigneeSmsConsent={
+                                                                                        isSmsNotificationsEnabled()
+                                                                                            ? handleRequestAssigneeSmsConsent
+                                                                                            : undefined
+                                                                                    }
+                                                                                    onShareSmsConsentLink={handleShareSmsConsentLink}
                                                                                     pingingTaskId={pingingTaskId}
                                                                                     project={project}
                                                                                 />
@@ -2887,7 +2970,12 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                             onOpenDependencyDrawer={setDependencyDrawerTaskId}
                                                                             onPingAssignee={handlePingAssignee}
                                                                             pingLocked={!canPing}
-                                                                            onRequestAssigneeSmsConsent={handleRequestAssigneeSmsConsent}
+                                                                            onRequestAssigneeSmsConsent={
+                                                                                isSmsNotificationsEnabled()
+                                                                                    ? handleRequestAssigneeSmsConsent
+                                                                                    : undefined
+                                                                            }
+                                                                            onShareSmsConsentLink={handleShareSmsConsentLink}
                                                                             pingingTaskId={pingingTaskId}
                                                                             project={project}
                                                                         />
@@ -2930,11 +3018,23 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         )}
 
                         {canViewActivityHistory && activeTab === 'activity' && (
-                            <ActivityHistoryPanel
-                                mode="project"
-                                organizationId={project.organization_id || state.currentOrganization?.id}
-                                projectId={project.id}
-                            />
+                            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-5">
+                                <div className="lg:col-span-3">
+                                    <ActivityHistoryPanel
+                                        mode="project"
+                                        organizationId={project.organization_id || state.currentOrganization?.id}
+                                        projectId={project.id}
+                                    />
+                                </div>
+                                <div className="lg:col-span-2">
+                                    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-xs">
+                                        <h3 className="mb-3 font-bold">
+                                            {t('projectDetail.phases_heading', { defaultValue: 'Phases' })}
+                                        </h3>
+                                        <ProjectSidebarPhases phases={projectPhases} locale={i18n.language} />
+                                    </div>
+                                </div>
+                            </div>
                         )}
 
                     </div>
@@ -2943,7 +3043,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 {/* Sidebar hidden on Gantt, Tasks, and Stream tabs */}
                 <div
                     className={
-                        activeTab === 'gantt' || activeTab === 'tasks' || activeTab === 'updates'
+                        activeTab === 'gantt' || activeTab === 'tasks' || activeTab === 'updates' || activeTab === 'activity'
                             ? 'hidden'
                             : 'lg:col-span-2'
                     }
@@ -3213,6 +3313,18 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             )}
 
             <ConfirmDialog
+                isOpen={showBulkDeleteConfirm}
+                onClose={() => {
+                    setShowBulkDeleteConfirm(false);
+                    setBulkDeleteTaskIds([]);
+                }}
+                onConfirm={confirmBulkDelete}
+                title={t('tasks.bulk_delete_confirm_title')}
+                message={t('tasks.bulk_delete_confirm_message', { count: bulkDeleteTaskIds.length })}
+                confirmText={t('tasks.delete_all')}
+                cancelText={t('common.cancel')}
+            />
+            <ConfirmDialog
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
                 onConfirm={confirmDeleteTask}
@@ -3230,6 +3342,23 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 onConfirm={confirmDeletePhase}
                 title={t('projectDetail.delete_phase')}
                 message={t('projectDetail.delete_phase_confirm', { name: phaseToDelete?.name ?? '' })}
+            />
+            <SmsConsentLinkPrompt
+                open={Boolean(smsConsentLinkTarget)}
+                onClose={() => setSmsConsentLinkTarget(null)}
+                supabaseClient={supabaseClient}
+                organizationId={smsConsentLinkTarget?.organizationId}
+                phone={smsConsentLinkTarget?.phone}
+                contactId={smsConsentLinkTarget?.contactId}
+                smsConsentStatus={smsConsentLinkTarget?.smsConsentStatus}
+                onConsentStatusChange={(status) => {
+                    if (!smsConsentLinkTarget?.taskId) return;
+                    const taskId = smsConsentLinkTarget.taskId;
+                    const existing = allTasks.find((row) => row.id === taskId);
+                    if (existing) {
+                        replaceTaskRow(taskId, { ...existing, assignee_sms_consent: status });
+                    }
+                }}
             />
         </div>
     );

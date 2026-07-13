@@ -10,13 +10,18 @@ import ProjectInviteAcceptPage from './components/ProjectInviteAcceptPage'
 import SignUpView from './views/SignUpView'
 import LoginView from './views/LoginView'
 import GuestTaskShareView from './views/GuestTaskShareView'
+import GuestCloseoutReviewView from './views/GuestCloseoutReviewView'
+import SmsConsentView from './views/SmsConsentView'
 import SetupWizardModal from './components/SetupWizardModal'
+import DesktopOnboardingHost from './components/DesktopOnboardingHost'
 import DirectoryManagementModal from './components/DirectoryManagementModal'
+import { seedStarterTemplatesIfNeeded } from '@siteweave/onboarding-ui'
 import PermissionGuard from './components/PermissionGuard'
 import ForcePasswordReset from './components/ForcePasswordReset'
 import UpdateNotification from './components/UpdateNotification'
-import { LazyViewWrapper, DashboardView, ProjectDetailsView, CalendarView, TeamHubView, TeamView, SettingsView } from './components/LazyViews'
+import { LazyViewWrapper, DashboardView, ProjectDetailsView, ProjectTrashView, CalendarView, TeamHubView, TeamView, SettingsView } from './components/LazyViews'
 import NoOrganizationView from './views/NoOrganizationView'
+import { ROUTE_PATHS } from './config/routes'
 
 let oauthCallbackProcessing = false
 let oauthCallbackProcessed = false
@@ -28,6 +33,8 @@ function App() {
   const [showSetupWizard, setShowSetupWizard] = React.useState(false)
   const [showTeamModal, setShowTeamModal] = React.useState(false)
   const [showPasswordReset, setShowPasswordReset] = React.useState(false)
+  const [pendingTourStart, setPendingTourStart] = React.useState(false)
+  const [tourReplaySignal, setTourReplaySignal] = React.useState(0)
 
   // Handle OAuth callback - check for auth code in URL or hash fragments
   React.useEffect(() => {
@@ -137,26 +144,37 @@ function App() {
     }
   }, [state.user, state.mustChangePassword])
 
-  // Setup wizard: founding Org Admin only, until organizations.setup_wizard_completed_at is set (server-side)
+  // Setup wizard: founding Org Admin until organizations.setup_wizard_completed_at is set
   React.useEffect(() => {
     if (!state.user || !state.currentOrganization || state.mustChangePassword || !state.userRole) {
       setShowSetupWizard(false)
       return
     }
 
-    const isPersonal = state.currentOrganization.workspace_type === 'personal'
     const isOrgAdmin = state.userRole?.name === 'Org Admin'
     const isFoundingAdmin =
       state.currentOrganization.created_by_user_id != null &&
       state.currentOrganization.created_by_user_id === state.user.id
     const wizardPending = !state.currentOrganization.setup_wizard_completed_at
 
-    if (!isPersonal && isOrgAdmin && isFoundingAdmin && wizardPending) {
+    if (isOrgAdmin && isFoundingAdmin && wizardPending) {
       setShowSetupWizard(true)
     } else {
       setShowSetupWizard(false)
     }
   }, [state.user, state.userRole, state.currentOrganization, state.mustChangePassword])
+
+  React.useEffect(() => {
+    if (!state.user?.id || !state.currentOrganization?.id || showSetupWizard) return
+    seedStarterTemplatesIfNeeded(supabaseClient, state.currentOrganization.id, state.user.id).catch(() => {})
+  }, [state.user?.id, state.currentOrganization?.id, showSetupWizard])
+
+  React.useEffect(() => {
+    if (!window.electronAPI?.onReplayTour) return undefined
+    const handleReplay = () => setTourReplaySignal((n) => n + 1)
+    window.electronAPI.onReplayTour(handleReplay)
+    return undefined
+  }, [])
 
   // Handle invite route
   React.useEffect(() => {
@@ -178,6 +196,13 @@ function App() {
     }
   }, [projectIdFromUrl, state.projects, dispatch])
 
+  React.useEffect(() => {
+    if (location.pathname === ROUTE_PATHS.projectsTrash) {
+      dispatch({ type: 'SET_PROJECT', payload: null })
+      dispatch({ type: 'SET_VIEW', payload: 'Projects' })
+    }
+  }, [location.pathname, dispatch])
+
   // Show loading while auth is being checked
   if (state.authLoading) {
     return (
@@ -188,8 +213,14 @@ function App() {
   }
 
   // Public routes — available signed in or out (invite links, guest task shares)
+  if (location.pathname.startsWith('/guest/punch-list/')) {
+    return <GuestCloseoutReviewView />
+  }
   if (location.pathname.startsWith('/guest/tasks/')) {
     return <GuestTaskShareView />
+  }
+  if (location.pathname.startsWith('/sms-consent/')) {
+    return <SmsConsentView />
   }
   if (location.pathname.startsWith('/project-invite/')) {
     return <ProjectInviteAcceptPage />
@@ -204,7 +235,9 @@ function App() {
       <Routes>
         <Route path="/invite/:token" element={<InviteAcceptPage />} />
         <Route path="/project-invite/:token" element={<ProjectInviteAcceptPage />} />
+        <Route path="/guest/punch-list/:token" element={<GuestCloseoutReviewView />} />
         <Route path="/guest/tasks/:token" element={<GuestTaskShareView />} />
+        <Route path="/sms-consent/:token" element={<SmsConsentView />} />
         <Route path="/signup" element={<SignUpView />} />
         <Route path="/login" element={<LoginView />} />
         <Route path="*" element={<LoginView />} />
@@ -220,6 +253,14 @@ function App() {
 
   // Render main app with Sidebar
   const renderView = () => {
+    if (location.pathname === ROUTE_PATHS.projectsTrash) {
+      return (
+        <LazyViewWrapper>
+          <ProjectTrashView />
+        </LazyViewWrapper>
+      )
+    }
+
     // If a project is selected AND we're on Projects view, show project details
     if (state.selectedProjectId && state.activeView === 'Projects') {
       return (
@@ -278,7 +319,7 @@ function App() {
     }
   }
 
-  const handleSetupComplete = async () => {
+  const handleSetupComplete = async ({ startTour = false } = {}) => {
     if (state.currentOrganization?.id) {
       const { data: org } = await supabaseClient
         .from('organizations')
@@ -290,6 +331,9 @@ function App() {
       }
     }
     setShowSetupWizard(false)
+    if (startTour) {
+      setPendingTourStart(true)
+    }
   }
 
   const handlePasswordResetComplete = () => {
@@ -333,6 +377,8 @@ function App() {
           />
         </ErrorBoundary>
       )}
+
+      <DesktopOnboardingHost pendingTourStart={pendingTourStart} replaySignal={tourReplaySignal} />
 
       {/* Directory Management Modal */}
       <ErrorBoundary>

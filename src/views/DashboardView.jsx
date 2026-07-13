@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAppContext, supabaseClient, useLazyDataLoader } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
@@ -17,6 +17,8 @@ import ProjectListView from '../components/ProjectListView';
 import PermissionGuard from '../components/PermissionGuard';
 import ProjectLimitReachedModal from '../components/ProjectLimitReachedModal';
 import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
+import { trashProject, restoreProject } from '@siteweave/core-logic';
+import { ROUTE_PATHS } from '../config/routes';
 import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import { useProjectShortcuts } from '../hooks/useKeyboardShortcuts';
 import { calculateProjectsProgressMap } from '../utils/projectHelpers';
@@ -24,11 +26,23 @@ import {
   canCreateProject,
   isPersonalWorkspace,
   isProjectLimitError,
+  getOrganizationBranding,
 } from '@siteweave/core-logic';
 import {
   ensureOrganizationForWrites,
   isOrganizationRlsError,
 } from '../utils/organizationContext';
+import {
+  ActivationChecklist,
+  getChecklistDismissed,
+  setChecklistDismissed,
+  isActivationComplete,
+  useOfficeActivationState,
+  useBrandingPrimaryColor,
+} from '@siteweave/onboarding-ui';
+
+const loadBrandingColor = (organizationId) =>
+  getOrganizationBranding(supabaseClient, organizationId).then((b) => b?.primary_color);
 
 function DashboardView() {
     const { t } = useTranslation();
@@ -40,8 +54,8 @@ function DashboardView() {
     const [isCreatingProject, setIsCreatingProject] = useState(false);
     const [isUpdatingProject, setIsUpdatingProject] = useState(false);
     const [editingProject, setEditingProject] = useState(null);
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-    const [projectToDelete, setProjectToDelete] = useState(null);
+    const [projectToTrash, setProjectToTrash] = useState(null);
+    const [trashingProjectId, setTrashingProjectId] = useState(null);
     const [viewType, setViewType] = useState('card'); // 'card', 'list', or 'board'
     const [cardProgressMap, setCardProgressMap] = useState({});
     const [cardProgressLoading, setCardProgressLoading] = useState(false);
@@ -92,9 +106,32 @@ function DashboardView() {
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
     const [showProjectLimitModal, setShowProjectLimitModal] = useState(false);
     const [showCommsUpgrade, setShowCommsUpgrade] = useState(false);
+    const [checklistDismissed, setChecklistDismissedState] = useState(() =>
+        state.user?.id ? getChecklistDismissed(state.user.id) : false,
+    );
     const { canProgressReports } = useWorkspaceTier();
 
     const isGuestOnly = state.isProjectCollaborator && !state.currentOrganization;
+
+    const activationCompleted = useOfficeActivationState(
+        supabaseClient,
+        state.currentOrganization?.id,
+        state.projects,
+        state.user?.id,
+    );
+
+    const primaryColor = useBrandingPrimaryColor(loadBrandingColor, state.currentOrganization?.id);
+
+    const showActivationChecklist =
+        !isGuestOnly &&
+        state.currentOrganization &&
+        !checklistDismissed &&
+        !isActivationComplete(activationCompleted);
+
+    const handleChecklistDismiss = () => {
+        if (state.user?.id) setChecklistDismissed(state.user.id, true);
+        setChecklistDismissedState(true);
+    };
 
     const guardCanCreateProject = async () => {
         if (isGuestOnly) return false;
@@ -120,6 +157,38 @@ function DashboardView() {
     const tryOpenTemplateModal = async () => {
         if (!(await guardCanCreateProject())) return;
         setShowCreateFromTemplateModal(true);
+    };
+
+    const handleChecklistAction = async (itemId) => {
+        if (itemId === 'project') {
+            if (state.projects?.length === 0) {
+                await tryOpenTemplateModal();
+            } else {
+                await tryOpenCreateProject();
+            }
+            return;
+        }
+        if (itemId === 'schedule') {
+            const projectId = state.projects?.[0]?.id;
+            if (!projectId) {
+                await tryOpenCreateProject();
+                return;
+            }
+            dispatch({ type: 'SET_PROJECT', payload: projectId });
+            dispatch({ type: 'SET_VIEW', payload: 'Projects' });
+            return;
+        }
+        if (itemId === 'team') {
+            dispatch({ type: 'SET_VIEW', payload: 'Organization' });
+            return;
+        }
+        if (itemId === 'report') {
+            if (!canProgressReports) {
+                setShowCommsUpgrade(true);
+                return;
+            }
+            setShowProgressReportModal(true);
+        }
     };
 
     const tryOpenMsImportModal = async () => {
@@ -448,23 +517,59 @@ function DashboardView() {
         setShowModal(true);
     };
 
-    const handleDeleteProject = (project) => {
-        setProjectToDelete(project);
-        setShowDeleteConfirm(true);
+    const handleMoveProjectToTrash = (project) => {
+        if (!navigator.onLine) {
+            addToast(t('projectTrash.offline_unavailable'), 'warning');
+            return;
+        }
+        setProjectToTrash(project);
     };
 
-    const confirmDeleteProject = async () => {
-        if (projectToDelete) {
-            const { error } = await supabaseClient.from('projects').delete().eq('id', projectToDelete.id);
-            if (error) {
-                addToast('Error deleting project: ' + error.message, 'error');
-            } else {
-                dispatch({ type: 'DELETE_PROJECT', payload: projectToDelete.id });
-                addToast('Project deleted successfully!', 'success');
-            }
+    const confirmMoveProjectToTrash = async () => {
+        if (!projectToTrash) {
+            setProjectToTrash(null);
+            return;
         }
-        setShowDeleteConfirm(false);
-        setProjectToDelete(null);
+
+        const project = projectToTrash;
+        if (!navigator.onLine) {
+            addToast(t('projectTrash.offline_unavailable'), 'warning');
+            setProjectToTrash(null);
+            return;
+        }
+        setTrashingProjectId(project.id);
+        try {
+            const trashed = await trashProject(supabaseClient, project.id);
+            dispatch({ type: 'DELETE_PROJECT', payload: project.id });
+            if (state.selectedProjectId === project.id) {
+                dispatch({ type: 'SET_PROJECT', payload: null });
+            }
+            addToast(
+                t('projectTrash.moved_to_trash', { name: project.name }),
+                'success',
+                8000,
+                {
+                    placement: 'bottom-center',
+                    action: {
+                        label: t('projectTrash.undo'),
+                        onClick: async () => {
+                            try {
+                                const restored = await restoreProject(supabaseClient, project.id);
+                                dispatch({ type: 'ADD_PROJECT', payload: restored || trashed });
+                                addToast(t('projectTrash.restored', { name: project.name }), 'success');
+                            } catch (undoError) {
+                                addToast(t('projectTrash.restore_error', { message: undoError.message }), 'error');
+                            }
+                        },
+                    },
+                },
+            );
+        } catch (error) {
+            addToast(t('projectTrash.trash_error', { message: error.message }), 'error');
+        } finally {
+            setTrashingProjectId(null);
+            setProjectToTrash(null);
+        }
     };
 
     const handleCloseModal = () => {
@@ -505,6 +610,7 @@ function DashboardView() {
                                     <button type="button"
                                         onClick={() => tryOpenTemplateModal()}
                                         title={t('dashboard.create_from_template_title')}
+                                        data-onboarding="template-btn"
                                         className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-secondary"
                                     >
                                         {t('dashboard.template')}
@@ -529,6 +635,7 @@ function DashboardView() {
                                             setShowProgressReportModal(true);
                                         }}
                                         title={t('dashboard.org_reports_title')}
+                                        data-onboarding="progress-reports"
                                         className="relative whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-emerald-600 text-white hover:bg-emerald-700"
                                     >
                                         {!canProgressReports && (
@@ -542,6 +649,17 @@ function DashboardView() {
                             </div>
                         </div>
                     </header>
+
+                    {showActivationChecklist ? (
+                        <div className="mb-6">
+                            <ActivationChecklist
+                                completed={activationCompleted}
+                                primaryColor={primaryColor}
+                                onDismiss={handleChecklistDismiss}
+                                onItemAction={handleChecklistAction}
+                            />
+                        </div>
+                    ) : null}
                     
                     {/* Dashboard Statistics */}
                     <DashboardStats />
@@ -556,7 +674,7 @@ function DashboardView() {
                                             <ProjectCard 
                                                 project={p} 
                                                 onEdit={handleEditProject}
-                                                onDelete={handleDeleteProject}
+                                                onDelete={handleMoveProjectToTrash}
                                                 progressData={{
                                                     loading: cardProgressLoading,
                                                     progress: cardProgressMap[p.id]?.progress ?? 0,
@@ -572,7 +690,7 @@ function DashboardView() {
                                 <ProjectListView
                                     projects={state.projects}
                                     onEdit={handleEditProject}
-                                    onDelete={handleDeleteProject}
+                                    onDelete={handleMoveProjectToTrash}
                                     onProjectClick={handleProjectClick}
                                 />
                             )}
@@ -580,7 +698,7 @@ function DashboardView() {
                                 <ProjectBoardView
                                     projects={state.projects}
                                     onEdit={handleEditProject}
-                                    onDelete={handleDeleteProject}
+                                    onDelete={handleMoveProjectToTrash}
                                     onProjectClick={handleProjectClick}
                                 />
                             )}
@@ -611,6 +729,30 @@ function DashboardView() {
                             )}
                         </div>
                     )}
+                    <PermissionGuard permission="can_delete_projects">
+                        <div className="mt-8">
+                            <Link
+                                to={ROUTE_PATHS.projectsTrash}
+                                className="app-card group flex items-center justify-between gap-4 p-4 sm:p-5 hover:bg-slate-50 transition-colors"
+                                title={t('projectTrash.title')}
+                            >
+                                <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 group-hover:bg-slate-200 transition-colors">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                    </div>
+                                    <div className="min-w-0 text-left">
+                                        <p className="text-sm font-semibold text-gray-900">{t('projectTrash.footer_link')}</p>
+                                        <p className="text-xs text-gray-500 mt-0.5">{t('projectTrash.footer_hint')}</p>
+                                    </div>
+                                </div>
+                                <svg className="w-5 h-5 shrink-0 text-gray-400 group-hover:text-gray-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                            </Link>
+                        </div>
+                    </PermissionGuard>
                 </div>
                 <aside 
                     data-onboarding="my-day-sidebar"
@@ -650,13 +792,13 @@ function DashboardView() {
                 feature="progress_reports"
             />
             <ConfirmDialog
-                isOpen={showDeleteConfirm}
-                onClose={() => setShowDeleteConfirm(false)}
-                onConfirm={confirmDeleteProject}
-                title="Delete Project"
-                message={`Are you sure you want to delete "${projectToDelete?.name}"? This will also delete all associated tasks, files, stream posts, and task comments. This action cannot be undone.`}
-                confirmText="Delete"
-                cancelText="Cancel"
+                isOpen={Boolean(projectToTrash)}
+                onClose={() => setProjectToTrash(null)}
+                onConfirm={confirmMoveProjectToTrash}
+                title={t('projectTrash.move_to_trash_title')}
+                message={t('projectTrash.move_to_trash_message', { name: projectToTrash?.name })}
+                confirmText={trashingProjectId ? t('common.loading') : t('projectTrash.move_to_trash_confirm')}
+                cancelText={t('common.cancel')}
             />
         </>
     );

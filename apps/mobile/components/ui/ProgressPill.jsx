@@ -4,7 +4,7 @@ import PressableWithFade from '../PressableWithFade';
 import { colors, touch } from '../../theme';
 import { useBranding } from '../../context/BrandingContext';
 
-export default function ProgressPill({ percent = 0, onPress, testID }) {
+export default function ProgressPill({ percent = 0, onPress, testID, compact = false }) {
   const { primaryColor } = useBranding();
   const bounded = Math.max(0, Math.min(100, Number(percent) || 0));
   const done = bounded >= 100;
@@ -56,6 +56,7 @@ export default function ProgressPill({ percent = 0, onPress, testID }) {
       <Animated.View
         style={[
           styles.pill,
+          compact && styles.pillCompact,
           { backgroundColor, borderColor },
         ]}
       >
@@ -73,7 +74,7 @@ export default function ProgressPill({ percent = 0, onPress, testID }) {
             },
           ]}
         />
-        <Animated.Text style={[styles.text, { color: textColor }]}>
+        <Animated.Text style={[styles.text, compact && styles.textCompact, { color: textColor }]}>
           {bounded}%
         </Animated.Text>
       </Animated.View>
@@ -101,5 +102,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: 9,
   },
-  text: { fontSize: 15, fontWeight: '700' },
+  text: { fontSize: 15, fontWeight: '700', fontVariant: 'tabular-nums' },
+  pillCompact: {
+    minWidth: 44,
+    minHeight: 32,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  textCompact: { fontSize: 13 },
 });

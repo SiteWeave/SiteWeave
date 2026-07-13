@@ -5,6 +5,7 @@ import {
     fetchCompletedTasksList,
     fetchOverdueTasksCount,
     fetchOverdueTasksList,
+    groupTasksByProject,
     loadWithFallback,
 } from '@siteweave/core-logic';
 import { useAppContext, supabaseClient } from '../context/AppContext';
@@ -44,26 +45,13 @@ function getTaskAssigneeLabel(task, contactById, t) {
     return t('common.unassigned');
 }
 
-function groupTasksByProject(tasks, projects, t) {
-    const projectById = new Map((projects || []).map((project) => [String(project.id), project]));
-    const grouped = new Map();
-    (tasks || []).forEach((task) => {
-        const key = String(task.project_id || 'unassigned');
-        const project = projectById.get(key);
-        if (!grouped.has(key)) {
-            grouped.set(key, {
-                projectName: project?.name || t('common.no_project'),
-                items: [],
-            });
-        }
-        grouped.get(key).items.push(task);
-    });
-    return Array.from(grouped.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
-}
-
 function formatStatValue(value) {
     if (value == null) return '—';
     return value;
+}
+
+function overdueGroupKey(group, index) {
+    return String(group.projectId ?? group.items?.[0]?.project_id ?? `group-${index}`);
 }
 
 const DashboardStats = memo(function DashboardStats() {
@@ -77,6 +65,8 @@ const DashboardStats = memo(function DashboardStats() {
     const [overdueModalTasks, setOverdueModalTasks] = useState([]);
     const [completedModalTasks, setCompletedModalTasks] = useState([]);
     const [modalLoading, setModalLoading] = useState(false);
+    const [collapsedOverdueGroupKeys, setCollapsedOverdueGroupKeys] = useState(() => new Set());
+    const [collapsedCompletedGroupKeys, setCollapsedCompletedGroupKeys] = useState(() => new Set());
 
     const projects = state.projects || [];
     const accessibleProjectIds = useMemo(
@@ -130,6 +120,7 @@ const DashboardStats = memo(function DashboardStats() {
 
     useEffect(() => {
         if (!showOverdueModal) return;
+        setCollapsedOverdueGroupKeys(new Set());
         let cancelled = false;
         (async () => {
             setModalLoading(true);
@@ -150,6 +141,7 @@ const DashboardStats = memo(function DashboardStats() {
 
     useEffect(() => {
         if (!showCompletedModal) return;
+        setCollapsedCompletedGroupKeys(new Set());
         let cancelled = false;
         (async () => {
             setModalLoading(true);
@@ -177,14 +169,39 @@ const DashboardStats = memo(function DashboardStats() {
     }, [contacts]);
 
     const activeProjects = projects.filter(p => p.status !== 'completed').length;
+    const noProjectLabel = t('common.no_project');
     const overdueGroups = useMemo(
-        () => groupTasksByProject(overdueModalTasks, projects, t),
-        [overdueModalTasks, projects, t],
+        () => groupTasksByProject(overdueModalTasks, projects, { noProjectLabel }),
+        [overdueModalTasks, projects, noProjectLabel],
     );
     const completedGroups = useMemo(
-        () => groupTasksByProject(completedModalTasks, projects, t),
-        [completedModalTasks, projects, t],
+        () => groupTasksByProject(completedModalTasks, projects, { noProjectLabel }),
+        [completedModalTasks, projects, noProjectLabel],
     );
+
+    const toggleOverdueGroup = (key) => {
+        setCollapsedOverdueGroupKeys((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) {
+                next.delete(key);
+            } else {
+                next.add(key);
+            }
+            return next;
+        });
+    };
+
+    const toggleCompletedGroup = (key) => {
+        setCollapsedCompletedGroupKeys((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) {
+                next.delete(key);
+            } else {
+                next.add(key);
+            }
+            return next;
+        });
+    };
 
     const stats = [
         {
@@ -246,7 +263,7 @@ const DashboardStats = memo(function DashboardStats() {
                             setShowCompletedModal(true);
                         }
                     }}
-                    className={`p-5 rounded-lg border text-left w-full ${
+                    className={`p-5 rounded-lg border text-left w-full btn-smooth ${
                         (stat.id === 'overdue_tasks' || stat.id === 'tasks_completed') && stat.numericValue > 0
                             ? 'cursor-pointer hover:shadow-md transition-shadow'
                             : 'cursor-default'
@@ -255,7 +272,7 @@ const DashboardStats = memo(function DashboardStats() {
                     <div className="flex items-center justify-between">
                         <div>
                             <p className="text-xs font-medium opacity-75 mb-1.5 uppercase tracking-wide">{stat.title}</p>
-                            <p className="text-3xl font-bold">{stat.value}</p>
+                            <p className="text-3xl font-bold tabular-nums">{stat.value}</p>
                             {stat.total !== null && (
                                 <p className="text-xs opacity-75 mt-1">of {stat.total} total</p>
                             )}
@@ -287,12 +304,46 @@ const DashboardStats = memo(function DashboardStats() {
                             <p className="text-sm text-gray-500">{t('dashboard.loading_tasks')}</p>
                         ) : overdueGroups.length === 0 ? (
                             <p className="text-sm text-gray-500">{t('dashboard.no_overdue_tasks')}</p>
-                        ) : overdueGroups.map((group) => (
-                            <div key={group.projectName} className="border border-gray-100 rounded-lg p-3">
-                                <p className="text-sm font-semibold text-gray-800 mb-2">{group.projectName}</p>
-                                <ul className="space-y-1">
+                        ) : overdueGroups.map((group, index) => {
+                            const key = overdueGroupKey(group, index);
+                            const isCollapsed = collapsedOverdueGroupKeys.has(key);
+                            const taskCount = group.items.length;
+
+                            return (
+                            <div key={key} className="border border-gray-200 rounded-lg overflow-hidden">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleOverdueGroup(key)}
+                                    aria-expanded={!isCollapsed}
+                                    className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-gray-50 hover:bg-gray-100 text-left transition-colors"
+                                >
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-semibold text-gray-800">{group.projectName}</p>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            {taskCount === 1
+                                                ? t('projectDetail.phase_task_count_one', { count: taskCount })
+                                                : t('projectDetail.phase_task_count_other', { count: taskCount })}
+                                        </p>
+                                    </div>
+                                    <svg
+                                        className="w-5 h-5 shrink-0 text-gray-500"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        aria-hidden
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d={isCollapsed ? 'M19 9l-7 7-7-7' : 'M5 15l7-7 7 7'}
+                                        />
+                                    </svg>
+                                </button>
+                                {!isCollapsed && (
+                                <ul className="divide-y divide-gray-100">
                                     {group.items.map((task) => (
-                                        <li key={task.id} className="text-sm text-gray-700">
+                                        <li key={task.id} className="px-4 py-3 text-sm text-gray-700">
                                             <span className="font-medium text-gray-800">{task.text}</span>
                                             <span className="mt-0.5 block text-xs text-gray-500">
                                                 {t('dashboard.assigned_to', { name: getTaskAssigneeLabel(task, contactById, t) })}
@@ -308,8 +359,10 @@ const DashboardStats = memo(function DashboardStats() {
                                         </li>
                                     ))}
                                 </ul>
+                                )}
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </div>
@@ -332,21 +385,69 @@ const DashboardStats = memo(function DashboardStats() {
                             <p className="text-sm text-gray-500">{t('dashboard.loading_tasks')}</p>
                         ) : completedGroups.length === 0 ? (
                             <p className="text-sm text-gray-500">{t('dashboard.no_completed_tasks')}</p>
-                        ) : completedGroups.map((group) => (
-                            <div key={group.projectName} className="border border-gray-100 rounded-lg p-3">
-                                <p className="text-sm font-semibold text-gray-800 mb-2">{group.projectName}</p>
-                                <ul className="space-y-1">
+                        ) : completedGroups.map((group, index) => {
+                            const key = overdueGroupKey(group, index);
+                            const isCollapsed = collapsedCompletedGroupKeys.has(key);
+                            const taskCount = group.items.length;
+
+                            return (
+                            <div key={key} className="border border-gray-200 rounded-lg overflow-hidden">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleCompletedGroup(key)}
+                                    aria-expanded={!isCollapsed}
+                                    className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-gray-50 hover:bg-gray-100 text-left transition-colors"
+                                >
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-semibold text-gray-800">{group.projectName}</p>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            {taskCount === 1
+                                                ? t('projectDetail.phase_task_count_one', { count: taskCount })
+                                                : t('projectDetail.phase_task_count_other', { count: taskCount })}
+                                        </p>
+                                    </div>
+                                    <svg
+                                        className="w-5 h-5 shrink-0 text-gray-500"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        aria-hidden
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d={isCollapsed ? 'M19 9l-7 7-7-7' : 'M5 15l7-7 7 7'}
+                                        />
+                                    </svg>
+                                </button>
+                                {!isCollapsed && (
+                                <ul className="divide-y divide-gray-100">
                                     {group.items.map((task) => (
-                                        <li key={task.id} className="text-sm text-gray-700">
+                                        <li key={task.id} className="px-4 py-3 text-sm text-gray-700">
                                             <span className="font-medium text-gray-800">{task.text}</span>
                                             <span className="mt-0.5 block text-xs text-gray-500">
                                                 {t('dashboard.assigned_to', { name: getTaskAssigneeLabel(task, contactById, t) })}
+                                                {task.completed_at && (
+                                                    <>
+                                                        <span className="text-gray-400"> · </span>
+                                                        {t('dashboard.completed_label')}{' '}
+                                                        <time
+                                                            dateTime={typeof task.completed_at === 'string' ? task.completed_at : undefined}
+                                                            className="font-medium text-gray-700 tabular-nums"
+                                                        >
+                                                            {formatOverdueDueDate(task.completed_at)}
+                                                        </time>
+                                                    </>
+                                                )}
                                             </span>
                                         </li>
                                     ))}
                                 </ul>
+                                )}
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </div>

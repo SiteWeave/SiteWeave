@@ -190,11 +190,9 @@ serve(async (req) => {
         .eq('id', comment.project_id)
         .single()
 
-      const orgOnly = comment.visibility === 'internal'
-      let recipients = await getProjectRecipients(supabase, comment.project_id, {
+      const recipients = await getProjectRecipients(supabase, comment.project_id, {
         excludeUserId: user.id,
-        orgMembersOnly: orgOnly,
-      })
+      });
 
       const mentioned = await resolveMentionedRecipients(
         supabase,
@@ -215,7 +213,7 @@ serve(async (req) => {
         recipient_email: r.email,
         source_type: 'task_comment',
         source_id: comment.id,
-        title: orgOnly ? `Internal note · ${projectName}` : `Task comment · ${projectName}`,
+        title: `Task comment · ${projectName}`,
         body: `${taskLabel}: ${preview}`,
         metadata: {
           action_url: actionUrl,
@@ -256,7 +254,7 @@ serve(async (req) => {
       const pushRecipients = dedupeRecipients([...recipients, ...mentionTargets])
       const pushTokens = await loadPushTokens(supabase, pushRecipients.map((r) => r.userId))
       await sendExpoPush(pushTokens, {
-        title: orgOnly ? `Internal note · ${projectName}` : `Task comment · ${projectName}`,
+        title: `Task comment · ${projectName}`,
         body: preview,
         data: {
           project_id: comment.project_id,

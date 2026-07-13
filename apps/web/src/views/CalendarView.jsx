@@ -23,7 +23,10 @@ import {
     getStoredCalendarToken
 } from '../utils/calendarIntegration';
 import { generateRecurringInstances } from '../utils/recurrenceService';
-import { sendCalendarInvitationEmail } from '../utils/emailNotifications';
+import {
+    diffNewAttendeeEmails,
+    notifyCalendarInvitees,
+} from '@siteweave/core-logic';
 import EventModal from '../components/EventModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -814,30 +817,17 @@ function CalendarView() {
                 addToast(t('calendar.event_saved_sync_failed', { message: syncError.message }), 'warning');
             }
             
-            // Send invitation emails to attendees (only newly added ones for updates)
-            if (eventData.attendees) {
-                const newAttendeeEmails = eventData.attendees.split(',').map(e => e.trim()).filter(Boolean);
-                const oldAttendeeEmails = editingEvent.attendees 
-                    ? editingEvent.attendees.split(',').map(e => e.trim()).filter(Boolean)
-                    : [];
-                const newlyAddedAttendees = newAttendeeEmails.filter(email => !oldAttendeeEmails.includes(email));
-                
-                // Send emails to newly added attendees
-                if (newlyAddedAttendees.length > 0) {
-                    const emailPromises = newlyAddedAttendees.map(email => 
-                        sendCalendarInvitationEmail(email, updatedEvent, organizerName)
-                    );
-                    try {
-                        await Promise.allSettled(emailPromises);
-                        // Don't show error toast for email failures - just log them
-                        emailPromises.forEach((promise, index) => {
-                            promise.catch(error => {
-                                console.warn(`Failed to send invitation to ${newlyAddedAttendees[index]}:`, error);
-                            });
-                        });
-                    } catch (error) {
-                        console.error('Error sending invitation emails:', error);
-                    }
+            // Notify newly invited attendees (in-app + email)
+            const newAttendeeEmails = diffNewAttendeeEmails(editingEvent?.attendees, eventData.attendees);
+            if (newAttendeeEmails.length > 0 && updatedEvent?.id) {
+                try {
+                    await notifyCalendarInvitees(supabaseClient, {
+                        eventId: updatedEvent.id,
+                        newAttendeeEmails,
+                        organizerName,
+                    });
+                } catch (notifyError) {
+                    console.warn('Calendar invite notification failed:', notifyError);
                 }
             }
             
@@ -933,24 +923,17 @@ function CalendarView() {
                 addToast(t('calendar.event_saved_sync_failed', { message: syncError.message }), 'warning');
             }
             
-            // Send invitation emails to all attendees for new events
-            if (eventData.attendees) {
-                const attendeeEmails = eventData.attendees.split(',').map(e => e.trim()).filter(Boolean);
-                if (attendeeEmails.length > 0) {
-                    const emailPromises = attendeeEmails.map(email => 
-                        sendCalendarInvitationEmail(email, newEvent, organizerName)
-                    );
-                    try {
-                        await Promise.allSettled(emailPromises);
-                        // Don't show error toast for email failures - just log them
-                        emailPromises.forEach((promise, index) => {
-                            promise.catch(error => {
-                                console.warn(`Failed to send invitation to ${attendeeEmails[index]}:`, error);
-                            });
-                        });
-                    } catch (error) {
-                        console.error('Error sending invitation emails:', error);
-                    }
+            // Notify invited attendees for new events (in-app + email)
+            const newAttendeeEmails = diffNewAttendeeEmails(null, eventData.attendees);
+            if (newAttendeeEmails.length > 0 && newEvent?.id) {
+                try {
+                    await notifyCalendarInvitees(supabaseClient, {
+                        eventId: newEvent.id,
+                        newAttendeeEmails,
+                        organizerName,
+                    });
+                } catch (notifyError) {
+                    console.warn('Calendar invite notification failed:', notifyError);
                 }
             }
             

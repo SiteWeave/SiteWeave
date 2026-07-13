@@ -189,11 +189,9 @@ serve(async (req) => {
         .eq('id', comment.project_id)
         .single()
 
-      const orgOnly = comment.visibility === 'internal'
-      let recipients = await getProjectRecipients(supabase, comment.project_id, {
+      const recipients = await getProjectRecipients(supabase, comment.project_id, {
         excludeUserId: user.id,
-        orgMembersOnly: orgOnly,
-      })
+      });
 
       const mentioned = await resolveMentionedRecipients(
         supabase,
@@ -214,7 +212,7 @@ serve(async (req) => {
         recipient_email: r.email,
         source_type: 'task_comment',
         source_id: comment.id,
-        title: orgOnly ? `Internal note · ${projectName}` : `Task comment · ${projectName}`,
+        title: `Task comment · ${projectName}`,
         body: `${taskLabel}: ${preview}`,
         metadata: {
           action_url: actionUrl,
@@ -255,7 +253,7 @@ serve(async (req) => {
       const pushRecipients = dedupeRecipients([...recipients, ...mentionTargets])
       const pushTokens = await loadPushTokens(supabase, pushRecipients.map((r) => r.userId))
       await sendExpoPush(pushTokens, {
-        title: orgOnly ? `Internal note · ${projectName}` : `Task comment · ${projectName}`,
+        title: `Task comment · ${projectName}`,
         body: preview,
         data: {
           project_id: comment.project_id,
@@ -437,6 +435,70 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ success: true, notified: recipients.length }),
+        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+      )
+    }
+
+    if (action === 'punch_list_signed_off') {
+      const projectId = body?.projectId as string
+      if (!projectId) {
+        return new Response(JSON.stringify({ error: 'projectId required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+
+      const { data: project, error: projectError } = await supabase
+        .from('projects')
+        .select('id, name, organization_id, punch_list_signed_off_by_name')
+        .eq('id', projectId)
+        .single()
+
+      if (projectError || !project) {
+        return new Response(JSON.stringify({ error: 'Project not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+
+      const projectName = project.name || 'Project'
+      const signerName = project.punch_list_signed_off_by_name || 'Client'
+      const actionUrl = buildAppProjectUrl(project.id, 'updates')
+      const recipients = await getProjectRecipients(supabase, project.id, {})
+      const filtered = recipients.filter((r) => r.userId !== user.id)
+      const title = `Punch list signed off · ${projectName}`
+      const bodyText = `${signerName} signed off the punch list.`
+
+      const notifRows = filtered.map((r) => ({
+        organization_id: project.organization_id,
+        project_id: project.id,
+        recipient_user_id: r.userId,
+        recipient_email: r.email,
+        source_type: 'punch_list_signed_off',
+        source_id: project.id,
+        title,
+        body: bodyText,
+        metadata: {
+          action_url: actionUrl,
+          screen: `/projects/${project.id}/updates`,
+          project_id: project.id,
+        },
+      }))
+
+      await insertUserNotifications(supabase, notifRows)
+      const pushTokens = await loadPushTokens(supabase, filtered.map((r) => r.userId))
+      await sendExpoPush(pushTokens, {
+        title,
+        body: bodyText,
+        data: {
+          project_id: project.id,
+          screen: `/projects/${project.id}/updates`,
+          source_type: 'punch_list_signed_off',
+        },
+      })
+
+      return new Response(
+        JSON.stringify({ success: true, notified: filtered.length }),
         { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
       )
     }

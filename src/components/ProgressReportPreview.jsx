@@ -447,9 +447,6 @@ function StandardPreviewSections({
       {reportSections.weekly_plan !== false && (
         <div className="rounded-lg border border-gray-200 p-3 space-y-3">
           <h2 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{p('weekly_plan')}</h2>
-          <p className="text-[11px] text-gray-500 leading-snug">
-            {t('progressReports.builder.projects_in_report_hint')}
-          </p>
 
           <div>
             <h3 className="text-xs font-semibold text-emerald-800 mb-1">{p('last_week')}</h3>

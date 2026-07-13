@@ -64,6 +64,9 @@ export default function FieldIssueCard({ issue, selected, onSelect }) {
           {issue.description ? (
             <p className="text-xs text-slate-600 line-clamp-2 mb-1.5">{issue.description}</p>
           ) : null}
+          {issue.location ? (
+            <p className="text-xs font-semibold text-blue-700 mb-1">{issue.location}</p>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             <span
               className={`px-1.5 py-0.5 rounded-full font-medium ${

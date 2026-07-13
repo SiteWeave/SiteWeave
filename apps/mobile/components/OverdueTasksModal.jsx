@@ -9,10 +9,12 @@ import ModalScrim from './ui/ModalScrim';
 import { Text } from './ui/Text';
 import { colors, spacing, touch } from '../theme';
 import { useHaptics } from '../hooks/useHaptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { sheetBottomPadding } from '../utils/layoutInsets';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-function formatOverdueDueDate(value, locale) {
+function formatOverdueDueDateShort(value, locale) {
   if (value == null || value === '') return '';
   const s = String(value).trim();
   const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -23,22 +25,9 @@ function formatOverdueDueDate(value, locale) {
     d = new Date(s);
   }
   if (Number.isNaN(d.getTime())) return s;
-  return d.toLocaleDateString(locale, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
-function getTaskAssigneeLabel(task, t) {
-  const rel = task?.contacts;
-  if (rel && typeof rel === 'object') {
-    const name = Array.isArray(rel) ? rel[0]?.name : rel.name;
-    if (name) return name;
-  }
-  return t('common.unassigned');
-}
 
 function groupKey(group, index) {
   return String(group.projectId ?? group.items?.[0]?.project_id ?? `group-${index}`);
@@ -48,6 +37,7 @@ export default function OverdueTasksModal({ visible, onClose, tasks = [], projec
   const { t, i18n } = useTranslation();
   const router = useRouter();
   const haptics = useHaptics();
+  const insets = useSafeAreaInsets();
   const modalTranslateY = useRef(new Animated.Value(1)).current;
   const wasVisibleRef = useRef(false);
   const [collapsedKeys, setCollapsedKeys] = useState(() => new Set());
@@ -103,6 +93,7 @@ export default function OverdueTasksModal({ visible, onClose, tasks = [], projec
       <Animated.View
         style={[
           styles.sheet,
+          { paddingBottom: sheetBottomPadding(insets) },
           {
             transform: [{
               translateY: modalTranslateY.interpolate({
@@ -167,12 +158,11 @@ export default function OverdueTasksModal({ visible, onClose, tasks = [], projec
                       disabled={!group.projectId && !task.project_id}
                       testID={`overdue-task-${task.id}`}
                     >
-                      <Text style={styles.taskTitle}>{task.text}</Text>
-                      <Text style={styles.taskMeta}>
-                        {t('dashboard.assigned_to', { name: getTaskAssigneeLabel(task, t) })}
-                        {' · '}
-                        {t('dashboard.due_label')}{' '}
-                        {formatOverdueDueDate(task.due_date, locale)}
+                      <Text style={styles.taskTitle} numberOfLines={1}>
+                        {task.text}
+                      </Text>
+                      <Text style={styles.taskMeta} numberOfLines={1}>
+                        {formatOverdueDueDateShort(task.due_date, locale)}
                       </Text>
                     </PressableWithFade>
                   ))}
@@ -196,7 +186,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingBottom: spacing.xl,
+    paddingBottom: 0,
   },
   header: {
     flexDirection: 'row',
@@ -250,11 +240,28 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+    minHeight: touch.minRowHeight,
   },
-  taskTitle: { fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 4 },
-  taskMeta: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
+  taskTitle: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  taskMeta: {
+    flexShrink: 0,
+    maxWidth: '42%',
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.error,
+    textAlign: 'right',
+  },
 });

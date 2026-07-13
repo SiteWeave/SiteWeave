@@ -2,6 +2,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import PressableWithFade from './PressableWithFade';
+import { shadows } from '../theme';
 
 export default function KPICarousel({ activeProjects, completedTasks, overdueTasks, onOverduePress }) {
   const { t } = useTranslation();
@@ -57,7 +58,7 @@ export default function KPICarousel({ activeProjects, completedTasks, overdueTas
             >
               <StatWrapper style={styles.statContent} {...statProps}>
                 <Ionicons name={kpi.icon} size={20} color={kpi.color} style={styles.icon} />
-                <Text style={[styles.value, { color: kpi.color }]}>{kpi.value}</Text>
+                <Text style={[styles.value, { color: kpi.color, fontVariant: 'tabular-nums' }]}>{kpi.value}</Text>
                 <View style={styles.labelContainer}>
                   <Text style={styles.title} numberOfLines={1}>{kpi.title}</Text>
                   <Text style={styles.subtitle} numberOfLines={1}>{kpi.subtitle}</Text>
@@ -82,11 +83,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 12,
     paddingVertical: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    ...shadows.card,
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },

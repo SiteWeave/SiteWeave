@@ -22,12 +22,12 @@
 
 2. **Deploy the new schema**:
    - Open Supabase SQL Editor
-   - Copy and paste the entire contents of `schema.sql`
+   - Copy and paste the entire contents of `../../schema.sql`
    - Click "Run"
    - Wait for completion (may take 1-2 minutes)
 
 3. **Validate the schema**:
-   - Copy and paste the contents of `scripts/validate-schema.sql`
+   - Copy and paste the contents of `../../scripts/validate-schema.sql`
    - Click "Run"
    - Check for any errors or warnings in the output
    - All checks should show ✓ (checkmark)
@@ -58,7 +58,7 @@
      - Update RLS policies
 
 2. **Validate the migration**:
-   - Run `scripts/validate-schema.sql` (see Option A, step 3)
+   - Run `../../scripts/validate-schema.sql` (see Option A, step 3)
 
 3. **Create demo account**:
    - Run `scripts/seed-demo-account.sql` (see Option A, step 4)
@@ -405,7 +405,7 @@ Verify the role has the required permissions in the JSONB column.
 If you need to rollback to the previous single-user model:
 
 1. **Restore database backup** (if you created one)
-2. **OR redeploy old schema.sql** (if you have it saved)
+2. **OR redeploy ../../schema.sql** (if you have it saved)
 3. **Redeploy previous version of web/mobile apps**
 
 ⚠️ **Note**: Rollback will lose all organization, role, and collaborator data.
@@ -461,7 +461,7 @@ For issues or questions:
 1. Check this deployment guide
 2. Review `MULTI-TENANT-B2B-IMPLEMENTATION.md`
 3. Check Supabase logs for errors
-4. Review RLS policies in `schema.sql`
+4. Review RLS policies in `../../schema.sql`
 
 ---
 

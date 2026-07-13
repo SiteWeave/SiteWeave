@@ -10,7 +10,10 @@ import { Text } from '../../components/ui/Text';
 import Button from '../../components/ui/Button';
 import PasswordInput from '../../components/ui/PasswordInput';
 import PressableWithFade from '../../components/PressableWithFade';
+import AuthOAuthButtons from '../../components/AuthOAuthButtons';
+import { finalizeAuthSession } from '../../utils/completeAuthSession';
 import { colors, spacing, touch } from '../../theme';
+import { sheetBottomPadding } from '../../utils/layoutInsets';
 
 export default function SignupScreen() {
   const { t } = useTranslation();
@@ -22,15 +25,30 @@ export default function SignupScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { supabase } = useAuth();
+  const {
+    supabase,
+    signInWithGoogle,
+    signInWithMicrosoft,
+    signInWithApple,
+    loadUserOrganization,
+  } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
 
+  const afterOAuth = () =>
+    finalizeAuthSession({
+      supabase,
+      loadUserOrganization,
+      router,
+      haptics,
+      fromSignup: true,
+    });
+
   const handleSignup = async () => {
     if (!fullName.trim()) {
       haptics.error();
-      Alert.alert(t('common.error'), t('mobile.auth_name_required', { defaultValue: 'Please enter your name' }));
+      Alert.alert(t('common.error'), t('mobile.auth_name_required'));
       return;
     }
     if (!email || !password || !confirmPassword) {
@@ -72,8 +90,22 @@ export default function SignupScreen() {
     }
   };
 
+  const handleOAuth = async (fn) => {
+    haptics.medium();
+    setLoading(true);
+    try {
+      await fn();
+      await afterOAuth();
+    } catch (error) {
+      haptics.error();
+      Alert.alert(t('common.error'), t('auth.signup_failed', { message: error.message }));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: sheetBottomPadding(insets) }]}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <PressableWithFade onPress={() => router.back()} style={styles.back} hitSlop={touch.hitSlop}>
           <Ionicons name="chevron-back" size={28} color={colors.text} />
@@ -83,9 +115,23 @@ export default function SignupScreen() {
           {t('mobile.sign_up_title')}
         </Text>
 
+        <AuthOAuthButtons
+          onApplePress={() => handleOAuth(signInWithApple)}
+          onGooglePress={() => handleOAuth(signInWithGoogle)}
+          onMicrosoftPress={() => handleOAuth(signInWithMicrosoft)}
+          disabled={loading}
+          showDivider={false}
+        />
+
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text variant="caption">{t('auth.or')}</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
         <TextInput
           style={styles.input}
-          placeholder={t('mobile.auth_name_placeholder', { defaultValue: 'Your name' })}
+          placeholder={t('mobile.auth_name_placeholder')}
           value={fullName}
           onChangeText={setFullName}
           autoCapitalize="words"
@@ -136,7 +182,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   scroll: { padding: spacing.xxl, paddingTop: spacing.lg },
   back: { width: touch.minSize, height: touch.minSize, justifyContent: 'center', marginBottom: spacing.lg },
-  title: { marginBottom: spacing.xxl },
+  title: { marginBottom: spacing.xl },
+  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: spacing.xxl, gap: spacing.md },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
   input: {
     borderWidth: 1,
     borderColor: colors.borderStrong,

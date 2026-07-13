@@ -15,11 +15,37 @@ Project MCP: [`.cursor/mcp.json`](mcp.json).
 Design skills are **gitignored**. Reinstall after clone from repo root:
 
 ```bash
+npx skills experimental_install
+```
+
+Or install individually:
+
+```bash
 npx skills add pbakaus/impeccable -y
 npx skills add https://github.com/Leonxlnx/taste-skill --skill design-taste-frontend -y
 npx skills add https://github.com/emilkowalski/skill --skill emil-design-eng -y
 npx skills add https://github.com/onurdrmzzz/react-native-mobile-skill -y
+npx skills add jakubkrehel/make-interfaces-feel-better -y
 npx skills add https://sosumi.ai -y
 ```
 
-They install under `.agents/skills/` (not committed).
+They install under `.agents/skills/` (not committed). Locked versions live in [`skills-lock.json`](../skills-lock.json) at the repo root.
+
+## Discovering more skills
+
+- **[Awesome Claude Skills](https://github.com/travisvn/awesome-claude-skills)** — curated list of community skills, tools, and resources (browse here; the repo itself is not installable).
+- **[skills.sh](https://skills.sh/)** — search by keyword and see install counts.
+- **CLI search** — from repo root: `npx skills find [query]` (e.g. `npx skills find playwright`).
+
+To install a specific skill from a GitHub repo:
+
+```bash
+npx skills add owner/repo --skill skill-name -y
+```
+
+For a large community bundle (28 skills), see [ComposioHQ/awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills) — install all or cherry-pick with `--skill`:
+
+```bash
+npx skills add ComposioHQ/awesome-claude-skills --list    # preview
+npx skills add ComposioHQ/awesome-claude-skills --skill mcp-builder webapp-testing -y
+```

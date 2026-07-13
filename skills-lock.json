@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "skills": {
+    "design-taste-frontend": {
+      "source": "Leonxlnx/taste-skill",
+      "sourceType": "github",
+      "skillPath": "skills/taste-skill/SKILL.md",
+      "computedHash": "899b84384f74f540ea5284d9b2e9234e050998b42eacc805410b518d4226c0b3"
+    },
+    "emil-design-eng": {
+      "source": "emilkowalski/skill",
+      "sourceType": "github",
+      "skillPath": "skills/emil-design-eng/SKILL.md",
+      "computedHash": "ac3fc5b4e206488ffc408a2806f829bb2e5eaf518fded09be34790685c2b3a0d"
+    },
+    "impeccable": {
+      "source": "pbakaus/impeccable",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/impeccable/SKILL.md",
+      "computedHash": "ff24732ed5dfe28d4415db0c86c0ef4406893b551cf837529e01ec1d1fefcb32"
+    },
+    "make-interfaces-feel-better": {
+      "source": "jakubkrehel/make-interfaces-feel-better",
+      "sourceType": "github",
+      "skillPath": "skills/make-interfaces-feel-better/SKILL.md",
+      "computedHash": "2c3576e63d8c39d75ed327f1dcf6aab7aec0edf293a55f6cb3f7b8571974a01c"
+    },
+    "react-native-mobile": {
+      "source": "onurdrmzzz/react-native-mobile-skill",
+      "sourceType": "github",
+      "skillPath": "react-native-mobile/SKILL.md",
+      "computedHash": "8d6842a7625d02ed1f45bbb0797b465ae89f9b77dc5b2ccb7009cb9bfec4d0fc"
+    },
+    "sosumi": {
+      "source": "sosumi.ai",
+      "sourceType": "well-known",
+      "computedHash": "ed80519bc628e98a9b56d897ed27a205e3511981ffbdfc7d0fefd472aba8e224"
+    }
+  }
+}

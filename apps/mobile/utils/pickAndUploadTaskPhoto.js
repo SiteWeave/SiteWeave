@@ -16,6 +16,7 @@ export async function pickAndUploadTaskPhoto({
   organizationId,
   userId,
   mode,
+  isCompletionPhoto = false,
 }) {
   if (!task?.id || !task?.project_id || !organizationId || !supabase) {
     throw new Error('Task photo upload is missing project or organization context.');
@@ -62,6 +63,7 @@ export async function pickAndUploadTaskPhoto({
     thumbnailFile: null,
     uploadedByUserId: userId,
     capturedAt: new Date().toISOString(),
+    isCompletionPhoto,
   });
 
   return true;

@@ -23,7 +23,7 @@ export default function ProjectCardCompact({ project }) {
     <PressableWithFade
       style={styles.card}
       onPress={handlePress}
-      activeOpacity={0.7}
+      static
     >
       <View style={styles.content}>
         <View style={styles.leftSection}>

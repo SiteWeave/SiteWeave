@@ -1,4 +1,5 @@
 import React from 'react';
+import { isSmsNotificationsEnabled } from '@siteweave/core-logic';
 
 const SALES_URL = 'https://www.siteweave.org/#contact';
 
@@ -31,16 +32,32 @@ const COPY = {
     title: 'Progress Reports for Clients & Architects',
     body: 'Send polished project snapshots on a schedule or on demand. Business plan includes branded PDF exports for clients, architects, and inspectors.',
   },
+  punch_list_export: {
+    title: 'Punch List Export & Client Sign-off',
+    body: 'Share a client review link and export a branded punch list PDF grouped by location. Available on the business plan.',
+  },
   trial_expired: {
     title: 'Your 14-Day Trial Has Ended',
     body: 'You still have tasks, phases, photos, and your full project history. Upgrade to Business to keep pings, progress reports, exports, and unlimited projects.',
   },
 };
 
+const COPY_WITHOUT_SMS = {
+  reminders: {
+    title: 'Automatic Task Reminders',
+    body: 'Get automatic heads-up emails before tasks start—so subs and crew show up on the right day. Business workspaces can customize lead times per project.',
+  },
+  pings: {
+    title: 'Ping Assignees from the Field',
+    body: 'Send a quick nudge to assignees by email without a phone tree. Business plan keeps your crew aligned when schedules shift on site.',
+  },
+};
+
 function UpgradeRequiredModal({ isOpen, onClose, feature = 'exports' }) {
   if (!isOpen) return null;
 
-  const { title, body } = COPY[feature] || COPY.exports;
+  const copySource = isSmsNotificationsEnabled() ? COPY : { ...COPY, ...COPY_WITHOUT_SMS };
+  const { title, body } = copySource[feature] || COPY.exports;
 
   const handleContactSales = () => {
     window.open(SALES_URL, '_blank', 'noopener,noreferrer');

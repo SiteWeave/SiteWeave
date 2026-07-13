@@ -138,6 +138,38 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
       }
     }
   }
+
+  // Handle relative imports that incorrectly reference packages/i18n
+  // This can happen when Metro resolves dynamic locale imports from the wrong base.
+  if (moduleName.startsWith('./packages/i18n/') || moduleName.startsWith('../packages/i18n/')) {
+    const relativePath = moduleName.replace(/^\.\.?\/packages\/i18n\//, '');
+    const i18nRoot = path.resolve(packagesRoot, 'i18n');
+    const resolvedPath = path.resolve(i18nRoot, relativePath);
+
+    const fs = require('fs');
+    const extensions = ['.js', '.jsx', '.ts', '.tsx', '.json'];
+    for (const ext of extensions) {
+      const fullPath = resolvedPath + ext;
+      if (fs.existsSync(fullPath)) {
+        return {
+          type: 'sourceFile',
+          filePath: fullPath,
+        };
+      }
+    }
+
+    if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
+      for (const ext of extensions) {
+        const indexPath = path.join(resolvedPath, 'index' + ext);
+        if (fs.existsSync(indexPath)) {
+          return {
+            type: 'sourceFile',
+            filePath: indexPath,
+          };
+        }
+      }
+    }
+  }
   
   // Use the original resolver for everything else
   if (originalResolveRequest) {

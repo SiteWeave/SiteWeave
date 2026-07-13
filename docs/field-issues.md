@@ -9,7 +9,9 @@ Site triage tracker for problems on the job — complementary to **tasks and Gan
 
 ## Capabilities
 
-- Create issues with title, description, priority, due date, assignee
+- Create issues with title, description, priority, due date, assignee, optional **location/area**
+- **Punch list closeout**: walkthrough capture (photo → location → note), before/after photos, group by location
+- Client review link + branded PDF export (business tier)
 - Open / closed status with optional stream bridge posts (`Field issue opened/closed: …`)
 - Threaded **issue comments** (`issue_comments`)
 - File attachments (`issue_files` via `message_files` storage)
@@ -29,6 +31,8 @@ Site triage tracker for problems on the job — complementary to **tasks and Gan
 
 - `assigned_to_user_id` — single triage owner
 - `related_task_ids` — JSON array of task UUIDs
+- `location` — optional area/room for punch list grouping
+- `before_photo_path` / `after_photo_path` — deficiency / completion photos
 - `status` — `open` / `closed` (plus `resolved_at`)
 
 ## Services (`@siteweave/core-logic`)

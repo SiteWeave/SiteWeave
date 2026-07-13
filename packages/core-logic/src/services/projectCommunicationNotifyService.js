@@ -78,6 +78,21 @@ export async function notifyIssueCommentCreated(supabase, { commentId }) {
 }
 
 /**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {{ projectId: string }} params
+ */
+export async function notifyPunchListSignedOff(supabase, { projectId }) {
+  if (!projectId) return
+  try {
+    await supabase.functions.invoke('notify-project-communication', {
+      body: { action: 'punch_list_signed_off', projectId },
+    })
+  } catch (e) {
+    console.warn('notifyPunchListSignedOff', e)
+  }
+}
+
+/**
  * Parse @mentions from comment body (for UI hints).
  * @param {string} body
  */

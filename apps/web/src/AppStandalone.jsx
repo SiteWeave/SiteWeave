@@ -4,6 +4,8 @@ import { supabase } from './supabaseClient'
 import LoadingSpinner from './components/LoadingSpinner'
 import InviteAcceptPage from './components/InviteAcceptPage'
 import GuestTaskShareView from './views/GuestTaskShareView'
+import GuestCloseoutReviewView from './views/GuestCloseoutReviewView'
+import SmsConsentView from './views/SmsConsentView'
 import ForcePasswordReset from './components/ForcePasswordReset'
 import AppShell from './layouts/AppShell'
 import LoginView from './views/LoginView'
@@ -17,6 +19,7 @@ import {
   TeamHubView,
   TeamView,
   SettingsView,
+  ProjectTrashView,
   LazyViewWrapper,
 } from './components/LazyViews'
 import { ROUTE_PATHS } from './config/routes'
@@ -26,6 +29,8 @@ import { trackRouteChange } from './utils/webTelemetry'
 import { AppProvider, useAppContext } from './context/AppContext'
 import { ToastProvider } from './context/ToastContext'
 import SetupWizardModal from './components/SetupWizardModal'
+import WebOnboardingHost from './components/WebOnboardingHost'
+import { seedStarterTemplatesIfNeeded } from '@siteweave/onboarding-ui'
 
 /** Prevent duplicate OAuth processing (matches desktop `App.jsx` behavior). */
 let oauthCallbackProcessing = false
@@ -46,6 +51,8 @@ function RouteStateSync({ view, children }) {
 function WorkspaceLayout({ session }) {
   const { state, dispatch } = useAppContext()
   const [showSetupWizard, setShowSetupWizard] = React.useState(false)
+  const [pendingTourStart, setPendingTourStart] = React.useState(false)
+  const [tourReplaySignal, setTourReplaySignal] = React.useState(0)
 
   React.useEffect(() => {
     if (!state.user || !state.currentOrganization || state.mustChangePassword || !state.userRole) {
@@ -53,21 +60,25 @@ function WorkspaceLayout({ session }) {
       return
     }
 
-    const isPersonal = state.currentOrganization.workspace_type === 'personal'
     const isOrgAdmin = state.userRole?.name === 'Org Admin'
     const isFoundingAdmin =
       state.currentOrganization.created_by_user_id != null &&
       state.currentOrganization.created_by_user_id === state.user.id
     const wizardPending = !state.currentOrganization.setup_wizard_completed_at
 
-    if (!isPersonal && isOrgAdmin && isFoundingAdmin && wizardPending) {
+    if (isOrgAdmin && isFoundingAdmin && wizardPending) {
       setShowSetupWizard(true)
     } else {
       setShowSetupWizard(false)
     }
   }, [state.user, state.userRole, state.currentOrganization, state.mustChangePassword])
 
-  const handleSetupComplete = async () => {
+  React.useEffect(() => {
+    if (!state.user?.id || !state.currentOrganization?.id || showSetupWizard) return
+    seedStarterTemplatesIfNeeded(supabase, state.currentOrganization.id, state.user.id).catch(() => {})
+  }, [state.user?.id, state.currentOrganization?.id, showSetupWizard])
+
+  const handleSetupComplete = async ({ startTour = false } = {}) => {
     if (state.currentOrganization?.id) {
       const { data: org } = await supabase
         .from('organizations')
@@ -79,6 +90,9 @@ function WorkspaceLayout({ session }) {
       }
     }
     setShowSetupWizard(false)
+    if (startTour) {
+      setPendingTourStart(true)
+    }
   }
 
   const hasCachedShellData = (state.projects?.length ?? 0) > 0
@@ -109,6 +123,7 @@ function WorkspaceLayout({ session }) {
       {showSetupWizard && (
         <SetupWizardModal show={showSetupWizard} onComplete={handleSetupComplete} />
       )}
+      <WebOnboardingHost pendingTourStart={pendingTourStart} replaySignal={tourReplaySignal} />
       <ForcePasswordReset
         show={Boolean(state.mustChangePassword)}
         onComplete={() => dispatch({ type: 'SET_MUST_CHANGE_PASSWORD', payload: false })}
@@ -267,6 +282,8 @@ export default function AppStandalone() {
     <Routes>
       <Route path={ROUTE_PATHS.invite} element={<InviteAcceptPage />} />
       <Route path={ROUTE_PATHS.guestTaskShare} element={<GuestTaskShareView />} />
+      <Route path={ROUTE_PATHS.guestPunchListReview} element={<GuestCloseoutReviewView />} />
+      <Route path={ROUTE_PATHS.smsConsent} element={<SmsConsentView />} />
       <Route path={ROUTE_PATHS.login} element={<LoginView />} />
       <Route path={ROUTE_PATHS.signup} element={<SignUpView />} />
       <Route path={ROUTE_PATHS.projectInvite} element={<ProjectInviteAcceptPage />} />
@@ -280,6 +297,7 @@ export default function AppStandalone() {
         )}
       >
         <Route path={ROUTE_PATHS.home} element={<DashboardRoute />} />
+        <Route path={ROUTE_PATHS.projectsTrash} element={<RouteStateSync view="Projects"><LazyViewWrapper><ProjectTrashView /></LazyViewWrapper></RouteStateSync>} />
         <Route path={ROUTE_PATHS.projects} element={<ProjectsRoute />} />
         <Route path={ROUTE_PATHS.project} element={<Navigate to="tasks" replace />} />
         <Route path={ROUTE_PATHS.projectTasks} element={<ProjectWorkspaceRoute routeTab="tasks" />} />

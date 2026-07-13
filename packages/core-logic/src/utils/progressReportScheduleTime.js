@@ -259,6 +259,26 @@ export function calculateFirstSendDate(
 }
 
 /**
+ * @param {Object} schedule
+ * @param {{ sendHour?: number, timeZone?: string }|null} [orgFallback]
+ * @returns {{ sendHour: number, timeZone: string }}
+ */
+export function resolveScheduleSendSettings(schedule, orgFallback = null) {
+  const sendHour = Number.isFinite(Number(schedule?.send_hour))
+    ? Math.max(0, Math.min(23, Number(schedule.send_hour)))
+    : Number.isFinite(Number(orgFallback?.sendHour))
+      ? Number(orgFallback.sendHour)
+      : 8;
+  const timeZone =
+    typeof schedule?.send_timezone === 'string' && schedule.send_timezone
+      ? schedule.send_timezone
+      : typeof orgFallback?.timeZone === 'string' && orgFallback.timeZone
+        ? orgFallback.timeZone
+        : 'America/New_York';
+  return { sendHour, timeZone };
+}
+
+/**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {string} organizationId
  * @returns {Promise<{ sendHour: number, timeZone: string }>}
@@ -311,4 +331,70 @@ export function resolveScheduleNextSendAt({
     );
   }
   return calculateFirstSendDate(frequency, frequency_value, sendHour, timeZone);
+}
+
+const TIMEZONE_SHORT_LABELS = {
+  'America/New_York': 'Eastern',
+  'America/Chicago': 'Central',
+  'America/Denver': 'Mountain',
+  'America/Los_Angeles': 'Pacific',
+  'America/Anchorage': 'Alaska',
+  'Pacific/Honolulu': 'Hawaii',
+};
+
+/**
+ * Human-readable timezone label for UI copy.
+ * @param {string} timeZone
+ * @returns {string}
+ */
+export function formatTimezoneLabel(timeZone) {
+  if (TIMEZONE_SHORT_LABELS[timeZone]) return TIMEZONE_SHORT_LABELS[timeZone];
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'short',
+    }).formatToParts(new Date());
+    const tzName = parts.find((p) => p.type === 'timeZoneName')?.value;
+    return tzName || timeZone;
+  } catch {
+    return timeZone;
+  }
+}
+
+/**
+ * Format hour as 12-hour clock label (e.g. "8:00 AM").
+ * @param {number} hour24
+ * @returns {string}
+ */
+export function formatSendHourLabel(hour24) {
+  const h = Math.max(0, Math.min(23, Number(hour24) || 0));
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:00 ${period}`;
+}
+
+/**
+ * Format next_send_at in the schedule's timezone for list cards.
+ * @param {string|null|undefined} nextSendAtIso
+ * @param {string} [locale]
+ * @param {string} [timeZone]
+ * @returns {string|null}
+ */
+export function formatScheduleNextSendAt(nextSendAtIso, locale = 'en', timeZone = 'America/New_York') {
+  if (!nextSendAtIso) return null;
+  const date = new Date(nextSendAtIso);
+  if (Number.isNaN(date.getTime())) return null;
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      timeZone,
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    }).format(date);
+  } catch {
+    return date.toLocaleString(locale);
+  }
 }

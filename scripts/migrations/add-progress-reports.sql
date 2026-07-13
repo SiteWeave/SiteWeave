@@ -30,7 +30,9 @@ CREATE TABLE IF NOT EXISTS progress_report_schedules (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     last_sent_at TIMESTAMP WITH TIME ZONE,
-    next_send_at TIMESTAMP WITH TIME ZONE
+    next_send_at TIMESTAMP WITH TIME ZONE,
+    send_hour INTEGER NOT NULL DEFAULT 8 CHECK (send_hour >= 0 AND send_hour <= 23),
+    send_timezone TEXT NOT NULL DEFAULT 'America/New_York'
 );
 
 -- Progress Report Recipients Table

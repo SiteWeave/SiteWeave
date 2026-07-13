@@ -245,14 +245,6 @@ serve(async (req) => {
       .select('*')
       .eq('organization_id', schedule.organization_id)
       .maybeSingle()
-    const { data: organization, error: organizationError } = await supabase
-      .from('organizations')
-      .select('progress_report_send_hour, progress_report_timezone')
-      .eq('id', schedule.organization_id)
-      .maybeSingle()
-    if (organizationError) {
-      console.warn('Unable to load org progress report schedule settings:', organizationError.message)
-    }
 
     const brandingData = branding || {
       logo_url: null,
@@ -382,16 +374,13 @@ serve(async (req) => {
         })
 
       // Update schedule
+      const { sendHour, timeZone } = resolveScheduleSendSettings(schedule)
       const nextSendDate = calculateNextSendDate(
         schedule.frequency,
         schedule.frequency_value,
         new Date().toISOString(),
-        Number.isFinite(Number(organization?.progress_report_send_hour))
-          ? Number(organization?.progress_report_send_hour)
-          : 8,
-        typeof organization?.progress_report_timezone === 'string' && organization.progress_report_timezone
-          ? organization.progress_report_timezone
-          : 'America/New_York',
+        sendHour,
+        timeZone,
       )
 
       await supabase
@@ -438,6 +427,24 @@ serve(async (req) => {
 })
 
 // frequency_value: weekly/bi-weekly = day of week 0-6 (0=Sunday); monthly = 1, 15, or -1 (last day)
+function resolveScheduleSendSettings(
+  schedule: { send_hour?: number | null; send_timezone?: string | null },
+  orgFallback?: { sendHour?: number; timeZone?: string } | null,
+) {
+  const sendHour = Number.isFinite(Number(schedule?.send_hour))
+    ? Math.max(0, Math.min(23, Number(schedule.send_hour)))
+    : Number.isFinite(Number(orgFallback?.sendHour))
+      ? Number(orgFallback!.sendHour)
+      : 8
+  const timeZone =
+    typeof schedule?.send_timezone === 'string' && schedule.send_timezone
+      ? schedule.send_timezone
+      : typeof orgFallback?.timeZone === 'string' && orgFallback.timeZone
+        ? orgFallback.timeZone
+        : 'America/New_York'
+  return { sendHour, timeZone }
+}
+
 function calculateNextSendDate(
   frequency,
   frequencyValue,
@@ -588,14 +595,25 @@ function injectPrintStyles(html: string): string {
 
 function injectProgressReportExportButton(html: string, reportExportUrl: string): string {
   const safeUrl = reportExportUrl.replace(/"/g, '&quot;')
-  const cta = `
-<div style="margin:0 0 22px;padding:16px;border:1px solid #dbeafe;border-radius:8px;background:#eff6ff;">
-  <p style="margin:0 0 10px;font-size:13px;color:#1e3a8a;font-weight:600;">Need the PDF version?</p>
-  <a href="${safeUrl}" target="_blank" rel="noreferrer" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;padding:10px 14px;border-radius:6px;">Open PDF report</a>
-</div>`
-  const anchor = '<div style="padding:8px 0 20px;">'
-  if (html.includes(anchor)) return html.replace(anchor, `${anchor}${cta}`)
-  return html.replace('</body>', `${cta}</body>`)
+  const pdfCell = `<td style="vertical-align:middle;text-align:right;padding-left:16px;white-space:nowrap;">
+  <a href="${safeUrl}" target="_blank" rel="noreferrer" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:12px;font-weight:600;padding:8px 14px;border-radius:6px;">Need a PDF version?</a>
+</td>`
+
+  // Remove legacy top-of-email PDF callout if present in cached HTML
+  const withoutLegacyCta = html.replace(
+    /<div style="margin:0 0 22px;padding:16px;border:1px solid #dbeafe;border-radius:8px;background:#eff6ff;">[\s\S]*?<\/div>/,
+    '',
+  )
+
+  if (withoutLegacyCta.includes('<!-- siteweave-pdf-footer-slot -->')) {
+    return withoutLegacyCta.replace('<!-- siteweave-pdf-footer-slot -->', pdfCell)
+  }
+
+  // Fallback for older templates without the slot marker
+  return withoutLegacyCta.replace(
+    /(<p style="margin:0;color:#9ca3af;font-size:11px;">Automated progress report from [^<]+<\/p>\s*<\/td>)(\s*<\/tr>)/,
+    `$1${pdfCell}$2`,
+  )
 }
 
 async function ensureReportExportBucket(supabase: ReturnType<typeof createClient>, bucketName: string) {

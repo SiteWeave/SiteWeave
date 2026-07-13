@@ -10,6 +10,7 @@ export const ContactsView = lazy(() => import('../views/ContactsView'));
 export const TeamHubView = lazy(() => import('../views/TeamHubView'));
 export const TeamView = lazy(() => import('../views/TeamView'));
 export const SettingsView = lazy(() => import('../views/SettingsView'));
+export const ProjectTrashView = lazy(() => import('../views/ProjectTrashView'));
 
 // View-level error component
 const ViewErrorFallback = ({ error, resetError }) => (

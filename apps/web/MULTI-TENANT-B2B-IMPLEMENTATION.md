@@ -199,7 +199,7 @@ Updates storage bucket RLS policies to:
 ## Deployment Checklist
 
 ### Database
-- [ ] Run `schema.sql` to create fresh database with multi-tenant structure
+- [ ] Run `../../schema.sql` to create fresh database with multi-tenant structure
 - [ ] OR run `scripts/migrate-to-organizations.sql` to migrate existing database
 - [ ] Run `scripts/seed-demo-account.sql` to create demo account
 - [ ] Run `scripts/setup-storage-policies.sql` to update storage security

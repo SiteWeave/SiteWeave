@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { getBlockedUsers, unblockUser } from '@siteweave/core-logic';
 import { useHaptics } from '../hooks/useHaptics';
 import { useRouter } from 'expo-router';
+import { sheetBottomPadding, contentTopInset } from '../utils/layoutInsets';
 
 export default function BlockedUsersScreen() {
   const { t } = useTranslation();
@@ -123,7 +124,7 @@ export default function BlockedUsersScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View style={[styles.container, { paddingTop: contentTopInset(insets), paddingBottom: sheetBottomPadding(insets) }]}>
       <View style={styles.header}>
         <PressableWithFade
           style={styles.backButton}

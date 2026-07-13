@@ -6,7 +6,7 @@ export default function Card({ children, onPress, style, testID }) {
   const content = <View style={[styles.card, style]}>{children}</View>;
   if (onPress) {
     return (
-      <PressableWithFade onPress={onPress} testID={testID} activeOpacity={0.92}>
+      <PressableWithFade onPress={onPress} testID={testID}>
         {content}
       </PressableWithFade>
     );

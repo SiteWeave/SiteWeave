@@ -1,26 +1,62 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, TextInput, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import PressableWithFade from './PressableWithFade';
+import { Text } from './ui/Text';
+import Button from './ui/Button';
+import { colors, spacing } from '../theme';
 import {
   extractProjectInviteTokenFromUrl,
   redeemProjectInvite,
+  provisionPersonalWorkspace,
 } from '../utils/workspaceClient';
+import { sheetBottomPadding } from '../utils/layoutInsets';
 
 export default function NoOrganizationScreen() {
   const { signOut, supabase, loadUserOrganization, user, organizationError } = useAuth();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [inviteUrl, setInviteUrl] = useState('');
   const [shortCode, setShortCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [provisioning, setProvisioning] = useState(false);
 
   const isGuestWaiting = organizationError === 'guest_waiting';
+  const busy = loading || provisioning;
+
+  const handleCreateWorkspace = async () => {
+    if (!user?.id || busy) return;
+    setProvisioning(true);
+    try {
+      await supabase.from('profiles').upsert(
+        {
+          id: user.id,
+          account_intent: 'workspace_owner',
+          role: 'Team',
+        },
+        { onConflict: 'id' },
+      );
+      const result = await provisionPersonalWorkspace(supabase, { force: true });
+      if (result?.success) {
+        await loadUserOrganization(user);
+        Alert.alert(t('common.success'), t('mobile.guest_workspace_ready'));
+      } else {
+        Alert.alert(t('common.error'), result?.error || t('mobile.guest_workspace_failed'));
+      }
+    } catch (e) {
+      Alert.alert(t('common.error'), e?.message || t('mobile.guest_workspace_failed'));
+    } finally {
+      setProvisioning(false);
+    }
+  };
 
   const handleRedeem = async () => {
     const token = extractProjectInviteTokenFromUrl(inviteUrl) || inviteUrl.trim();
     if (!token && !shortCode.trim()) {
-      Alert.alert('Invite required', 'Paste your invite link or enter the code from your contractor.');
+      Alert.alert(t('common.error'), t('mobile.guest_invite_required'));
       return;
     }
     setLoading(true);
@@ -32,10 +68,10 @@ export default function NoOrganizationScreen() {
       if (result?.success) {
         await loadUserOrganization(user);
       } else {
-        Alert.alert('Invite problem', result?.error || 'Could not accept invite');
+        Alert.alert(t('common.error'), result?.error || t('mobile.guest_invite_problem'));
       }
     } catch (e) {
-      Alert.alert('Error', e?.message || 'Failed to redeem invite');
+      Alert.alert(t('common.error'), e?.message || t('mobile.guest_invite_problem'));
     } finally {
       setLoading(false);
     }
@@ -43,68 +79,80 @@ export default function NoOrganizationScreen() {
 
   if (isGuestWaiting) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.content}>
+      <View style={[styles.container, { paddingTop: insets.top, paddingBottom: sheetBottomPadding(insets) }]}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.iconContainer}>
-            <Ionicons name="mail-outline" size={64} color="#3B82F6" />
+            <Ionicons name="mail-outline" size={64} color={colors.primary} />
           </View>
-          <Text style={styles.title}>Waiting for a project invite</Text>
-          <Text style={styles.message}>
-            Open the invite link from your contractor (email or text). You can sign in with any email or Google — the link connects you to the project.
+          <Text style={styles.title}>{t('mobile.guest_waiting_title')}</Text>
+          <Text variant="bodyMedium" style={styles.message}>
+            {t('mobile.guest_waiting_message')}
           </Text>
 
           <TextInput
             style={styles.input}
-            placeholder="Paste invite link"
+            placeholder={t('mobile.guest_paste_invite')}
             value={inviteUrl}
             onChangeText={setInviteUrl}
             autoCapitalize="none"
             autoCorrect={false}
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.textSubtle}
           />
           <TextInput
             style={styles.input}
-            placeholder="Or 8-character code"
+            placeholder={t('mobile.guest_invite_code')}
             value={shortCode}
-            onChangeText={(t) => setShortCode(t.toUpperCase())}
+            onChangeText={(value) => setShortCode(value.toUpperCase())}
             autoCapitalize="characters"
             maxLength={8}
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.textSubtle}
           />
 
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+          <Button
+            label={loading ? t('common.loading', { defaultValue: 'Loading…' }) : t('mobile.guest_open_invite')}
             onPress={handleRedeem}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Open invite</Text>
-            )}
-          </TouchableOpacity>
+            disabled={busy}
+          />
 
-          <TouchableOpacity style={styles.secondaryButton} onPress={signOut}>
-            <Text style={styles.secondaryButtonText}>Sign out</Text>
-          </TouchableOpacity>
-        </View>
+          <PressableWithFade onPress={signOut} disabled={busy} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>{t('common.sign_out')}</Text>
+          </PressableWithFade>
+
+          <PressableWithFade
+            onPress={handleCreateWorkspace}
+            disabled={busy}
+            style={styles.pmLinkWrap}
+            testID="create-workspace-pm-link"
+          >
+            {provisioning ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <Text style={styles.pmLink}>{t('mobile.guest_i_am_pm')}</Text>
+            )}
+          </PressableWithFade>
+        </ScrollView>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: sheetBottomPadding(insets) }]}>
       <View style={styles.content}>
         <View style={styles.iconContainer}>
-          <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
+          <Ionicons name="alert-circle-outline" size={64} color={colors.error} />
         </View>
-        <Text style={styles.title}>No Organization Found</Text>
-        <Text style={styles.message}>
-          Your account is not associated with an organization. Use a project invite link, or contact your administrator.
+        <Text style={styles.title}>{t('mobile.no_org_title')}</Text>
+        <Text variant="bodyMedium" style={styles.message}>
+          {t('mobile.no_org_message')}
         </Text>
-        <TouchableOpacity style={styles.button} onPress={signOut}>
-          <Text style={styles.buttonText}>Sign Out</Text>
-        </TouchableOpacity>
+        <Button
+          label={provisioning ? t('mobile.guest_creating_workspace') : t('mobile.no_org_create_workspace')}
+          onPress={handleCreateWorkspace}
+          disabled={busy}
+        />
+        <PressableWithFade onPress={signOut} disabled={busy} style={styles.secondaryButton}>
+          <Text style={styles.secondaryButtonText}>{t('common.sign_out')}</Text>
+        </PressableWithFade>
       </View>
     </View>
   );
@@ -113,64 +161,67 @@ export default function NoOrganizationScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.background,
+  },
+  scroll: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: spacing.xxl,
   },
   content: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'stretch',
-    padding: 24,
+    padding: spacing.xxl,
   },
   iconContainer: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: spacing.xxl,
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 12,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: spacing.md,
     textAlign: 'center',
   },
   message: {
-    fontSize: 16,
-    color: '#4B5563',
+    color: colors.textMuted,
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: spacing.xxl,
     lineHeight: 24,
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 14,
-    marginBottom: 12,
+    marginBottom: spacing.md,
     fontSize: 16,
-    color: '#111827',
-  },
-  button: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    color: colors.text,
   },
   secondaryButton: {
-    marginTop: 16,
-    paddingVertical: 12,
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md,
     alignItems: 'center',
   },
   secondaryButtonText: {
-    color: '#6B7280',
+    color: colors.textMuted,
     fontSize: 15,
+    fontWeight: '600',
+  },
+  pmLinkWrap: {
+    marginTop: spacing.xxl,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  pmLink: {
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });

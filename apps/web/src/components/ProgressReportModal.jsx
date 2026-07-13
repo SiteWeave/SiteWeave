@@ -11,6 +11,7 @@ import {
   getProgressReportHistory,
   sendManualReport,
   exportReportToPDF,
+  formatScheduleNextSendAt,
 } from '@siteweave/core-logic';
 import { getLocalizedFrequencyLabel } from '@siteweave/i18n';
 import { saveProgressReportPdf } from '../utils/saveProgressReportPdf';
@@ -268,7 +269,16 @@ function ProgressReportModal({ projectId, onClose }) {
                           {' · '}
                           {getLocalizedFrequencyLabel(schedule.frequency, schedule.frequency_value, t)}
                           {schedule.next_send_at && (
-                            <span> · {t('progressReports.next_send', { date: new Date(schedule.next_send_at).toLocaleDateString(i18n.language) })}</span>
+                            <span>
+                              {' · '}
+                              {t('progressReports.next_send', {
+                                date: formatScheduleNextSendAt(
+                                  schedule.next_send_at,
+                                  i18n.language,
+                                  schedule.send_timezone || 'America/New_York'
+                                ),
+                              })}
+                            </span>
                           )}
                           {schedule.last_sent_at && (
                             <span className="ml-1 text-gray-400">· {t('progressReports.sent_on', { date: new Date(schedule.last_sent_at).toLocaleDateString(i18n.language) })}</span>

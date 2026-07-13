@@ -116,6 +116,7 @@ const getInitialState = () => {
     userPreferences: null, // Add user preferences for onboarding
     currentOrganization: null, // Current organization context
     userRole: null, // User's role with permissions
+    isPlatformDeveloper: false, // SiteWeave platform developer (is_super_admin)
     mustChangePassword: false, // Flag to force password reset for managed accounts
     organizationError: null, // Error message if user has no organization
     organizationLoading: false, // Loading state for organization check
@@ -172,6 +173,7 @@ function appReducer(state, action) {
         user: action.payload,
         userContactId: action.payload ? state.userContactId : null,
         profileAvatarUrl: action.payload ? state.profileAvatarUrl : null,
+        isPlatformDeveloper: action.payload ? state.isPlatformDeveloper : false,
       };
     case 'SET_USER_CONTACT_ID': return { ...state, userContactId: action.payload };
     case 'SET_PROFILE_AVATAR_URL': return { ...state, profileAvatarUrl: action.payload };
@@ -191,8 +193,20 @@ function appReducer(state, action) {
       saveStateToStorage(newState);
       return newState;
     }
-    case 'DELETE_PROJECT': 
-      newState = { ...state, projects: state.projects.filter(p => p.id !== action.payload) };
+    case 'DELETE_PROJECT':
+      newState = {
+        ...state,
+        projects: state.projects.filter((p) => p.id !== action.payload),
+        selectedProjectId:
+          String(state.selectedProjectId) === String(action.payload)
+            ? null
+            : state.selectedProjectId,
+        tasks: state.tasks.filter((task) => String(task.project_id) !== String(action.payload)),
+        files: state.files.filter((file) => String(file.project_id) !== String(action.payload)),
+        calendarEvents: state.calendarEvents.filter(
+          (event) => String(event.project_id) !== String(action.payload),
+        ),
+      };
       saveStateToStorage(newState);
       return newState;
     case 'ADD_TASK': {
@@ -287,6 +301,7 @@ function appReducer(state, action) {
     case 'UPDATE_USER_PREFERENCES': return { ...state, userPreferences: { ...state.userPreferences, ...action.payload } };
     case 'SET_ORGANIZATION': return { ...state, currentOrganization: action.payload };
     case 'SET_USER_ROLE': return { ...state, userRole: action.payload };
+    case 'SET_PLATFORM_DEVELOPER': return { ...state, isPlatformDeveloper: action.payload };
     case 'SET_MUST_CHANGE_PASSWORD': return { ...state, mustChangePassword: action.payload };
     case 'SET_ORGANIZATION_ERROR': return { ...state, organizationError: action.payload };
     case 'SET_ORGANIZATION_LOADING': return { ...state, organizationLoading: action.payload };
@@ -665,6 +680,7 @@ export const AppProvider = ({ children }) => {
             const { data: projects, error: projectsError } = await supabaseClient
               .from('projects')
               .select(PROJECT_LIST_COLUMNS)
+              .is('trashed_at', null)
               .order('updated_at', { ascending: false });
             if (projectsError) throw projectsError;
             return projects || [];
@@ -840,6 +856,7 @@ export const AppProvider = ({ children }) => {
                   organization_id,
                   role_id,
                   account_intent,
+                  is_super_admin,
                   roles (
                     id,
                     name,
@@ -866,6 +883,10 @@ export const AppProvider = ({ children }) => {
               }
               dispatch({ type: 'SET_ORGANIZATION', payload: organization });
               dispatch({ type: 'SET_USER_ROLE', payload: profileWithOrg.roles ?? null });
+              dispatch({
+                type: 'SET_PLATFORM_DEVELOPER',
+                payload: profileWithOrg.is_super_admin === true,
+              });
               dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: null });
               dispatch({ type: 'SET_COLLABORATOR_STATUS', payload: { isCollaborator: false, projects: [] } });
 
@@ -963,6 +984,7 @@ export const AppProvider = ({ children }) => {
               organization_id,
               role_id,
               account_intent,
+              is_super_admin,
               roles (
                 id,
                 name,
@@ -976,6 +998,10 @@ export const AppProvider = ({ children }) => {
           if (profileWithOrg?.account_intent) {
             dispatch({ type: 'SET_ACCOUNT_INTENT', payload: profileWithOrg.account_intent });
           }
+          dispatch({
+            type: 'SET_PLATFORM_DEVELOPER',
+            payload: profileWithOrg?.is_super_admin === true,
+          });
           
           // Check must_change_password separately (column may not exist in older schemas)
           let mustChangePassword = false;
@@ -1180,13 +1206,46 @@ export const AppProvider = ({ children }) => {
         .channel('app-db-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, (payload) => {
           if (payload.eventType === 'INSERT') {
-            dispatch({ type: 'ADD_PROJECT', payload: payload.new });
+            if (!payload.new?.trashed_at) {
+              dispatch({ type: 'ADD_PROJECT', payload: payload.new });
+            }
           } else if (payload.eventType === 'UPDATE') {
-            dispatch({ type: 'UPDATE_PROJECT', payload: payload.new });
+            if (payload.new?.trashed_at) {
+              dispatch({ type: 'DELETE_PROJECT', payload: payload.new.id });
+            } else {
+              dispatch({ type: 'UPDATE_PROJECT', payload: payload.new });
+            }
           } else if (payload.eventType === 'DELETE') {
             dispatch({ type: 'DELETE_PROJECT', payload: payload.old.id });
           }
         })
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'project_lifecycle_events' },
+          async (payload) => {
+            const event = payload.new;
+            if (event.actor_user_id !== state.user?.id) {
+              window.dispatchEvent(new CustomEvent('siteweave:project-lifecycle', {
+                detail: event,
+              }));
+            }
+            if (event.action === 'trashed' || event.action === 'purged') {
+              dispatch({ type: 'DELETE_PROJECT', payload: event.project_id || event.metadata?.project_id });
+              return;
+            }
+            if (event.action === 'restored' && event.project_id) {
+              const { data: restoredProject, error } = await supabaseClient
+                .from('projects')
+                .select(PROJECT_LIST_COLUMNS)
+                .eq('id', event.project_id)
+                .is('trashed_at', null)
+                .maybeSingle();
+              if (!error && restoredProject) {
+                dispatch({ type: 'ADD_PROJECT', payload: restoredProject });
+              }
+            }
+          },
+        )
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'files' }, (payload) => {
           dispatch({ type: 'ADD_FILE', payload: payload.new });
         })
@@ -1333,6 +1392,32 @@ export const AppProvider = ({ children }) => {
       }
     };
   }, [state.authLoading, state.user?.id, state.currentOrganization?.id]);
+
+  useEffect(() => {
+    if (state.authLoading || !state.user) return undefined;
+
+    const reconcileProjects = async () => {
+      const { data, error } = await supabaseClient
+        .from('projects')
+        .select(PROJECT_LIST_COLUMNS)
+        .is('trashed_at', null)
+        .order('updated_at', { ascending: false });
+      if (error) {
+        console.warn('Could not reconcile projects after reconnect:', error.message);
+        return;
+      }
+      dispatch({
+        type: 'SET_DATA',
+        payload: {
+          projects: data || [],
+          activeView: appStateRefForLazy.current?.activeView,
+        },
+      });
+    };
+
+    window.addEventListener('online', reconcileProjects);
+    return () => window.removeEventListener('online', reconcileProjects);
+  }, [state.authLoading, state.user?.id]);
 
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>;
 };

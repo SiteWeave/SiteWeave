@@ -8,6 +8,7 @@ import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { createGuestShare } from '../_shared/guestShare.ts'
 import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
 import { withTransactionalSmsFooter } from '../_shared/smsCompliance.ts'
+import { isSmsNotificationsEnabled } from '../_shared/smsNotifications.ts'
 import { hasFullTierAccess } from '../_shared/workspaceTier.ts'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
@@ -172,14 +173,14 @@ serve(async (req) => {
       const daysUntilStart = Math.floor((startDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
 
       const orgConfig = orgById.get(task.organization_id) || {}
-      const orgEnabled = orgConfig.task_start_notifications_enabled !== false
+      const orgEnabled = orgConfig.task_start_notifications_enabled === true
       const orgLeadDays = normalizeLeadDays(orgConfig.task_start_notification_lead_days, [14, 7])
 
       const project = task.projects || {}
-      const useOrgDefaults = project.task_notifications_use_org_defaults !== false
+      const useOrgDefaults = project.task_notifications_use_org_defaults === true
       const enabled = useOrgDefaults
         ? orgEnabled
-        : (project.task_start_notifications_enabled ?? orgEnabled)
+        : project.task_start_notifications_enabled === true
       const leadDays = useOrgDefaults
         ? orgLeadDays
         : normalizeLeadDays(project.task_start_notification_lead_days, orgLeadDays)
@@ -305,7 +306,7 @@ serve(async (req) => {
         }
       }
 
-      if (bucket.recipientPhone) {
+      if (bucket.recipientPhone && isSmsNotificationsEnabled()) {
         const gate = await gateOrSendOptInForSubstantiveSms(supabase, {
           phoneE164: bucket.recipientPhone,
           organizationId: bucket.organizationId,

@@ -3,8 +3,8 @@
 ## Source of Truth
 **Root `schema.sql`** is the **single source of truth** for the database schema.
 
-## Synchronized Files
-Both schema files have been synchronized and contain identical:
+## Canonical Schema File
+The repo maintains a single schema file at the repository root:
 
 ### ✅ Table Definitions
 - `project_contacts` table includes `organization_id UUID NOT NULL` column
@@ -36,9 +36,8 @@ Both schema files have been synchronized and contain identical:
 - UPDATE: "Admins and PMs can update project contacts in their organization"
 - DELETE: "Admins and PMs can remove project contacts in their organization"
 
-## Files Verified
-1. ✅ `schema.sql` (root) - Source of truth
-2. ✅ `apps/web/schema.sql` - Synchronized with root
+## File Verified
+1. ✅ `schema.sql` (repository root) - Source of truth
 
 ## Key Features Implemented
 - ✅ Organization isolation enforced in all policies
@@ -48,4 +47,4 @@ Both schema files have been synchronized and contain identical:
 - ✅ Admin detection works with both is_super_admin flag and role name
 
 ## No Conflicts
-Both schema files are now identical in structure and policies. The root `schema.sql` should be used as the master reference for any future schema changes.
+Use the root `schema.sql` as the master reference for any future schema changes. Incremental updates ship via `supabase/migrations/`.

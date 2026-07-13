@@ -265,7 +265,7 @@ curl -X POST https://YOUR_PROJECT.supabase.co/functions/v1/create-org-admin \
 | "No authorization header" | Missing auth token | Check session is valid |
 | "Not authorized - can_manage_team" | User lacks permission | Verify role permissions |
 | "duplicate key value" | Role/org already exists | Fetch existing before creating |
-| "relation does not exist" | Table missing | Run schema.sql |
+| "relation does not exist" | Table missing | Run ../../schema.sql |
 | "RLS policy violation" | Policy too restrictive | Check RLS policies |
 | "Foreign key ambiguity" | Multiple relationships | Use explicit FK syntax |
 | "Invalid or expired invitation" | Token issue | Check invitation status |

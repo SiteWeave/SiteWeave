@@ -23,6 +23,7 @@ export const TASK_LIST_COLUMNS = [
   'project_phase_id',
   'percent_complete',
   'notify_assignee_email',
+  'completed_at',
   'contacts!fk_tasks_assignee_id(name, avatar_url, email, phone)',
   'task_photos(id)',
 ].join(',');
@@ -114,6 +115,34 @@ export async function fetchUserIncompleteTasks(supabase, userId, contactId, opti
   return data || [];
 }
 
+/** Columns allowed on task insert — tasks table has no created_by_user_id or description. */
+const TASK_INSERT_FIELDS = [
+  'project_id',
+  'organization_id',
+  'text',
+  'due_date',
+  'priority',
+  'completed',
+  'assignee_id',
+  'recurrence',
+  'parent_task_id',
+  'is_recurring_instance',
+  'start_date',
+  'duration_days',
+  'is_milestone',
+  'percent_complete',
+  'project_phase_id',
+  'notify_assignee_email',
+];
+
+function pickTaskInsertPayload(taskData) {
+  if (!taskData || typeof taskData !== 'object') return {};
+  return TASK_INSERT_FIELDS.reduce((acc, key) => {
+    if (taskData[key] !== undefined) acc[key] = taskData[key];
+    return acc;
+  }, {});
+}
+
 /**
  * Create a new task
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
@@ -121,9 +150,14 @@ export async function fetchUserIncompleteTasks(supabase, userId, contactId, opti
  * @returns {Promise<Object>} Created task
  */
 export async function createTask(supabase, taskData) {
+  const payload = pickTaskInsertPayload(taskData);
+  const normalized = normalizeTaskProgressUpdate(payload);
+  if (normalized.completed) {
+    normalized.completed_at = new Date().toISOString();
+  }
   const { data, error } = await supabase
     .from('tasks')
-    .insert(taskData)
+    .insert(normalized)
     .select()
     .single();
   
@@ -154,6 +188,26 @@ export function normalizeTaskProgressUpdate(updates) {
 }
 
 /**
+ * Set or clear completed_at when completion status changes.
+ * @param {Object} updates - Normalized partial task updates
+ * @param {{ completed?: boolean } | null | undefined} currentTask
+ * @returns {Object}
+ */
+export function applyCompletedAtUpdate(updates, currentTask) {
+  if (updates.completed === undefined) return updates;
+
+  const wasCompleted = Boolean(currentTask?.completed);
+  const willBeCompleted = Boolean(updates.completed);
+  if (willBeCompleted && !wasCompleted) {
+    return { ...updates, completed_at: new Date().toISOString() };
+  }
+  if (!willBeCompleted && wasCompleted) {
+    return { ...updates, completed_at: null };
+  }
+  return updates;
+}
+
+/**
  * Update a task
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
  * @param {string} taskId - Task ID
@@ -162,9 +216,23 @@ export function normalizeTaskProgressUpdate(updates) {
  */
 export async function updateTask(supabase, taskId, updates) {
   const normalized = normalizeTaskProgressUpdate(updates);
+  const affectsCompletion =
+    normalized.completed !== undefined || normalized.percent_complete !== undefined;
+
+  let payload = normalized;
+  if (affectsCompletion) {
+    const { data: current, error: currentError } = await supabase
+      .from('tasks')
+      .select('completed')
+      .eq('id', taskId)
+      .maybeSingle();
+    if (currentError) throw currentError;
+    payload = applyCompletedAtUpdate(normalized, current);
+  }
+
   const { data, error } = await supabase
     .from('tasks')
-    .update(normalized)
+    .update(payload)
     .eq('id', taskId)
     .select();
   
@@ -335,6 +403,7 @@ export async function fetchCompletedTasksList(supabase, options = {}) {
     .from('tasks')
     .select(TASK_LIST_COLUMNS)
     .eq('completed', true)
+    .order('completed_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     .limit(limit);
 

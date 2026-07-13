@@ -38,6 +38,7 @@ export default function ProgressBottomSheet({
       onPrimary={handleSave}
       primaryDisabled={saving}
       primaryLoading={saving}
+      stickyPrimary
       testID="progress-sheet"
     >
       <ProgressEditor value={percent} onChange={setPercent} compact />

@@ -14,8 +14,27 @@ This document describes the implementation of content reporting, user blocking, 
 
 **Backend Services:**
 - `reportContent()` - Submit a content report
-- `getContentReports()` - Fetch reports (Admin only)
-- `updateReportStatus()` - Update report status (Admin only)
+- `getContentReports()` - Fetch reports (platform developers only)
+- `updateReportStatus()` - Update report status (platform developers only)
+- `canAccessContentReports(profile)` - UI guard; requires `profiles.is_super_admin`
+
+**Access control (platform developer vs org admin):**
+
+| Role | `profiles.role` / org role | `is_super_admin` | Content Reports |
+|------|---------------------------|------------------|-----------------|
+| Organization admin | Admin / Org Admin | false | Hidden; RLS blocks global queue |
+| Platform developer | any | true | Full access |
+| Regular user | Team, etc. | false | Can submit reports only |
+
+Grant platform developer access (Supabase SQL editor):
+
+```sql
+UPDATE public.profiles
+SET is_super_admin = true
+WHERE id = '<your-auth-user-uuid>';
+```
+
+Apply RLS migration: `supabase/migrations/20260618120000_content_reports_platform_developer_only.sql`
 
 **UI Components:**
 - `ReportContentModal` - Modal for reporting content with reason selection

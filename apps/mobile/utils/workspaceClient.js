@@ -36,6 +36,10 @@ async function invokeEdgeFunction(supabase, functionName, body = {}) {
   return data ?? { success: false, error: 'Empty response' };
 }
 
+export async function provisionPersonalWorkspace(supabase, { force = false } = {}) {
+  return invokeEdgeFunction(supabase, 'provision-personal-workspace', force ? { force: true } : {});
+}
+
 export async function redeemProjectInvite(supabase, { token, shortCode }) {
   return invokeEdgeFunction(supabase, 'redeem-project-invite', { token, shortCode });
 }

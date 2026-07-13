@@ -16,6 +16,7 @@ import {
     getTaskEndDate,
 } from '../utils/taskDependencyService';
 import { logWeatherImpactRecorded, logWeatherImpactScheduleApplied } from '../utils/activityLogger';
+import { applyScheduleToWeatherImpact } from '../utils/weatherScheduleApply';
 import LoadingSpinner from './LoadingSpinner';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 
@@ -48,6 +49,7 @@ function WeatherImpactModal({
 
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [applyingImpactId, setApplyingImpactId] = useState(null);
     const [impacts, setImpacts] = useState([]);
 
     const [title, setTitle] = useState('');
@@ -448,6 +450,54 @@ function WeatherImpactModal({
         }
     };
 
+    const handleQuickApplySchedule = async (impact, event) => {
+        event?.stopPropagation();
+        if (!impact || impact.schedule_shift_applied === true) return;
+
+        const daysLost = Number(impact.days_lost || 1);
+        if (!window.confirm(t('weather.apply_schedule_confirm', { count: daysLost }))) {
+            return;
+        }
+
+        setApplyingImpactId(impact.id);
+        try {
+            const result = await applyScheduleToWeatherImpact({
+                supabase: supabaseClient,
+                impact,
+                project,
+                allTasks,
+                projectPhases,
+                taskDependencies,
+                projectDependencyMode,
+                user,
+                orgId,
+                dispatch,
+            });
+
+            if (result.taskCount > 0 || result.phaseCount > 0) {
+                addToast(
+                    t('weather.schedule_applied', { count: result.taskCount + result.phaseCount }),
+                    'success',
+                );
+            } else if (!result.alreadyApplied) {
+                addToast(t('weather.no_scheduled_items'), 'warning');
+            }
+            onApplied?.();
+            await loadImpacts();
+        } catch (err) {
+            console.error(err);
+            if (err.message === 'WEATHER_DATES_REQUIRED') {
+                addToast(t('weather.dates_required'), 'warning');
+            } else if (err.message === 'WEATHER_NO_SCHEDULED_ITEMS') {
+                addToast(t('weather.no_scheduled_items'), 'warning');
+            } else {
+                addToast(err.message || t('weather.save_failed'), 'error');
+            }
+        } finally {
+            setApplyingImpactId(null);
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
             <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-xl">
@@ -622,10 +672,28 @@ function WeatherImpactModal({
                                                     }
                                                 }}
                                             >
-                                                <div className="font-medium text-gray-900">{im.title}</div>
-                                                <div className="text-xs text-gray-600">
-                                                    {t('weather.impact_days_lost', { count: im.days_lost })}
-                                                    {im.schedule_shift_applied ? ` · ${t('weather.schedule_updated')}` : ` · ${t('weather.logged_only')}`}
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="min-w-0">
+                                                        <div className="font-medium text-gray-900">{im.title}</div>
+                                                        <div className="text-xs text-gray-600">
+                                                            {t('weather.impact_days_lost', { count: im.days_lost })}
+                                                            {im.schedule_shift_applied
+                                                                ? ` · ${t('weather.schedule_updated')}`
+                                                                : ` · ${t('weather.schedule_unchanged')}`}
+                                                        </div>
+                                                    </div>
+                                                    {!im.schedule_shift_applied ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={(event) => handleQuickApplySchedule(im, event)}
+                                                            disabled={applyingImpactId === im.id || saving}
+                                                            className="shrink-0 rounded-md bg-amber-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                                                        >
+                                                            {applyingImpactId === im.id
+                                                                ? t('weather.applying_schedule')
+                                                                : t('weather.apply_to_schedule')}
+                                                        </button>
+                                                    ) : null}
                                                 </div>
                                             </li>
                                         ))}

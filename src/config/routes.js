@@ -1,6 +1,7 @@
 export const ROUTE_PATHS = {
   home: '/',
   projects: '/projects',
+  projectsTrash: '/projects/trash',
   project: '/projects/:id',
   projectTasks: '/projects/:id/tasks',
   projectGantt: '/projects/:id/gantt',
@@ -21,6 +22,8 @@ export const ROUTE_PATHS = {
   projectInvite: '/project-invite/:token',
   invite: '/invite/:token',
   guestTaskShare: '/guest/tasks/:token',
+  guestPunchListReview: '/guest/punch-list/:token',
+  smsConsent: '/sms-consent/:token',
 }
 
 export const PRIMARY_NAV_ITEMS = [
@@ -31,3 +34,14 @@ export const PRIMARY_NAV_ITEMS = [
   { label: 'Organization', to: ROUTE_PATHS.organization },
   { label: 'Settings', to: ROUTE_PATHS.settings },
 ]
+
+export const VIEW_ROUTE_PATHS = {
+  Dashboard: ROUTE_PATHS.home,
+  Projects: ROUTE_PATHS.projects,
+  Calendar: ROUTE_PATHS.calendar,
+  Team: ROUTE_PATHS.tradePartners,
+  Messages: ROUTE_PATHS.tradePartners,
+  Contacts: ROUTE_PATHS.tradePartners,
+  Organization: ROUTE_PATHS.organization,
+  Settings: ROUTE_PATHS.settings,
+}

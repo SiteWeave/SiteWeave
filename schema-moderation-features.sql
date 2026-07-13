@@ -106,32 +106,46 @@ ALTER TABLE terms_of_service_acceptances ENABLE ROW LEVEL SECURITY;
 -- ROW LEVEL SECURITY POLICIES
 -- ============================================================================
 
+-- ============================================================================
+-- MODERATION POLICIES
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.is_platform_developer()
+RETURNS boolean AS $$
+  SELECT COALESCE(
+    (SELECT is_super_admin FROM public.profiles WHERE id = auth.uid()),
+    false
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+
 -- Content Reports Policies
 DROP POLICY IF EXISTS "Users can see their own reports" ON public.content_reports;
 DROP POLICY IF EXISTS "Admins can see all reports" ON public.content_reports;
+DROP POLICY IF EXISTS "Platform developers can see all reports" ON public.content_reports;
 DROP POLICY IF EXISTS "Users can create reports" ON public.content_reports;
 DROP POLICY IF EXISTS "Admins can update reports" ON public.content_reports;
+DROP POLICY IF EXISTS "Platform developers can update reports" ON public.content_reports;
 
 CREATE POLICY "Users can see their own reports"
 ON public.content_reports
 FOR SELECT
 USING (reported_by_user_id = auth.uid());
 
-CREATE POLICY "Admins can see all reports"
+CREATE POLICY "Platform developers can see all reports"
 ON public.content_reports
 FOR SELECT
-USING (get_user_role() = 'Admin');
+USING (public.is_platform_developer());
 
 CREATE POLICY "Users can create reports"
 ON public.content_reports
 FOR INSERT
 WITH CHECK (reported_by_user_id = auth.uid());
 
-CREATE POLICY "Admins can update reports"
+CREATE POLICY "Platform developers can update reports"
 ON public.content_reports
 FOR UPDATE
-USING (get_user_role() = 'Admin')
-WITH CHECK (get_user_role() = 'Admin');
+USING (public.is_platform_developer())
+WITH CHECK (public.is_platform_developer());
 
 -- Blocked Users Policies
 DROP POLICY IF EXISTS "Users can see their own blocks" ON public.blocked_users;

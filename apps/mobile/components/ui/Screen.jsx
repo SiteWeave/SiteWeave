@@ -1,13 +1,27 @@
 import { View, ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing } from '../../theme';
+import { contentTopInset, scrollBottomPadding } from '../../utils/layoutInsets';
 
-/** Tab screens: safe area + padding above floating tab bar */
-export { TAB_BAR_CLEARANCE, scrollBottomPadding } from './FloatingTabBar';
+export {
+  contentTopInset,
+  scrollBottomPadding,
+  fabBottomOffset,
+  sheetBottomPadding,
+  sheetScrollEndPadding,
+  sheetListEndPadding,
+} from '../../utils/layoutInsets';
 
-export function Screen({ children, style, scroll = false, contentContainerStyle, refreshControl }) {
+export function Screen({
+  children,
+  style,
+  scroll = false,
+  contentContainerStyle,
+  refreshControl,
+  topExtra = spacing.sm,
+}) {
   const insets = useSafeAreaInsets();
-  const paddingTop = insets.top + spacing.sm;
+  const paddingTop = contentTopInset(insets, topExtra);
   const paddingBottom = scrollBottomPadding(insets, spacing.lg);
 
   if (scroll) {

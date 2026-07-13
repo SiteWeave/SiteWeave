@@ -18,6 +18,15 @@ export default function ProjectWorkspaceView({ routeTab = 'tasks' }) {
     }
   }, [id, state.selectedProjectId, state.activeView, dispatch])
 
+  React.useEffect(() => {
+    if (!id || state.isLoading) return
+    const projectExists = state.projects.some((project) => String(project.id) === String(id))
+    if (!projectExists) {
+      dispatch({ type: 'SET_PROJECT', payload: null })
+      navigate('/projects', { replace: true })
+    }
+  }, [id, state.isLoading, state.projects, dispatch, navigate])
+
   return (
     <ProjectDetailsView
       routeTab={routeTab}

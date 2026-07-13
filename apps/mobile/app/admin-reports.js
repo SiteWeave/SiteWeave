@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, ScrollView, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ScrollView, Alert, RefreshControl, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import PressableWithFade from '../components/PressableWithFade';
@@ -7,6 +7,8 @@ import { useAuth } from '../context/AuthContext';
 import { getContentReports, updateReportStatus } from '@siteweave/core-logic';
 import { useHaptics } from '../hooks/useHaptics';
 import { useRouter } from 'expo-router';
+import { usePlatformDeveloper } from '../hooks/usePlatformDeveloper';
+import { contentTopInset, sheetBottomPadding } from '../utils/layoutInsets';
 
 const STATUS_COLORS = {
   pending: '#F59E0B',
@@ -29,14 +31,22 @@ export default function AdminReportsScreen() {
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const router = useRouter();
+  const { isPlatformDeveloper, loading: developerLoading } = usePlatformDeveloper();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState('all'); // 'all', 'pending', 'resolved', 'dismissed'
 
   useEffect(() => {
+    if (!developerLoading && !isPlatformDeveloper) {
+      router.replace('/(tabs)/more');
+    }
+  }, [developerLoading, isPlatformDeveloper, router]);
+
+  useEffect(() => {
+    if (!isPlatformDeveloper) return;
     loadReports();
-  }, [user, filter]);
+  }, [user, filter, isPlatformDeveloper]);
 
   const loadReports = async () => {
     if (!user) {
@@ -163,8 +173,16 @@ export default function AdminReportsScreen() {
     );
   };
 
+  if (developerLoading || !isPlatformDeveloper) {
+    return (
+      <View style={[styles.container, { paddingTop: contentTopInset(insets), justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
+    );
+  }
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View style={[styles.container, { paddingTop: contentTopInset(insets), paddingBottom: sheetBottomPadding(insets) }]}>
       <View style={styles.header}>
         <PressableWithFade
           style={styles.backButton}

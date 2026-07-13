@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { View, StyleSheet, TextInput, ScrollView } from 'react-native';
+import { View, StyleSheet, TextInput } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Ionicons } from '@expo/vector-icons';
 import { createWeatherImpact } from '@siteweave/core-logic';
 import BottomSheet from './ui/BottomSheet';
+import { ProjectCheckboxList } from './ui/ProjectPicker';
 import { Text } from './ui/Text';
 import PressableWithFade from './PressableWithFade';
 import { colors, spacing, touch } from '../theme';
@@ -109,9 +109,12 @@ export default function WeatherShiftSheet({
       onPrimary={handleSave}
       primaryLoading={saving}
       primaryDisabled={saving || (!lockedProjectId && selectedProjectIds.length === 0)}
+      snap="medium"
+      expandOnFocus
+      stickyPrimary
       testID="weather-shift-sheet"
     >
-      <ScrollView keyboardShouldPersistTaps="handled" style={styles.scroll}>
+      <BottomSheet.Scroll style={styles.scroll}>
         <Text variant="caption" style={styles.label}>
           {t('mobile.weather_reason')}
         </Text>
@@ -159,25 +162,14 @@ export default function WeatherShiftSheet({
             <Text variant="bodyMedium" style={styles.hint}>
               {t('mobile.weather_projects_hint')}
             </Text>
-            {projects.map((p) => {
-              const selected = selectedProjectIds.includes(p.id);
-              return (
-                <PressableWithFade
-                  key={p.id}
-                  style={[styles.projectRow, selected && styles.projectRowActive]}
-                  onPress={() => toggleProject(p.id)}
-                >
-                  <Ionicons
-                    name={selected ? 'checkbox' : 'square-outline'}
-                    size={24}
-                    color={selected ? colors.primary : colors.textMuted}
-                  />
-                  <Text variant="body" style={styles.projectName}>
-                    {p.name || p.title || t('mobile.unnamed_project')}
-                  </Text>
-                </PressableWithFade>
-              );
-            })}
+            <ProjectCheckboxList
+              projects={projects}
+              selectedIds={selectedProjectIds}
+              onToggle={toggleProject}
+              disabled={!!lockedProjectId}
+              collapseWhenHidden={visible}
+              testID="weather-project-picker"
+            />
           </View>
         ) : null}
 
@@ -186,7 +178,7 @@ export default function WeatherShiftSheet({
             {error}
           </Text>
         ) : null}
-      </ScrollView>
+      </BottomSheet.Scroll>
     </BottomSheet>
   );
 }
@@ -196,18 +188,6 @@ const styles = StyleSheet.create({
   section: { marginTop: spacing.lg, marginBottom: spacing.md },
   label: { marginBottom: spacing.sm, color: colors.textMuted },
   hint: { color: colors.textMuted, marginBottom: spacing.md },
-  projectRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    minHeight: touch.minRowHeight,
-    paddingHorizontal: spacing.lg,
-    borderRadius: 12,
-    marginBottom: spacing.xs,
-    backgroundColor: colors.surfaceMuted,
-  },
-  projectRowActive: { backgroundColor: colors.primaryLight, borderWidth: 1, borderColor: colors.primary },
-  projectName: { flex: 1 },
   reasonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
   reasonChip: {
     minHeight: 44,

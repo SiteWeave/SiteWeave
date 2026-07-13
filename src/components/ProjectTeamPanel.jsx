@@ -1,14 +1,18 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import Avatar from './Avatar';
+import { SmsConsentStatusBadge } from './SmsConsentActions';
+import { resolveContactSmsConsent } from '../utils/smsWebConsent';
+
 function hasEmailableAddress(email) {
   return Boolean(email && String(email).trim().includes('@'));
 }
 
-function ContactRow({ contact, showDeployment = false }) {
+function ContactRow({ contact, showDeployment = false, smsConsentMap = null }) {
   const { t } = useTranslation();
   const emailOk = hasEmailableAddress(contact.email);
   const phoneOk = Boolean(contact.phone && String(contact.phone).replace(/\D/g, '').length >= 7);
+  const smsConsentStatus = smsConsentMap ? resolveContactSmsConsent(contact, smsConsentMap) : null;
   const isTradePartner = contact.type === 'Subcontractor';
 
   const primaryLine = isTradePartner && contact.company ? contact.company : contact.name;
@@ -51,12 +55,13 @@ function ContactRow({ contact, showDeployment = false }) {
         >
           ☎
         </span>
+        {smsConsentStatus ? <SmsConsentStatusBadge status={smsConsentStatus} /> : null}
       </div>
     </div>
   );
 }
 
-function ProjectTeamPanel({ project, contacts, onOpenDirectory }) {
+function ProjectTeamPanel({ project, contacts, onOpenDirectory, smsConsentMap = null }) {
   const { t } = useTranslation();
   const projectContacts = (contacts || []).filter(
     (contact) =>
@@ -104,7 +109,7 @@ function ProjectTeamPanel({ project, contacts, onOpenDirectory }) {
               <div className="w-full space-y-2">
                 {teamMembers.length > 0 ? (
                   teamMembers.map((contact) => (
-                    <ContactRow key={contact.id} contact={contact} showDeployment />
+                    <ContactRow key={contact.id} contact={contact} showDeployment smsConsentMap={smsConsentMap} />
                   ))
                 ) : (
                   <p className="text-sm text-gray-500">{t('project_team.no_crew')}</p>
@@ -122,7 +127,7 @@ function ProjectTeamPanel({ project, contacts, onOpenDirectory }) {
               <div className="w-full space-y-2">
                 {subcontractors.length > 0 ? (
                   subcontractors.map((contact) => (
-                    <ContactRow key={contact.id} contact={contact} showDeployment={false} />
+                    <ContactRow key={contact.id} contact={contact} showDeployment={false} smsConsentMap={smsConsentMap} />
                   ))
                 ) : (
                   <p className="text-sm text-gray-500">{t('project_team.no_trade_partners')}</p>

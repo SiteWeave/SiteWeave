@@ -5,7 +5,7 @@ import InlineEditableText from './InlineEditableText';
 import PermissionGuard from './PermissionGuard';
 import DateRangePicker from './DateRangePicker';
 import { addDaysIso, localDateIso, formatLocalDateOnly } from '../utils/dateHelpers';
-import { normalizeAssigneePhone } from '@siteweave/core-logic';
+import { normalizeAssigneePhone, isSmsNotificationsEnabled } from '@siteweave/core-logic';
 
 /** @typedef {null | 'dates' | 'assign'} TaskPanel */
 
@@ -25,6 +25,7 @@ const TaskItem = memo(function TaskItem({
     onPingAssignee = null,
     pingLocked = false,
     onRequestAssigneeSmsConsent = null,
+    onShareSmsConsentLink = null,
     pingingTaskId = null,
     project = null,
 }) {
@@ -275,8 +276,9 @@ const TaskItem = memo(function TaskItem({
         defaultRegion: 'US',
     });
     const assigneePhoneOkPing = assigneePhoneNorm.isValid;
+    const smsEnabled = isSmsNotificationsEnabled();
     const smsConsent = task.assignee_sms_consent ?? null;
-    const smsPingAllowed = assigneePhoneOkPing && smsConsent === 'confirmed';
+    const smsPingAllowed = smsEnabled && assigneePhoneOkPing && smsConsent === 'confirmed';
     const smsConsentBlocked = assigneePhoneOkPing && smsConsent === 'opted_out';
     const looksLikePlaceholderName =
         /^assignee?\b/i.test(assigneeName) ||
@@ -636,7 +638,7 @@ const TaskItem = memo(function TaskItem({
                             task.assignee_id &&
                             (
                                 (assigneeEmail && assigneeEmail.includes('@')) ||
-                                Boolean(String(selectedAssigneeContact?.phone || '').trim())
+                                (smsEnabled && Boolean(String(selectedAssigneeContact?.phone || '').trim()))
                             ) && (
                                 <PermissionGuard permission="can_assign_tasks">
                                     <div className="flex shrink-0 items-center gap-0.5">
@@ -649,7 +651,10 @@ const TaskItem = memo(function TaskItem({
                                             disabled={pingingTaskId === task.id}
                                             className="relative flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-500 shadow-xs hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                                             title={
-                                                assigneePhoneOkPing && smsConsent !== 'confirmed' && !smsConsentBlocked
+                                                smsEnabled &&
+                                                assigneePhoneOkPing &&
+                                                smsConsent !== 'confirmed' &&
+                                                !smsConsentBlocked
                                                     ? t('tasks.ping_title_sms')
                                                     : t('tasks.ping_title_email')
                                             }
@@ -661,7 +666,8 @@ const TaskItem = memo(function TaskItem({
                                             />
                                             <span className="hidden sm:inline">{t('tasks.ping')}</span>
                                         </button>
-                                        {onRequestAssigneeSmsConsent &&
+                                        {smsEnabled &&
+                                            onRequestAssigneeSmsConsent &&
                                             assigneePhoneOkPing &&
                                             !smsPingAllowed &&
                                             !smsConsentBlocked &&
@@ -679,7 +685,8 @@ const TaskItem = memo(function TaskItem({
                                                     {t('tasks.sms_ok')}
                                                 </button>
                                             )}
-                                        {onRequestAssigneeSmsConsent &&
+                                        {smsEnabled &&
+                                            onRequestAssigneeSmsConsent &&
                                             smsConsent === 'pending' &&
                                             !smsConsentBlocked && (
                                                 <button
@@ -693,6 +700,23 @@ const TaskItem = memo(function TaskItem({
                                                     title={t('tasks.resend_consent')}
                                                 >
                                                     {t('tasks.resend_consent')}
+                                                </button>
+                                            )}
+                                        {onShareSmsConsentLink &&
+                                            assigneePhoneOkPing &&
+                                            smsConsent !== 'confirmed' &&
+                                            smsConsent !== 'opted_out' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onShareSmsConsentLink(task);
+                                                    }}
+                                                    disabled={pingingTaskId === task.id}
+                                                    className="flex shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-1 py-0.5 text-[10px] font-medium text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+                                                    title={t('sms.web_consent.get_consent_link')}
+                                                >
+                                                    {t('sms.web_consent.share_link')}
                                                 </button>
                                             )}
                                     </div>

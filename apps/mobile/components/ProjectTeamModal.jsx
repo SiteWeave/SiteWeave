@@ -1,34 +1,53 @@
-import { View, Text, StyleSheet, Modal, FlatList, Linking, Animated, Dimensions } from 'react-native';
+import { View, StyleSheet, Linking, ActivityIndicator } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { fetchProjectContacts } from '@siteweave/core-logic';
 import { Ionicons } from '@expo/vector-icons';
 import PressableWithFade from './PressableWithFade';
-import ModalScrim from './ui/ModalScrim';
+import Avatar from './ui/Avatar';
+import BottomSheet, { useSheetInsets } from './ui/BottomSheet';
+import ProjectInviteSheet from './ProjectInviteSheet';
+import { Text } from './ui/Text';
+import { colors, spacing, touch } from '../theme';
+import { sheetListEndPadding } from '../utils/layoutInsets';
+import { useCollapsibleList, ShowMoreToggle } from './ui/CollapsibleList';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-export default function ProjectTeamModal({ visible, projectId, onClose }) {
-  const { supabase } = useAuth();
+export default function ProjectTeamModal({
+  visible,
+  projectId,
+  project = null,
+  canInvite = false,
+  openInviteOnMount = false,
+  onClose,
+}) {
+  const { t } = useTranslation();
+  const { supabase, user } = useAuth();
+  const sheetInsets = useSheetInsets();
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
-  
-  const modalTranslateY = useRef(new Animated.Value(1)).current;
+  const [teamSheetOpen, setTeamSheetOpen] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const pendingInviteRef = useRef(false);
 
   useEffect(() => {
-    if (visible) {
-      modalTranslateY.setValue(1);
-      requestAnimationFrame(() => {
-        Animated.timing(modalTranslateY, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }).start();
-      });
-    } else {
-      modalTranslateY.setValue(1);
+    if (!visible) {
+      setTeamSheetOpen(false);
+      setShowInvite(false);
+      pendingInviteRef.current = false;
+      return;
     }
-  }, [visible, modalTranslateY]);
+
+    if (openInviteOnMount && canInvite) {
+      setTeamSheetOpen(false);
+      setShowInvite(true);
+      return;
+    }
+
+    setTeamSheetOpen(true);
+    setShowInvite(false);
+    pendingInviteRef.current = false;
+  }, [visible, openInviteOnMount, canInvite]);
 
   useEffect(() => {
     if (visible && projectId) {
@@ -38,10 +57,10 @@ export default function ProjectTeamModal({ visible, projectId, onClose }) {
 
   const loadContacts = async () => {
     if (!projectId || !supabase) return;
-    
+
     try {
       setLoading(true);
-      const data = await fetchProjectContacts(supabase, projectId).catch(err => {
+      const data = await fetchProjectContacts(supabase, projectId).catch((err) => {
         console.error('Error fetching project contacts:', err);
         return [];
       });
@@ -53,6 +72,8 @@ export default function ProjectTeamModal({ visible, projectId, onClose }) {
       setLoading(false);
     }
   };
+
+  const { displayedItems, expanded, setExpanded, hasMore, hiddenCount } = useCollapsibleList(contacts, []);
 
   const handleCall = (phone) => {
     if (phone) {
@@ -66,187 +87,218 @@ export default function ProjectTeamModal({ visible, projectId, onClose }) {
     }
   };
 
-  const renderContact = ({ item }) => (
-    <View style={styles.contactItem}>
+  const renderContact = (item) => (
+    <View key={String(item.id)} style={styles.contactItem}>
+      <Avatar name={item.name} avatarUrl={item.avatar_url} size="md" />
       <View style={styles.contactInfo}>
-        <Text style={styles.contactName}>{item.name}</Text>
-        {item.role && (
-          <Text style={styles.contactRole}>{item.role}</Text>
-        )}
-        {item.company && (
-          <Text style={styles.contactCompany}>{item.company}</Text>
-        )}
+        <Text variant="bodyMedium" style={styles.contactName}>
+          {item.name}
+        </Text>
+        {item.role ? (
+          <Text variant="caption" style={styles.contactRole}>
+            {item.role}
+          </Text>
+        ) : null}
+        {item.company ? (
+          <Text variant="caption" style={styles.contactCompany}>
+            {item.company}
+          </Text>
+        ) : null}
       </View>
       <View style={styles.contactActions}>
-        {item.phone && (
+        {item.phone ? (
           <>
             <PressableWithFade
               style={styles.actionButton}
               onPress={() => handleCall(item.phone)}
-              activeOpacity={0.7}
+              accessibilityLabel={`Call ${item.name}`}
             >
-              <Ionicons name="call-outline" size={20} color="#3B82F6" />
+              <Ionicons name="call-outline" size={20} color={colors.primary} />
             </PressableWithFade>
             <PressableWithFade
               style={styles.actionButton}
               onPress={() => handleMessage(item.phone)}
-              activeOpacity={0.7}
+              accessibilityLabel={`Message ${item.name}`}
             >
-              <Ionicons name="chatbubble-outline" size={20} color="#10B981" />
+              <Ionicons name="chatbubble-outline" size={20} color={colors.secondary} />
             </PressableWithFade>
           </>
-        )}
+        ) : null}
       </View>
     </View>
   );
 
-  return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="none"
-      onRequestClose={onClose}
-    >
-      <View style={styles.modalContainer}>
-        <ModalScrim onPress={onClose} opacity={0.5} />
-        
-        <View style={styles.modalWrapper}>
-          <Animated.View 
-            style={[
-              styles.modal,
-              {
-                transform: [{ translateY: modalTranslateY.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, SCREEN_HEIGHT],
-                }) }],
-              }
-            ]}
-          >
-          <View style={styles.header}>
-            <Text style={styles.modalTitle}>Team</Text>
-            <PressableWithFade onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color="#111827" />
-            </PressableWithFade>
-          </View>
+  const listPadding = { paddingBottom: sheetListEndPadding(sheetInsets) };
 
+  const handleOpenInvite = () => {
+    pendingInviteRef.current = true;
+    setTeamSheetOpen(false);
+  };
+
+  const handleTeamDismissed = () => {
+    if (pendingInviteRef.current) {
+      pendingInviteRef.current = false;
+      setShowInvite(true);
+    }
+  };
+
+  const handleTeamClose = () => {
+    pendingInviteRef.current = false;
+    setTeamSheetOpen(false);
+    onClose?.();
+  };
+
+  const handleInviteClose = () => {
+    setShowInvite(false);
+    if (visible) {
+      setTeamSheetOpen(true);
+    }
+  };
+
+  return (
+    <>
+      <BottomSheet
+        visible={teamSheetOpen}
+        title={t('mobile.project_team_tab')}
+        onClose={handleTeamClose}
+        onDismissed={handleTeamDismissed}
+        dismissWithoutAnimation={pendingInviteRef.current}
+        snap="medium"
+        testID="project-team-sheet"
+      >
+        <BottomSheet.Scroll contentContainerStyle={listPadding}>
           {loading ? (
             <View style={styles.loadingContainer}>
-              <Text>Loading...</Text>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text variant="body" style={styles.loadingText}>
+                {t('mobile.project_team_loading')}
+              </Text>
             </View>
           ) : contacts.length > 0 ? (
-            <FlatList
-              data={contacts}
-              keyExtractor={(item) => item.id}
-              renderItem={renderContact}
-              contentContainerStyle={styles.listContent}
-            />
+            <View style={styles.listContent}>
+              {displayedItems.map(renderContact)}
+              {hasMore ? (
+                <ShowMoreToggle
+                  expanded={expanded}
+                  hiddenCount={hiddenCount}
+                  onPress={() => setExpanded((value) => !value)}
+                  testID="project-team-show-more"
+                />
+              ) : null}
+            </View>
           ) : (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No team members assigned to this project.</Text>
+              <Text variant="body" style={styles.emptyText}>
+                {t('mobile.project_team_empty')}
+              </Text>
             </View>
           )}
-          </Animated.View>
-        </View>
-      </View>
-    </Modal>
+
+          {canInvite ? (
+            <View style={styles.inviteBar}>
+              <PressableWithFade
+                style={styles.inviteBtn}
+                onPress={handleOpenInvite}
+                testID="project-team-invite-btn"
+              >
+                <Ionicons name="person-add-outline" size={20} color={colors.primary} />
+                <Text variant="bodyMedium" style={styles.inviteBtnText}>
+                  {t('mobile.project_invite_title')}
+                </Text>
+              </PressableWithFade>
+            </View>
+          ) : null}
+        </BottomSheet.Scroll>
+      </BottomSheet>
+
+      <ProjectInviteSheet
+        visible={showInvite}
+        onClose={handleInviteClose}
+        supabase={supabase}
+        project={project}
+        userId={user?.id}
+        userEmail={user?.email}
+        onInvited={loadContacts}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  modalContainer: {
-    flex: 1,
-    position: 'relative',
+  inviteBar: {
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalWrapper: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modal: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
-    minHeight: '40%',
-  },
-  header: {
+  inviteBtn: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    minHeight: 44,
+    gap: spacing.sm,
+    minHeight: touch.minRowHeight,
+    paddingVertical: spacing.sm,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  closeButton: {
-    padding: 4,
-    minWidth: 44,
-    minHeight: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  inviteBtnText: { color: colors.primary, fontWeight: '700' },
   loadingContainer: {
-    padding: 40,
+    padding: spacing.xxl,
     alignItems: 'center',
+    gap: spacing.md,
   },
-  listContent: {
-    padding: 16,
+  loadingText: {
+    color: colors.textMuted,
   },
+  listContent: {},
   contactItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 16,
+    gap: spacing.md,
+    paddingVertical: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-    minHeight: 44,
+    borderBottomColor: colors.border,
+    minHeight: touch.minRowHeight,
   },
   contactInfo: {
     flex: 1,
-    marginRight: 12,
+    marginRight: spacing.sm,
   },
   contactName: {
-    fontSize: 16,
     fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   contactRole: {
-    fontSize: 14,
-    color: '#4B5563',
+    color: colors.textMuted,
     marginBottom: 2,
   },
   contactCompany: {
-    fontSize: 14,
-    color: '#6B7280',
+    color: colors.textSubtle,
   },
   contactActions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.sm,
   },
   actionButton: {
-    padding: 8,
-    minWidth: 44,
-    minHeight: 44,
+    padding: spacing.sm,
+    minWidth: touch.minSize,
+    minHeight: touch.minSize,
     justifyContent: 'center',
     alignItems: 'center',
   },
   emptyContainer: {
-    padding: 40,
+    padding: spacing.xxl,
     alignItems: 'center',
+    gap: spacing.md,
   },
   emptyText: {
-    fontSize: 14,
-    color: '#4B5563',
+    color: colors.textMuted,
     textAlign: 'center',
   },
+  inviteEmptyBtn: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: 12,
+    backgroundColor: colors.primaryLight,
+    minHeight: touch.minRowHeight,
+    justifyContent: 'center',
+  },
+  inviteEmptyBtnText: { color: colors.primary, fontWeight: '700' },
 });
-

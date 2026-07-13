@@ -8,14 +8,17 @@ import {
   calculateFirstSendDate,
   getOrgProgressReportScheduleSettings,
   resolveScheduleNextSendAt,
+  resolveScheduleSendSettings,
 } from '../utils/progressReportScheduleTime.js';
 
 export {
   calculateNextSendDate,
   calculateFirstSendDate,
   resolveScheduleNextSendAt,
-  formatSendHourLabel,
+  resolveScheduleSendSettings,
   formatTimezoneLabel,
+  formatSendHourLabel,
+  formatScheduleNextSendAt,
 } from '../utils/progressReportScheduleTime.js';
 
 /**
@@ -87,7 +90,8 @@ async function computeNextSendAtIso(supabase, schedule, options = {}) {
     return existingNextSendAt;
   }
 
-  const { sendHour, timeZone } = await getOrgProgressReportScheduleSettings(supabase, organizationId);
+  const orgFallback = await getOrgProgressReportScheduleSettings(supabase, organizationId);
+  const { sendHour, timeZone } = resolveScheduleSendSettings(schedule, orgFallback);
   let next = resolveScheduleNextSendAt({
     frequency: schedule.frequency,
     frequency_value: schedule.frequency_value,
@@ -114,11 +118,20 @@ async function computeNextSendAtIso(supabase, schedule, options = {}) {
  * @returns {Promise<Object>} Created schedule
  */
 export async function createProgressReportSchedule(supabase, scheduleData) {
-  const next_send_at = await computeNextSendAtIso(supabase, scheduleData);
+  const orgFallback = scheduleData.organization_id
+    ? await getOrgProgressReportScheduleSettings(supabase, scheduleData.organization_id)
+    : null;
+  const { sendHour, timeZone } = resolveScheduleSendSettings(scheduleData, orgFallback);
+  const payload = {
+    ...scheduleData,
+    send_hour: scheduleData.send_hour ?? sendHour,
+    send_timezone: scheduleData.send_timezone ?? timeZone,
+  };
+  const next_send_at = await computeNextSendAtIso(supabase, payload);
   const { data, error } = await supabase
     .from('progress_report_schedules')
     .insert({
-      ...scheduleData,
+      ...payload,
       next_send_at,
       updated_at: new Date().toISOString()
     })
@@ -139,7 +152,7 @@ export async function createProgressReportSchedule(supabase, scheduleData) {
 export async function updateProgressReportSchedule(supabase, scheduleId, updates) {
   const { data: existing, error: fetchError } = await supabase
     .from('progress_report_schedules')
-    .select('organization_id, frequency, frequency_value, last_sent_at, is_active, next_send_at')
+    .select('organization_id, frequency, frequency_value, last_sent_at, is_active, next_send_at, send_hour, send_timezone')
     .eq('id', scheduleId)
     .single();
   if (fetchError) throw fetchError;
@@ -151,11 +164,15 @@ export async function updateProgressReportSchedule(supabase, scheduleId, updates
       updates.frequency_value !== undefined ? updates.frequency_value : existing.frequency_value,
     last_sent_at: updates.last_sent_at !== undefined ? updates.last_sent_at : existing.last_sent_at,
     is_active: updates.is_active !== undefined ? updates.is_active : existing.is_active,
+    send_hour: updates.send_hour !== undefined ? updates.send_hour : existing.send_hour,
+    send_timezone: updates.send_timezone !== undefined ? updates.send_timezone : existing.send_timezone,
   };
   const scheduleTimingUnchanged =
     (updates.frequency === undefined || updates.frequency === existing.frequency) &&
     (updates.frequency_value === undefined || updates.frequency_value === existing.frequency_value) &&
-    (updates.is_active === undefined || updates.is_active === existing.is_active);
+    (updates.is_active === undefined || updates.is_active === existing.is_active) &&
+    (updates.send_hour === undefined || updates.send_hour === existing.send_hour) &&
+    (updates.send_timezone === undefined || updates.send_timezone === existing.send_timezone);
   const next_send_at = await computeNextSendAtIso(supabase, merged, {
     preserveFutureNext: scheduleTimingUnchanged,
     existingNextSendAt: existing.next_send_at,

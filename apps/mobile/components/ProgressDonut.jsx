@@ -1,46 +1,58 @@
 import { View, Text, StyleSheet } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
+import { colors } from '../theme';
 
-export default function ProgressDonut({ progress, size = 60, color = '#3B82F6' }) {
-  const radius = size / 2 - 4;
+export default function ProgressDonut({
+  progress = 0,
+  size = 52,
+  color = colors.primary,
+  trackColor = colors.border,
+  strokeWidth = 4,
+}) {
+  const pct = Math.max(0, Math.min(100, Math.round(Number(progress) || 0)));
+  const radius = (size - strokeWidth) / 2;
+  const center = size / 2;
   const circumference = 2 * Math.PI * radius;
-  const progressLength = (progress / 100) * circumference;
-  
-  // Simple visual representation using View with border
-  // For a true donut chart, react-native-svg would be needed
-  // This is a simplified version that works without dependencies
-  const progressPercent = Math.round(progress);
+  const filled = (pct / 100) * circumference;
 
   return (
     <View style={[styles.container, { width: size, height: size }]}>
-      <View style={[styles.outerCircle, { width: size, height: size, borderRadius: size / 2 }]}>
-        <View style={[styles.innerCircle, { width: size - 8, height: size - 8, borderRadius: (size - 8) / 2, borderColor: color, borderWidth: 4 }]}>
-          <Text style={[styles.progressText, { color, fontSize: size * 0.2 }]}>
-            {progressPercent}%
-          </Text>
-        </View>
-      </View>
+      <Svg width={size} height={size}>
+        <Circle
+          cx={center}
+          cy={center}
+          r={radius}
+          stroke={trackColor}
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        <Circle
+          cx={center}
+          cy={center}
+          r={radius}
+          stroke={color}
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeDasharray={`${filled} ${circumference - filled}`}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${center} ${center})`}
+        />
+      </Svg>
+      <Text style={[styles.label, { color, fontSize: Math.max(11, size * 0.22) }]}>
+        {pct}%
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    justifyContent: 'center',
     alignItems: 'center',
-  },
-  outerCircle: {
-    borderWidth: 4,
-    borderColor: '#E5E7EB',
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  innerCircle: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  progressText: {
-    fontWeight: 'bold',
+  label: {
+    position: 'absolute',
+    fontWeight: '700',
+    fontVariant: 'tabular-nums',
   },
 });
-

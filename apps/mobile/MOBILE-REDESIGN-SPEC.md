@@ -4,9 +4,19 @@ Primary reference: **monday.com** mobile patterns. Field UX: **48pt** minimum to
 
 ## Navigation
 
-- Floating pill tab bar: Home · Calendar · Inbox · More
-- Side circles: Search → Projects list, Folder → Projects list
-- Projects detail via Home recents or projects stack (`href: null` in tabs)
+Curved bottom tab bar with icon + label:
+
+| Slot | Tab | Route |
+|------|-----|-------|
+| 1 | Home | `index` |
+| 2 | Projects | `projects` |
+| 3 | **+** Create (raised FAB, managers) | action sheet |
+| 4 | Inbox | `notifications` (badge) |
+| 5 | More | `more` |
+
+- **Calendar** — linked from More screen (`href: null` in tab navigator)
+- **Create menu** — Report issue · Site day · New project (gated by role)
+- Layout spacing via `utils/layoutInsets.js`
 
 ## Core field features
 
@@ -17,7 +27,7 @@ Primary reference: **monday.com** mobile patterns. Field UX: **48pt** minimum to
 
 ## Components (`components/ui/`)
 
-`BottomSheet`, `Button`, `Card`, `Text`, `ProgressEditor`, `ProgressBar`, `ProgressPill`, `WeatherCard`, `FloatingTabBar`
+`BottomSheet`, `Button`, `Card`, `Text`, `ProgressEditor`, `ProgressBar`, `ProgressPill`, `WeatherCard`, `FloatingTabBar`, `CurvedTabBarBackground`, `NotificationBadge`, `Screen`
 
 ## Out of scope (v1)
 

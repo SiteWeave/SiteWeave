@@ -7,6 +7,7 @@ import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { createGuestShare } from '../_shared/guestShare.ts'
 import { gateOrSendOptInForSubstantiveSms, sendOptInIfEligible } from '../_shared/smsConsent.ts'
 import { withTransactionalSmsFooter } from '../_shared/smsCompliance.ts'
+import { isSmsNotificationsEnabled } from '../_shared/smsNotifications.ts'
 import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
 import { assertHasFullTierAccess } from '../_shared/workspaceTier.ts'
 import {
@@ -229,6 +230,10 @@ serve(async (req) => {
         patch.read_at = new Date().toISOString()
         patch.read_by_user_id = user.id
       }
+      if (actionType === 'mark_unread') {
+        patch.read_at = null
+        patch.read_by_user_id = null
+      }
       if (actionType === 'acknowledge') {
         patch.acknowledged_at = new Date().toISOString()
       }
@@ -334,6 +339,10 @@ serve(async (req) => {
         channels = ['sms']
       } else {
         channels = []
+      }
+
+      if (!isSmsNotificationsEnabled()) {
+        channels = channels.filter((c) => c !== 'sms')
       }
 
       const recipientAddress = normalizedEmail || (smsPhone ? `sms:${smsPhone}` : null)
@@ -524,6 +533,13 @@ serve(async (req) => {
     }
 
     if (action === 'sms_opt_in_request') {
+      if (!isSmsNotificationsEnabled()) {
+        return new Response(
+          JSON.stringify({ success: false, disabled: true, reason: 'sms_notifications_disabled' }),
+          { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+        )
+      }
+
       const authResult = await requireUser(req, corsHeaders)
       if (authResult instanceof Response) return authResult
       const { user } = authResult

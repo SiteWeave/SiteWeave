@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import PressableWithFade from '../components/PressableWithFade';
 import { useHaptics } from '../hooks/useHaptics';
 import { useRouter } from 'expo-router';
+import { contentTopInset, sheetBottomPadding } from '../utils/layoutInsets';
 
 const PRIVACY_POLICY_URL = 'https://www.siteweave.org/legal/privacy-policy';
 
@@ -29,7 +30,7 @@ export default function PrivacyPolicyScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View style={[styles.container, { paddingTop: contentTopInset(insets), paddingBottom: sheetBottomPadding(insets) }]}>
       <View style={styles.header}>
         <PressableWithFade
           style={styles.backButton}

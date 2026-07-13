@@ -41,6 +41,28 @@ Use system fonts (SF Pro / Roboto). Support Dynamic Type where practical.
 - `touch.minSize`: **48** · `touch.minRowHeight`: **56** · `touch.fabSize`: **56**
 - New UI: `components/ui/*` — see `MOBILE-REDESIGN-SPEC.md`
 
+## Layout chrome (safe area + tab bar)
+
+Use [`utils/layoutInsets.js`](utils/layoutInsets.js) for all spacing that clears system UI or the bottom tab bar. Do not hardcode values like `bottom: 96` or `paddingBottom: 32`.
+
+| Helper | Use |
+|--------|-----|
+| `contentTopInset(insets, extra?)` | Full-screen top padding below notch / status bar |
+| `scrollBottomPadding(insets, extra?)` | `ScrollView` / `FlatList` bottom inset on tab screens |
+| `fabBottomOffset(insets, extra?)` | Absolute `bottom` for screen-level FABs above the tab bar |
+| `sheetBottomPadding(insets, extra?)` | Modal / bottom sheet shell padding above home indicator, plus breathing room |
+| `sheetScrollEndPadding(insets, extra?)` | End padding for scroll content inside bottom sheets |
+| `sheetListEndPadding(insets, extra?)` | End padding for static sheet action lists |
+| `TAB_BAR_CLEARANCE` | Deprecated compatibility constant; tab bar is in normal document flow |
+
+Rules:
+
+- Tab screens: always `scrollBottomPadding` on scroll content.
+- Stack / auth screens: prefer `paddingBottom: sheetBottomPadding(insets)` over raw `insets.bottom`.
+- Tab bar sits above the home indicator via its `insets.bottom` padding plus a small breathing gap.
+- Inactive nav labels use `colors.textMuted` (not `textSubtle`) for contrast.
+- Prefer [`components/ui/Screen.jsx`](components/ui/Screen.jsx) on tab list screens to avoid drift.
+
 ## Screen patterns
 
 | Area | Pattern |
@@ -49,12 +71,12 @@ Use system fonts (SF Pro / Roboto). Support Dynamic Type where practical.
 | **Home** | Org name subtitle; quick actions; sync-aware lists |
 | **Projects** | `FlatList` + refresh; tap row → project detail |
 | **Project detail** | Phases/tasks; modals for edit; haptics on save |
-| **Calendar / issues** | Hidden from tab bar but reachable; consistent header back |
-| **Modals** | Slide or fade; clear primary/secondary actions; dismiss on success |
+| **Calendar / issues** | Calendar via More screen; issues via Create menu |
+| **Modals** | Bottom sheets with snap (`medium` → `large` on focus), sticky footer CTAs, grabber tap-to-dismiss; never pure `#000` shadows on `background` surfaces |
 
 ## Motion
 
-- Press feedback: `PressableWithFade` or opacity scale; 150ms typical.
+- Press feedback: `PressableWithFade` with `scale(0.96)` on press; 150ms typical. Use `static` prop for high-frequency controls (tab bar, rapid list taps).
 - Modals: prefer Reanimated; avoid animating every list item on mount.
 - Tab bar: Expo Router `animation: 'shift'`; selection haptic on tab press.
 
@@ -69,5 +91,5 @@ Use system fonts (SF Pro / Roboto). Support Dynamic Type where practical.
 
 ## Agent stack (reminder)
 
-- Skills: `design-taste-frontend`, Impeccable, `emil-design-eng`, `react-native-mobile-skill`
+- Skills: `design-taste-frontend`, Impeccable, `emil-design-eng`, `make-interfaces-feel-better`, `react-native-mobile-skill`
 - MCP: **Sosumi** (HIG), **Playwright** (web only), **GitHub** (PRs/issues)

@@ -22,10 +22,10 @@ Your SiteWeave app now has a complete **two-phase external contact assignment sy
 
 ### Step 1: Deploy Database Changes
 
-Run the updated `schema.sql` in your Supabase SQL Editor:
+Run the updated `../../schema.sql` in your Supabase SQL Editor:
 
 1. Open Supabase Dashboard → SQL Editor
-2. Copy contents of `schema.sql`
+2. Copy contents of `../../schema.sql`
 3. Click "Run"
 4. Verify success (should see "Success. No rows returned")
 
@@ -213,7 +213,7 @@ SELECT * FROM invitations WHERE invitation_token = 'your-token';
 
 ### Problem: Database migration fails
 
-**Solution**: Run each section of `schema.sql` separately:
+**Solution**: Run each section of `../../schema.sql` separately:
 1. First: Table creation sections
 2. Second: Foreign key constraints
 3. Third: RLS policies

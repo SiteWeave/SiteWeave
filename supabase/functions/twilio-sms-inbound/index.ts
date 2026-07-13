@@ -139,6 +139,7 @@ serve(async (req) => {
     .update({
       status: 'confirmed',
       confirmed_at: now,
+      consent_method: 'sms_reply',
       pending_token: null,
       pending_organization_id: null,
       pending_sent_at: null,

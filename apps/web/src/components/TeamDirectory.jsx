@@ -731,7 +731,7 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
                 type="button"
                 onClick={handleConfirmAssign}
                 disabled={isAssigningContact || !selectedAssignProject || assignUnassignedProjects.length === 0}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition active:scale-[0.98] hover:bg-blue-700 disabled:opacity-50"
+                className="rounded-lg px-4 py-2 text-sm font-semibold app-action-primary disabled:opacity-50"
               >
                 {isAssigningContact ? t('contacts.assigning') : t('share.add_to_project')}
               </button>

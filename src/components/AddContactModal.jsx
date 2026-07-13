@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabaseClient } from '../context/AppContext';
-import { TRADE_OPTIONS } from '@siteweave/core-logic';
+import { TRADE_OPTIONS, normalizeAssigneePhone } from '@siteweave/core-logic';
 import { getContactIdentityError, normalizeContactFields } from '../utils/contactValidation';
 import LoadingSpinner from './LoadingSpinner';
 import { FieldError, fieldInputClassName } from './FormAlert';
+import SmsConsentActions from './SmsConsentActions';
+import { resolveContactSmsConsent, loadSmsConsentByPhones } from '../utils/smsWebConsent';
 
 const TRADE_I18N_KEYS = {
   Plumbing: 'contacts.trade_plumbing',
@@ -38,6 +40,12 @@ function AddContactModal({
   const [linkedAppRoleName, setLinkedAppRoleName] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({ email: '', phone: '' });
   const [isCheckingIdentity, setIsCheckingIdentity] = useState(false);
+  const [smsConsentStatus, setSmsConsentStatus] = useState(null);
+
+  const phoneNormalized = useMemo(
+    () => normalizeAssigneePhone(phone, { defaultRegion: 'US' }),
+    [phone],
+  );
 
   const tradeOptions = useMemo(
     () => TRADE_OPTIONS.map((value) => ({
@@ -95,6 +103,21 @@ function AddContactModal({
       setPhone(contact.phone || '');
     }
   }, [contact, lockedType]);
+
+  useEffect(() => {
+    if (!contact?.phone) {
+      setSmsConsentStatus(null);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      const map = await loadSmsConsentByPhones(supabaseClient, [contact]);
+      if (!cancelled) {
+        setSmsConsentStatus(resolveContactSmsConsent(contact, map));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [contact]);
 
   const effectiveType = lockedType || type;
   const isStaff = effectiveType === 'Team';
@@ -276,8 +299,18 @@ function AddContactModal({
                   className={fieldInputClassName(!!fieldErrors.phone, inputClass)}
                 />
                 <FieldError message={fieldErrors.phone} />
-                {effectiveType === 'Subcontractor' && (
+                {(effectiveType === 'Subcontractor' || isStaff) && phoneNormalized.isValid && (
                   <p className="mt-1 text-xs text-slate-500">{t('contacts.phone_directory_hint')}</p>
+                )}
+                {phoneNormalized.isValid && currentOrganization?.id && (
+                  <SmsConsentActions
+                    supabaseClient={supabaseClient}
+                    organizationId={currentOrganization.id}
+                    phone={phone}
+                    contactId={isEditMode ? contact?.id : null}
+                    smsConsentStatus={smsConsentStatus}
+                    onConsentStatusChange={setSmsConsentStatus}
+                  />
                 )}
               </div>
             </div>
@@ -295,7 +328,7 @@ function AddContactModal({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-xs transition active:scale-[0.98] hover:bg-blue-700 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold shadow-xs app-action-primary disabled:opacity-50"
             >
               {isSubmitting ? (
                 <>

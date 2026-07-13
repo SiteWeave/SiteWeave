@@ -18,6 +18,7 @@ export const CALENDAR_LIST_COLUMNS = [
   'color',
   'recurrence',
   'user_id',
+  'attendees',
 ].join(',');
 
 /**

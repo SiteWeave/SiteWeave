@@ -92,4 +92,3 @@ _sw_web/
 
 # Agent skills installed via `npx skills add` (reinstall per machine; large vendor trees)
 .agents/
-skills-lock.json

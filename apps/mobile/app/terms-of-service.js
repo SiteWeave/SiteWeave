@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { acceptTermsOfService, hasAcceptedTermsOfService } from '@siteweave/core-logic';
 import { useHaptics } from '../hooks/useHaptics';
 import { useRouter } from 'expo-router';
+import { contentTopInset, sheetBottomPadding } from '../utils/layoutInsets';
 import { TOS_VERSION, TOS_URL } from '../constants/legal';
 
 export default function TermsOfServiceScreen() {
@@ -91,7 +92,7 @@ export default function TermsOfServiceScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View style={[styles.container, { paddingTop: contentTopInset(insets), paddingBottom: sheetBottomPadding(insets) }]}>
       <View style={styles.header}>
         <PressableWithFade
           style={styles.backButton}

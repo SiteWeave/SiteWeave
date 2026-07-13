@@ -330,6 +330,11 @@ verify_jwt = false
 [functions.cleanup-task-photo-storage]
 verify_jwt = false
 
+# Accepts either a user JWT (validated in the handler) or the service-role token
+# for scheduled retention purges.
+[functions.purge-project]
+verify_jwt = false
+
 [functions.process-task-notifications]
 verify_jwt = false
 
@@ -339,8 +344,23 @@ verify_jwt = false
 [functions.guest-task-share]
 verify_jwt = false
 
+[functions.guest-closeout-review]
+verify_jwt = false
+
+[functions.export-punch-list-pdf]
+verify_jwt = false
+
 # Twilio inbound SMS (no Supabase JWT; validated via X-Twilio-Signature + TWILIO_AUTH_TOKEN)
 [functions.twilio-sms-inbound]
+verify_jwt = false
+
+[functions.create-sms-consent-link]
+verify_jwt = true
+
+[functions.sms-consent-request]
+verify_jwt = false
+
+[functions.confirm-sms-web-consent]
 verify_jwt = false
 
 [edge_runtime]

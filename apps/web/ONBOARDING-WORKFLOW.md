@@ -386,7 +386,7 @@ All users in the same organization automatically see each other in the Team Dire
 
 ## Next Steps
 
-1. **Deploy the schema**: Run `schema.sql` in Supabase SQL Editor
+1. **Deploy the schema**: Run `../../schema.sql` in Supabase SQL Editor
 2. **Seed demo account**: Run `scripts/seed-demo-account.sql`
 3. **Test the workflow**:
    - Log in as Super Admin

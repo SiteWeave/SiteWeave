@@ -1,10 +1,30 @@
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, Animated } from 'react-native';
 
-/** Fixed full-screen dim layer — does not animate or move with sheet content. */
-export default function ModalScrim({ onPress, opacity = 0.4 }) {
+/** Full-screen dim layer. Pass animatedOpacity (0–1) for fade-in with sheets. */
+export default function ModalScrim({ onPress, opacity = 0.4, animatedOpacity }) {
+  const maxOpacity = opacity;
+
+  if (animatedOpacity) {
+    const backgroundColor = animatedOpacity.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['rgba(0,0,0,0)', `rgba(0,0,0,${maxOpacity})`],
+    });
+
+    return (
+      <Animated.View style={[styles.scrim, { backgroundColor }]}>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onPress}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+        />
+      </Animated.View>
+    );
+  }
+
   return (
     <Pressable
-      style={[styles.scrim, { backgroundColor: `rgba(0,0,0,${opacity})` }]}
+      style={[styles.scrim, { backgroundColor: `rgba(0,0,0,${maxOpacity})` }]}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel="Close"

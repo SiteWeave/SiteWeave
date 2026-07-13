@@ -46,7 +46,34 @@ export async function requestNotificationPermissions() {
 }
 
 /**
- * Get push notification token
+ * Get push notification token when permission is already granted (no permission prompt).
+ * @returns {Promise<string|null>} Push token or null if unavailable
+ */
+export async function getPushTokenIfGranted() {
+  try {
+    if (!isDeviceAvailable || !Device.isDevice) {
+      console.warn('Must use physical device for Push Notifications');
+      return null;
+    }
+
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') {
+      return null;
+    }
+
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: '0e8aedb2-5084-4046-a750-5032e61afd9a',
+    });
+
+    return tokenData.data;
+  } catch (error) {
+    console.error('Error getting push token:', error);
+    return null;
+  }
+}
+
+/**
+ * Get push notification token (requests permission if needed).
  * @returns {Promise<string|null>} Push token or null if unavailable
  */
 export async function getPushToken() {
@@ -61,14 +88,23 @@ export async function getPushToken() {
       return null;
     }
 
-    const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: '0e8aedb2-5084-4046-a750-5032e61afd9a',
-    });
-
-    return tokenData.data;
+    return getPushTokenIfGranted();
   } catch (error) {
     console.error('Error getting push token:', error);
     return null;
+  }
+}
+
+/**
+ * Register push token when permission is already granted.
+ * @param {Object} supabase
+ * @param {string} userId
+ */
+export async function registerPushTokenIfPermitted(supabase, userId) {
+  if (!supabase || !userId) return;
+  const token = await getPushTokenIfGranted();
+  if (token) {
+    await registerPushToken(supabase, userId, token);
   }
 }
 
@@ -103,6 +139,40 @@ export async function registerPushToken(supabase, userId, token) {
 }
 
 /**
+ * Normalize deep-link paths into expo-router tab routes.
+ * @param {string|null|undefined} path
+ * @returns {string|null}
+ */
+export function normalizeNotificationRoute(path) {
+  if (!path || typeof path !== 'string') return null;
+  const trimmed = path.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith('/(tabs)') || trimmed.startsWith('/(auth)') || trimmed.startsWith('/project-invite')) {
+    return trimmed;
+  }
+
+  if (trimmed === '/' || trimmed === '/index' || trimmed === '/home') {
+    return '/(tabs)';
+  }
+
+  if (trimmed === '/notifications' || trimmed === 'notifications') {
+    return '/(tabs)/notifications';
+  }
+
+  const projectMatch = trimmed.match(/^\/?projects\/([^/?#]+)/);
+  if (projectMatch?.[1]) {
+    return `/(tabs)/projects/${projectMatch[1]}`;
+  }
+
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
+
+/**
  * Parse a push payload into an in-app route path.
  * Supports explicit route payloads and fallback project deep links.
  * @param {Object} data
@@ -112,11 +182,19 @@ export function resolveNotificationRoute(data = {}) {
   if (!data || typeof data !== 'object') return null;
 
   if (typeof data.screen === 'string' && data.screen.trim()) {
-    return data.screen.startsWith('/') ? data.screen : `/${data.screen}`;
+    return normalizeNotificationRoute(
+      data.screen.startsWith('/') ? data.screen : `/${data.screen}`,
+    );
   }
 
   if (typeof data.route === 'string' && data.route.trim()) {
-    return data.route.startsWith('/') ? data.route : `/${data.route}`;
+    return normalizeNotificationRoute(
+      data.route.startsWith('/') ? data.route : `/${data.route}`,
+    );
+  }
+
+  if (data.source_type === 'calendar_invite' || data.event_id) {
+    return normalizeNotificationRoute('/(tabs)/calendar');
   }
 
   if (typeof data.action_url === 'string' && data.action_url.trim()) {
@@ -127,10 +205,7 @@ export function resolveNotificationRoute(data = {}) {
   }
 
   if (data.project_id) {
-    if (data.source_type === 'stream_post' || (typeof data.screen === 'string' && data.screen.includes('/stream'))) {
-      return `/projects/${data.project_id}`;
-    }
-    return `/projects/${data.project_id}`;
+    return normalizeNotificationRoute(`/projects/${data.project_id}`);
   }
 
   if (typeof data.action_url === 'string' && data.action_url.includes('project=')) {
@@ -138,14 +213,14 @@ export function resolveNotificationRoute(data = {}) {
       const url = new URL(data.action_url);
       const projectId = url.searchParams.get('project');
       if (projectId) {
-        return `/projects/${projectId}`;
+        return normalizeNotificationRoute(`/projects/${projectId}`);
       }
     } catch {
       // Ignore malformed URL and continue fallback routing.
     }
   }
 
-  return '/notifications';
+  return null;
 }
 
 /**
@@ -217,8 +292,21 @@ export async function markNotificationRead(supabase, options = {}) {
   });
 }
 
+export async function markNotificationUnread(supabase, options = {}) {
+  const { notificationId, userId } = options;
+  if (!notificationId) return;
+
+  await supabase.functions.invoke('dispatch-notification', {
+    body: {
+      action: 'notification_action',
+      notificationId,
+      userId,
+      actionType: 'mark_unread',
+    },
+  });
+}
+
 /**
- * Acknowledge notification without navigating away.
  * @param {Object} supabase
  * @param {{ notificationId: string, userId?: string }} options
  */

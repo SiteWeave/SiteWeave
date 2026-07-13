@@ -1,0 +1,108 @@
+Twilio Toll-Free Verification — RESUBMISSION (addresses "Opt-in - Consent for messaging is a requirement for service")
+Replace [YOUR_TOLL_FREE_NUMBER] with your toll-free sender.
+
+WHY THE PRIOR SUBMISSION WAS LIKELY DENIED
+- It described only the reply-YES text path. Reviewers could not see where consent is captured with disclosure + explicit agreement before messaging.
+- No web consent page or screenshot was included as proof.
+- Privacy Policy section was cited incorrectly (Section 16 — correct is Section 18).
+- Opt-in type should be "Via website" (primary), not text-only.
+
+WHAT TO DO BEFORE RESUBMITTING
+1. Deploy the web consent page: https://www.siteweave.org/sms-consent/{token}
+2. In SiteWeave, generate a real consent link (Get SMS consent link) for a test phone.
+3. Open the link on a mobile browser and screenshot the FULL page showing:
+   - Organization name
+   - Program disclosure (transactional, not marketing)
+   - Message types, frequency, Msg&data rates
+   - HELP / STOP instructions
+   - Links to Terms of Service and Privacy Policy
+   - Masked phone number (read-only)
+   - Required checkbox: "I agree to receive project-related SMS from {Org} via SiteWeave."
+   - "Confirm SMS consent" submit button
+4. Host screenshot at a public https:// URL (S3, Google Drive direct link, etc.) and attach in Twilio "Opt-in workflow" / proof field.
+5. Select Opt-in type: Via website (primary). Mention text reply YES as alternate only.
+
+================================================================================
+OPT-IN TYPE (Twilio dropdown)
+================================================================================
+Via website
+
+(Secondary note in description: alternate opt-in via reply YES to one-time consent text)
+
+================================================================================
+OPT-IN / USE CASE DESCRIPTION — PASTE THIS (resubmission)
+================================================================================
+SiteWeave sends transactional SMS to construction project assignees about assigned project work (task reminders, assignment notices, project links). We do not send promotional or blast marketing SMS.
+
+CONSENT IS REQUIRED BEFORE ANY SUBSTANTIVE MESSAGE
+Substantive SMS is blocked in our application until the recipient's phone number has status "confirmed" in our sms_phone_consent database table. No task reminders or project alerts are sent until consent is recorded.
+
+PRIMARY OPT-IN — WEB FORM (point of consent collection)
+1. A project administrator adds the assignee's mobile number in SiteWeave and taps "Get SMS consent link." The administrator attests: "I confirm this person is on my project and expects operational texts at this number."
+2. SiteWeave generates a unique, time-limited link: https://www.siteweave.org/sms-consent/{token}
+3. The administrator shares the link or QR code with the assignee on site (no app install required).
+4. On their mobile browser, the assignee sees a dedicated SMS consent page with:
+   - Organization name and program description (transactional project SMS, not marketing)
+   - Message types (task reminders, assignment notices, project links)
+   - Message frequency (as needed; typically low volume)
+   - "Msg & data rates may apply"
+   - "Reply HELP for program info. Reply STOP to opt out"
+   - Clickable Terms of Service: https://www.siteweave.org/legal/terms-of-service
+   - Clickable Privacy Policy: https://www.siteweave.org/legal/privacy-policy
+   - The assignee's masked phone number (read-only, pre-filled for that link)
+   - A required unchecked checkbox the user must actively select: "I agree to receive project-related SMS from {Organization} via SiteWeave."
+   - A submit button: "Confirm SMS consent"
+5. The assignee checks the box and submits. Consent is stored (sms_phone_consent, consent_method=web_form, status=confirmed). Only then may SiteWeave send substantive project SMS to that number.
+
+OPT-IN PROOF URLS (public, https)
+https://www.siteweave.org/legal/privacy-policy
+https://www.siteweave.org/legal/terms-of-service
+https://www.siteweave.org/sms-consent/{example-token}  [attach screenshot — see above]
+
+ALTERNATE OPT-IN — REPLY YES (secondary path only)
+If web consent is not used, a project administrator may tap "SMS OK?" to send ONE automated opt-in text. The recipient must reply YES (optionally with a 6-character code) before any substantive SMS. Until YES is received, our system blocks all substantive messages to that number.
+
+OPT-IN MESSAGE (alternate text path — first outbound only)
+"{Organization} via (SiteWeave): Welcome! Reply YES {code} to confirm receiving project task SMS alerts. Msg&data rates may apply. HELP/STOP anytime. Terms/Privacy: www.siteweave.org/legal"
+
+CONFIRMATION MESSAGE (after web submit or YES reply)
+"You're confirmed for SiteWeave project SMS. You'll receive task and project messages as needed. Msg&data rates may apply. Reply STOP to opt out."
+
+OPT-IN KEYWORDS (recipient texts us)
+YES, Y (confirm opt-in; YES may include 6-char code e.g. YES ABC123)
+
+OPT-OUT KEYWORDS
+STOP, STOPALL, UNSUBSCRIBE
+
+HELP KEYWORD
+HELP
+
+HELP AUTO-REPLY
+"SiteWeave: Reply YES plus the 6-character code we texted you to confirm SMS. Msg&data rates may apply. HELP/STOP anytime. Terms/Privacy: www.siteweave.org/legal"
+
+STOP AUTO-REPLY
+"SiteWeave: You are unsubscribed from SMS and will not receive further texts from us."
+
+SAMPLE SUBSTANTIVE MESSAGE (only after confirmed opt-in)
+Reminder: "Install cabinets" in Riverside Kitchen starts tomorrow. Open: https://www.siteweave.org/share/abc123 Reply STOP to opt out.
+
+MESSAGE FREQUENCY
+As needed for assigned project work — typically low volume; not a fixed marketing schedule.
+
+LEGAL (correct section numbers)
+Privacy Policy — Section 18 (SMS / Text Messaging Program): https://www.siteweave.org/legal/privacy-policy
+Terms of Service — Section 18 (SMS / Text Messaging Terms): https://www.siteweave.org/legal/terms-of-service
+
+SUPPORT
+support@siteweave.org
+
+================================================================================
+CHECKLIST FOR TWILIO CONSOLE
+================================================================================
+[ ] Opt-in type = Via website
+[ ] Uploaded screenshot of live /sms-consent/{token} page (mobile viewport)
+[ ] Privacy Policy URL loads publicly (Section 18 mentions SMS + web consent)
+[ ] Terms URL loads publicly (Section 18 mentions SMS + web consent)
+[ ] Sample message includes "Reply STOP to opt out"
+[ ] Description states substantive SMS is BLOCKED until consent confirmed
+[ ] Did NOT select marketing / promotions use case

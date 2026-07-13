@@ -48,17 +48,25 @@ export async function fetchTaskPhotos(supabase, taskId) {
 
 export async function attachTaskPhotoUrls(supabase, photos, expiresIn = 3600) {
   return Promise.all((photos || []).map(async (photo) => {
-    const bucket = photo.storage_bucket || TASK_PHOTOS_BUCKET;
-    const [fullUrl, thumbnailUrl] = await Promise.all([
-      createSignedFileUrl(supabase, bucket, photo.storage_path, expiresIn),
-      createSignedFileUrl(supabase, bucket, photo.thumbnail_path || photo.storage_path, expiresIn),
-    ]);
+    try {
+      const bucket = photo.storage_bucket || TASK_PHOTOS_BUCKET;
+      const [fullUrl, thumbnailUrl] = await Promise.all([
+        createSignedFileUrl(supabase, bucket, photo.storage_path, expiresIn),
+        createSignedFileUrl(supabase, bucket, photo.thumbnail_path || photo.storage_path, expiresIn),
+      ]);
 
-    return {
-      ...photo,
-      full_url: fullUrl,
-      thumbnail_url: thumbnailUrl,
-    };
+      return {
+        ...photo,
+        full_url: fullUrl,
+        thumbnail_url: thumbnailUrl,
+      };
+    } catch {
+      return {
+        ...photo,
+        full_url: null,
+        thumbnail_url: null,
+      };
+    }
   }));
 }
 

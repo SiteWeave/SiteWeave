@@ -20,6 +20,7 @@ export default defineConfig({
     alias: {
       '@siteweave/core-logic': path.resolve(__dirname, '../../packages/core-logic/src/index.js'),
       '@siteweave/i18n': path.resolve(__dirname, '../../packages/i18n/index.js'),
+      '@siteweave/onboarding-ui': path.resolve(__dirname, '../../packages/onboarding-ui/src/index.js'),
       'frappe-gantt/dist/frappe-gantt.css': path.resolve(__dirname, './node_modules/frappe-gantt/dist/frappe-gantt.css')
     }
   },
@@ -28,6 +29,16 @@ export default defineConfig({
     assetsDir: 'assets',
     emptyOutDir: true,
     cssMinify: 'lightningcss',
+    modulePreload: {
+      resolveDependencies(_filename, deps) {
+        return deps.filter(
+          (dep) =>
+            !dep.includes('jspdf') &&
+            !dep.includes('html2canvas') &&
+            !dep.includes('pdf-vendor'),
+        )
+      },
+    },
     commonjsOptions: {
       transformMixedEsModules: true
     },
@@ -39,9 +50,6 @@ export default defineConfig({
           }
           if (id.includes('node_modules/@supabase/')) {
             return 'supabase-vendor'
-          }
-          if (id.includes('node_modules/jspdf') || id.includes('node_modules/html2canvas')) {
-            return 'pdf-vendor'
           }
           if (id.includes('node_modules/frappe-gantt')) {
             return 'gantt-vendor'
@@ -58,5 +66,3 @@ export default defineConfig({
   // Vite automatically loads .env files from the project root
   // Environment variables prefixed with VITE_ are automatically exposed
 })
-
-

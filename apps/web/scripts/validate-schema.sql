@@ -1,6 +1,6 @@
 -- ============================================================================
 -- SCHEMA VALIDATION SCRIPT
--- Run this after deploying schema.sql to verify everything is set up correctly
+-- Run this after deploying ../../../schema.sql to verify everything is set up correctly
 -- ============================================================================
 
 -- Check that all required tables exist

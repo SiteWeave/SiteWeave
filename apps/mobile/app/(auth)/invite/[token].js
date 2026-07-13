@@ -5,7 +5,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHaptics } from '../../../hooks/useHaptics';
 import { acceptInvitation } from '../../../utils/invitationService';
-import * as Linking from 'expo-linking';
+import { routeAfterAuth } from '../../../utils/authNavigation';
+import { sheetBottomPadding } from '../../../utils/layoutInsets';
 
 export default function InviteScreen() {
   const { token } = useLocalSearchParams();
@@ -20,7 +21,7 @@ export default function InviteScreen() {
   const [fullName, setFullName] = useState('');
   const [isSignUp, setIsSignUp] = useState(true);
   
-  const { supabase } = useAuth();
+  const { supabase, loadUserOrganization } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
@@ -114,9 +115,14 @@ export default function InviteScreen() {
         throw new Error(result.error || 'Failed to accept invitation');
       }
 
+      await loadUserOrganization(authData.user);
       haptics.success();
       Alert.alert('Success', 'Welcome to ' + (invitation?.organizations?.name || 'SiteWeave') + '!');
-      router.replace('/(tabs)/projects');
+      const projectId = invitation?.project_id;
+      const inviteDestination = projectId
+        ? `/(tabs)/projects/${projectId}`
+        : '/(tabs)/projects';
+      await routeAfterAuth(router, { inviteDestination, skipWeather: true });
     } catch (err) {
       haptics.error();
       Alert.alert('Error', err.message);
@@ -162,9 +168,14 @@ export default function InviteScreen() {
         throw new Error(result.error || 'Failed to accept invitation');
       }
 
+      await loadUserOrganization(authData.user);
       haptics.success();
       Alert.alert('Success', 'Welcome back!');
-      router.replace('/(tabs)/projects');
+      const projectId = invitation?.project_id;
+      const inviteDestination = projectId
+        ? `/(tabs)/projects/${projectId}`
+        : '/(tabs)/projects';
+      await routeAfterAuth(router, { inviteDestination, skipWeather: true });
     } catch (err) {
       haptics.error();
       Alert.alert('Error', err.message);
@@ -185,7 +196,7 @@ export default function InviteScreen() {
 
   if (error) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <View style={[styles.container, { paddingTop: insets.top, paddingBottom: sheetBottomPadding(insets) }]}>
         <View style={styles.centerContent}>
           <Text style={styles.errorTitle}>Invalid Invitation</Text>
           <Text style={styles.errorText}>{error}</Text>
@@ -204,7 +215,7 @@ export default function InviteScreen() {
   }
 
   return (
-    <ScrollView style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <ScrollView style={[styles.container, { paddingTop: insets.top, paddingBottom: sheetBottomPadding(insets) }]}>
       <View style={styles.content}>
         <Text style={styles.title}>You're Invited!</Text>
         <Text style={styles.subtitle}>

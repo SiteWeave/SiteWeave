@@ -8,14 +8,16 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { Platform, AppState } from 'react-native';
 import {
-  getPushToken,
-  registerPushToken,
+  registerPushTokenIfPermitted,
   setupNotificationListeners,
   subscribeUserNotificationInserts,
   resolveNotificationRoute,
-  getLastNotificationRoute,
 } from '../utils/notifications';
 import { ensureTermsAccepted } from '../utils/ensureTermsAccepted';
+import { hasCompletedNotificationsOnboarding } from '../utils/onboarding';
+
+import { resolvePermissionFlags } from '../utils/mobileExperience';
+import { clearWidgetSnapshot } from '../utils/widgetBridge';
 
 const AuthContext = createContext();
 
@@ -85,6 +87,27 @@ async function completeOAuthFromCallbackUrl(supabase, url) {
   throw new Error('No valid OAuth tokens or code found in callback URL');
 }
 
+async function syncOAuthDisplayName(supabase, sessionData) {
+  const user = sessionData?.user ?? sessionData?.session?.user;
+  if (!user?.id) return sessionData;
+
+  const meta = user.user_metadata || {};
+  if ((meta.full_name || meta.name || '').trim()) return sessionData;
+
+  const identity = user.identities?.[0]?.identity_data || {};
+  const derived = [
+    identity.full_name,
+    identity.name,
+    [identity.given_name, identity.family_name].filter(Boolean).join(' '),
+  ].find((value) => value?.trim());
+
+  if (derived?.trim()) {
+    await supabase.auth.updateUser({ data: { full_name: derived.trim() } });
+  }
+
+  return sessionData;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -95,8 +118,15 @@ export function AuthProvider({ children }) {
   const [pendingNotificationRoute, setPendingNotificationRoute] = useState(null);
   const [syncPulse, setSyncPulse] = useState(0);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState(null);
-  
-  // Get Supabase credentials from environment
+  const [userRole, setUserRole] = useState(null);
+  const [canCreateProjects, setCanCreateProjects] = useState(false);
+  const [canEditProjects, setCanEditProjects] = useState(false);
+  const [canCreateTasks, setCanCreateTasks] = useState(false);
+  const [canAssignTasks, setCanAssignTasks] = useState(false);
+  const [canViewActivityHistory, setCanViewActivityHistory] = useState(false);
+  const [canManageProgressReports, setCanManageProgressReports] = useState(false);
+  const [hasManagerAccess, setHasManagerAccess] = useState(false);
+  const [permissionsLoading, setPermissionsLoading] = useState(true);
   // Expo uses EXPO_PUBLIC_ prefix for environment variables
   // Use useMemo to prevent recreating the client on every render
   const supabase = React.useMemo(() => {
@@ -114,9 +144,19 @@ export function AuthProvider({ children }) {
       setOrganizationError(null);
       setIsProjectCollaborator(false);
       setCollaborationProjects([]);
+      setUserRole(null);
+      setCanCreateProjects(false);
+      setCanEditProjects(false);
+      setCanCreateTasks(false);
+      setCanAssignTasks(false);
+      setCanViewActivityHistory(false);
+      setCanManageProgressReports(false);
+      setHasManagerAccess(false);
+      setPermissionsLoading(false);
       return;
     }
 
+    setPermissionsLoading(true);
     try {
       const { runInviteBootstrap } = await import('../utils/workspaceClient');
       await runInviteBootstrap(supabase);
@@ -125,9 +165,21 @@ export function AuthProvider({ children }) {
         .from('profiles')
         .select(`
           organization_id,
+          account_intent,
+          roles (
+            id,
+            name,
+            permissions,
+            is_system_role
+          ),
           organizations (
             id,
-            name
+            name,
+            workspace_type,
+            trial_ends_at,
+            max_projects,
+            lifetime_projects_created,
+            max_guest_collaborators_per_project
           )
         `)
         .eq('id', targetUser.id)
@@ -139,17 +191,42 @@ export function AuthProvider({ children }) {
         setActiveOrganization(null);
         setIsProjectCollaborator(false);
         setCollaborationProjects([]);
+        setUserRole(null);
+        setCanCreateProjects(false);
+        setCanEditProjects(false);
+        setCanCreateTasks(false);
+        setCanAssignTasks(false);
+        setCanViewActivityHistory(false);
+        setCanManageProgressReports(false);
+        setHasManagerAccess(false);
+        setPermissionsLoading(false);
         return;
       }
 
       if (profile?.organization_id && profile?.organizations) {
-        setActiveOrganization({
+        const org = {
           id: profile.organizations.id,
           name: profile.organizations.name,
-        });
+          workspace_type: profile.organizations.workspace_type,
+          trial_ends_at: profile.organizations.trial_ends_at,
+          max_projects: profile.organizations.max_projects,
+          lifetime_projects_created: profile.organizations.lifetime_projects_created,
+          max_guest_collaborators_per_project: profile.organizations.max_guest_collaborators_per_project,
+        };
+        const flags = resolvePermissionFlags(profile.roles);
+        setActiveOrganization(org);
         setOrganizationError(null);
         setIsProjectCollaborator(false);
         setCollaborationProjects([]);
+        setUserRole(flags.userRole);
+        setCanCreateProjects(flags.canCreateProjects);
+        setCanEditProjects(flags.canEditProjects);
+        setCanCreateTasks(flags.canCreateTasks);
+        setCanAssignTasks(flags.canAssignTasks);
+        setCanViewActivityHistory(flags.canViewActivityHistory);
+        setCanManageProgressReports(flags.canManageProgressReports);
+        setHasManagerAccess(flags.hasManagerAccess);
+        setPermissionsLoading(false);
         return;
       }
 
@@ -162,6 +239,15 @@ export function AuthProvider({ children }) {
         setCollaborationProjects(projects);
         setActiveOrganization(null);
         setOrganizationError(null);
+        setUserRole(null);
+        setCanCreateProjects(false);
+        setCanEditProjects(false);
+        setCanCreateTasks(false);
+        setCanAssignTasks(false);
+        setCanViewActivityHistory(false);
+        setCanManageProgressReports(false);
+        setHasManagerAccess(false);
+        setPermissionsLoading(false);
         return;
       }
 
@@ -169,12 +255,30 @@ export function AuthProvider({ children }) {
       setCollaborationProjects([]);
       setActiveOrganization(null);
       setOrganizationError('guest_waiting');
+      setUserRole(null);
+      setCanCreateProjects(false);
+      setCanEditProjects(false);
+      setCanCreateTasks(false);
+      setCanAssignTasks(false);
+      setCanViewActivityHistory(false);
+      setCanManageProgressReports(false);
+      setHasManagerAccess(false);
+      setPermissionsLoading(false);
     } catch (error) {
       console.error('Error in loadUserOrganization:', error);
       setOrganizationError('Failed to load organization');
       setActiveOrganization(null);
       setIsProjectCollaborator(false);
       setCollaborationProjects([]);
+      setUserRole(null);
+      setCanCreateProjects(false);
+      setCanEditProjects(false);
+      setCanCreateTasks(false);
+      setCanAssignTasks(false);
+      setCanViewActivityHistory(false);
+      setCanManageProgressReports(false);
+      setHasManagerAccess(false);
+      setPermissionsLoading(false);
     }
   };
 
@@ -259,24 +363,22 @@ export function AuthProvider({ children }) {
     });
   }, [user?.id, supabase]);
 
-  // Register push token when user is available
+  // Register push token only after notification onboarding and when permission granted.
   useEffect(() => {
-    if (user) {
-      const registerToken = async () => {
-        try {
-          const token = await getPushToken();
-          if (token) {
-            await registerPushToken(supabase, user.id, token);
-          }
-        } catch (error) {
-          console.error('Error registering push token:', error);
-        }
-      };
-      
-      // Register token after a short delay to ensure user is fully loaded
-      const timer = setTimeout(registerToken, 1000);
-      return () => clearTimeout(timer);
-    }
+    if (!user) return;
+
+    const registerToken = async () => {
+      try {
+        const onboardingDone = await hasCompletedNotificationsOnboarding();
+        if (!onboardingDone) return;
+        await registerPushTokenIfPermitted(supabase, user.id);
+      } catch (error) {
+        console.error('Error registering push token:', error);
+      }
+    };
+
+    const timer = setTimeout(registerToken, 1000);
+    return () => clearTimeout(timer);
   }, [user, supabase]);
 
   // Setup notification listeners
@@ -315,19 +417,6 @@ export function AuthProvider({ children }) {
       }
     });
     return () => subscription.remove();
-  }, []);
-
-  useEffect(() => {
-    const hydrateLastTappedRoute = async () => {
-      const route = await getLastNotificationRoute();
-      if (!route) return;
-      if (route.startsWith('http://') || route.startsWith('https://')) {
-        Linking.openURL(route).catch(() => {});
-        return;
-      }
-      setPendingNotificationRoute(route);
-    };
-    hydrateLastTappedRoute();
   }, []);
 
   useEffect(() => {
@@ -408,7 +497,9 @@ export function AuthProvider({ children }) {
         }
 
         if (result.type === 'success' && result.url) {
-          return completeOAuthFromCallbackUrl(supabase, result.url);
+          const data = await completeOAuthFromCallbackUrl(supabase, result.url);
+          await syncOAuthDisplayName(supabase, data);
+          return data;
         }
 
         throw new Error('OAuth callback was not successful');
@@ -447,7 +538,9 @@ export function AuthProvider({ children }) {
         }
 
         if (result.type === 'success' && result.url) {
-          return completeOAuthFromCallbackUrl(supabase, result.url);
+          const data = await completeOAuthFromCallbackUrl(supabase, result.url);
+          await syncOAuthDisplayName(supabase, data);
+          return data;
         }
 
         throw new Error('OAuth callback was not successful');
@@ -553,6 +646,7 @@ export function AuthProvider({ children }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    await clearWidgetSnapshot();
     setUser(null);
     setProfileAvatarUrl(null);
     setActiveOrganization(null);
@@ -616,6 +710,15 @@ export function AuthProvider({ children }) {
       organizationError,
       isProjectCollaborator,
       collaborationProjects,
+      userRole,
+      canCreateProjects,
+      canEditProjects,
+      canCreateTasks,
+      canAssignTasks,
+      canViewActivityHistory,
+      canManageProgressReports,
+      hasManagerAccess,
+      permissionsLoading,
       loadUserOrganization,
       profileAvatarUrl,
       refreshProfileAvatar,

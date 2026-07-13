@@ -3,6 +3,7 @@ import { useAppContext, supabaseClient } from '../context/AppContext'
 import { useToast } from '../context/ToastContext'
 import LoadingSpinner from '../components/LoadingSpinner'
 import ProjectTeamPanel from '../components/ProjectTeamPanel'
+import { loadSmsConsentByPhones } from '../utils/smsWebConsent'
 import { fetchChannelMessages, sendMessage, fetchUnreadCounts, getTypingUsers, markMessageAsRead, uploadFile, fetchMessageWithUserInfo, blockUser } from '@siteweave/core-logic'
 import ReportContentModal from '../components/moderation/ReportContentModal'
 
@@ -57,6 +58,20 @@ export default function MessagesView({ embedded = false, onOpenDirectory = null 
     ),
     [state.contacts, project?.id],
   )
+  const [smsConsentMap, setSmsConsentMap] = React.useState(() => new Map())
+
+  React.useEffect(() => {
+    if (!projectContacts.length || !project?.organization_id) {
+      setSmsConsentMap(new Map())
+      return undefined
+    }
+    let cancelled = false
+    ;(async () => {
+      const map = await loadSmsConsentByPhones(supabaseClient, projectContacts, project.organization_id)
+      if (!cancelled) setSmsConsentMap(map)
+    })()
+    return () => { cancelled = true }
+  }, [projectContacts, project?.organization_id])
 
   React.useEffect(() => {
     if (!state.selectedChannelId && channels.length > 0) {
@@ -285,6 +300,7 @@ export default function MessagesView({ embedded = false, onOpenDirectory = null 
               project={project}
               contacts={projectContacts}
               onOpenDirectory={onOpenDirectory || (() => dispatch({ type: 'SET_VIEW', payload: 'Contacts' }))}
+              smsConsentMap={smsConsentMap}
             />
           </aside>
         )}

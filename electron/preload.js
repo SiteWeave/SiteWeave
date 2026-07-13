@@ -58,6 +58,14 @@ try {
       }
     },
 
+    onReplayTour: (callback) => {
+      try {
+        ipcRenderer.on('menu-replay-tour', callback);
+      } catch (error) {
+        console.error('Error setting up replay tour callback:', error);
+      }
+    },
+
     // App info
     getAppVersion: () => {
       try {

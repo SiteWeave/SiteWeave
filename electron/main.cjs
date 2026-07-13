@@ -375,6 +375,13 @@ function createMenu() {
       label: 'Help',
       submenu: [
         {
+          label: 'Getting Started / Replay Tour',
+          click: () => {
+            mainWindow.webContents.send('menu-replay-tour');
+          }
+        },
+        { type: 'separator' },
+        {
           label: 'About SiteWeave',
           click: () => {
             mainWindow.webContents.send('menu-about');

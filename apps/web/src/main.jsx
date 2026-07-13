@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './AppStandalone.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
-import './i18n/config.js'
+import { i18nReady } from './i18n/config.js'
 import './index.css'
 
 // Unregister stale service workers (desktop parity; avoids cached shell on deploy)
@@ -44,12 +44,14 @@ if (typeof window !== 'undefined') {
   }
 }
 
-createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </ErrorBoundary>
-  </React.StrictMode>
-)
+i18nReady.then(() => {
+  createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </ErrorBoundary>
+    </React.StrictMode>
+  )
+})

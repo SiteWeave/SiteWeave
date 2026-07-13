@@ -1,56 +1,32 @@
-import { View, Text, StyleSheet, Modal, Animated, Dimensions, Alert } from 'react-native';
+import { View, Text, StyleSheet, Modal, Animated, Dimensions, Alert, ScrollView, ActivityIndicator } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PressableWithFade from './PressableWithFade';
 import ModalScrim from './ui/ModalScrim';
-import EditProfileModal from './EditProfileModal';
-import FeedbackModal from './FeedbackModal';
+import ExperienceModeToggle from './ExperienceModeToggle';
+import { useMobileExperience } from '../context/MobileExperienceContext';
 import Avatar from './ui/Avatar';
 import { useHaptics } from '../hooks/useHaptics';
+import { useProfileAvatarPicker } from '../hooks/useProfileAvatarPicker';
 import { useRouter } from 'expo-router';
+import { colors, spacing, touch } from '../theme';
+import { sheetBottomPadding } from '../utils/layoutInsets';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function ProfileDrawer({ visible, onClose }) {
   const { t } = useTranslation();
-  const { user, signOut, deleteAccount, supabase, profileAvatarUrl } = useAuth();
+  const { user, signOut, deleteAccount, profileAvatarUrl } = useAuth();
+  const { mode, canSwitchView, setMode } = useMobileExperience();
+  const { onAvatarPress, avatarLoading } = useProfileAvatarPicker();
   const haptics = useHaptics();
   const router = useRouter();
-  const [showEditProfile, setShowEditProfile] = useState(false);
-  const [showFeedback, setShowFeedback] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   const insets = useSafeAreaInsets();
 
-  useEffect(() => {
-    checkAdminStatus();
-  }, [user]);
-
-  const checkAdminStatus = async () => {
-    if (!user || !supabase) {
-      setIsAdmin(false);
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .maybeSingle();
-      
-      if (!error && data) {
-        setIsAdmin(data.role === 'Admin');
-      }
-    } catch (error) {
-      console.error('Error checking admin status:', error);
-      setIsAdmin(false);
-    }
-  };
-  
   const drawerTranslateY = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -67,7 +43,7 @@ export default function ProfileDrawer({ visible, onClose }) {
     } else {
       drawerTranslateY.setValue(1);
     }
-  }, [visible, drawerTranslateY]);
+  }, [visible, drawerTranslateY, haptics]);
 
   const handleSignOut = async () => {
     try {
@@ -97,7 +73,7 @@ export default function ProfileDrawer({ visible, onClose }) {
           style: 'destructive',
           onPress: confirmDeleteAccount,
         },
-      ]
+      ],
     );
   };
 
@@ -120,184 +96,123 @@ export default function ProfileDrawer({ visible, onClose }) {
   };
 
   const getUserName = () => {
-    if (user?.user_metadata?.full_name) {
-      return user.user_metadata.full_name;
-    }
-    if (user?.email) {
-      return user.email;
-    }
+    const fullName = user?.user_metadata?.full_name?.trim();
+    if (fullName) return fullName;
+    if (user?.email) return user.email.split('@')[0];
     return 'User';
   };
 
-  const getUserEmail = () => {
-    return user?.email || '';
-  };
+  const getUserEmail = () => user?.email || '';
 
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="none"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <View style={styles.modalContainer}>
         <ModalScrim onPress={onClose} opacity={0.5} />
-        
-        {/* Drawer - only slides, doesn't fade */}
+
         <View style={[styles.drawerWrapper, { paddingTop: insets.top }]}>
-          <Animated.View 
+          <Animated.View
             style={[
-              styles.drawerContainer, 
-              { 
-                paddingBottom: insets.bottom,
-                transform: [{ translateY: drawerTranslateY.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, SCREEN_HEIGHT], // Slide from off-screen bottom
-                }) }],
-              }
+              styles.drawerContainer,
+              {
+                paddingBottom: sheetBottomPadding(insets),
+                transform: [
+                  {
+                    translateY: drawerTranslateY.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, SCREEN_HEIGHT],
+                    }),
+                  },
+                ],
+              },
             ]}
           >
             <View style={styles.drawer}>
               <View style={styles.header}>
-                <View style={styles.profileSection}>
-                  <Avatar name={getUserName()} avatarUrl={profileAvatarUrl} size="lg" />
+                <View style={styles.profileHeader}>
+                  <PressableWithFade
+                    style={styles.avatarButton}
+                    onPress={onAvatarPress}
+                    disabled={deleting || avatarLoading}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('settings.click_avatar_to_upload')}
+                    testID="profile-avatar-button"
+                  >
+                    <View style={styles.avatarWrap}>
+                      <Avatar name={getUserName()} avatarUrl={profileAvatarUrl} size="lg" />
+                      <View style={styles.avatarBadge}>
+                        {avatarLoading ? (
+                          <ActivityIndicator size="small" color={colors.white} />
+                        ) : (
+                          <Ionicons name="camera" size={14} color={colors.white} />
+                        )}
+                      </View>
+                    </View>
+                  </PressableWithFade>
                   <View style={styles.profileInfo}>
-                    <Text style={styles.profileName}>{getUserName()}</Text>
-                    {getUserEmail() && (
-                      <Text style={styles.profileEmail}>{getUserEmail()}</Text>
-                    )}
+                    <Text style={styles.profileName} numberOfLines={2}>
+                      {getUserName()}
+                    </Text>
+                    {getUserEmail() ? (
+                      <Text style={styles.profileEmail} numberOfLines={1}>
+                        {getUserEmail()}
+                      </Text>
+                    ) : null}
                   </View>
                 </View>
-                <PressableWithFade 
+                <PressableWithFade
                   onPress={() => {
                     haptics.light();
                     onClose();
-                  }} 
+                  }}
                   style={styles.closeButton}
                   hapticType="light"
+                  accessibilityRole="button"
+                  accessibilityLabel={t('common.close')}
                 >
-                  <Ionicons name="close" size={24} color="#111827" />
+                  <Ionicons name="close" size={24} color={colors.text} />
                 </PressableWithFade>
               </View>
 
-              <View style={styles.menu}>
-                <PressableWithFade
-                  style={styles.menuItem}
-                  onPress={() => {
-                    haptics.light();
-                    setShowEditProfile(true);
-                  }}
-                  activeOpacity={0.7}
-                  disabled={deleting}
-                  hapticType="light"
-                >
-                  <Ionicons name="person-outline" size={24} color="#111827" />
-                  <Text style={styles.menuItemText}>{t('mobile.edit_profile')}</Text>
-                  <Ionicons name="chevron-forward" size={20} color="#4B5563" />
-                </PressableWithFade>
+              <ScrollView
+                style={styles.scroll}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                <ExperienceModeToggle mode={mode} canSwitchView={canSwitchView} onChange={setMode} />
 
-                <View style={styles.divider} />
+                <View style={styles.menu}>
+                  <PressableWithFade
+                    style={styles.menuItem}
+                    onPress={handleSignOut}
+                    disabled={deleting}
+                    hapticType="medium"
+                    testID="profile-sign-out"
+                  >
+                    <Ionicons name="log-out-outline" size={24} color={colors.text} />
+                    <Text style={styles.menuItemText}>{t('mobile.sign_out')}</Text>
+                  </PressableWithFade>
 
-                <PressableWithFade
-                  style={styles.menuItem}
-                  onPress={() => {
-                    haptics.light();
-                    onClose();
-                    router.push('/blocked-users');
-                  }}
-                  activeOpacity={0.7}
-                  disabled={deleting}
-                  hapticType="light"
-                >
-                  <Ionicons name="ban-outline" size={24} color="#111827" />
-                  <Text style={styles.menuItemText}>{t('mobile.blocked_users_menu')}</Text>
-                  <Ionicons name="chevron-forward" size={20} color="#4B5563" />
-                </PressableWithFade>
+                  <View style={styles.divider} />
 
-                <View style={styles.divider} />
-
-                <PressableWithFade
-                  style={styles.menuItem}
-                  onPress={() => {
-                    haptics.light();
-                    setShowFeedback(true);
-                  }}
-                  activeOpacity={0.7}
-                  disabled={deleting}
-                  hapticType="light"
-                >
-                  <Ionicons name="chatbubble-ellipses-outline" size={24} color="#111827" />
-                  <Text style={styles.menuItemText}>{t('mobile.send_feedback')}</Text>
-                  <Ionicons name="chevron-forward" size={20} color="#4B5563" />
-                </PressableWithFade>
-
-                {isAdmin && (
-                  <>
-                    <View style={styles.divider} />
-                    <PressableWithFade
-                      style={styles.menuItem}
-                      onPress={() => {
-                        haptics.light();
-                        onClose();
-                        router.push('/admin-reports');
-                      }}
-                      activeOpacity={0.7}
-                      disabled={deleting}
-                      hapticType="light"
-                    >
-                      <Ionicons name="shield-checkmark-outline" size={24} color="#111827" />
-                      <Text style={styles.menuItemText}>{t('mobile.content_reports')}</Text>
-                      <Ionicons name="chevron-forward" size={20} color="#4B5563" />
-                    </PressableWithFade>
-                  </>
-                )}
-
-                <View style={styles.divider} />
-
-                <PressableWithFade
-                  style={styles.menuItem}
-                  onPress={handleDeleteAccount}
-                  activeOpacity={0.7}
-                  disabled={deleting}
-                  hapticType="heavy"
-                >
-                  <Ionicons name="trash-outline" size={24} color="#EF4444" />
-                  <Text style={[styles.menuItemText, styles.deleteAccountText]}>
-                    {deleting ? t('mobile.deleting_account') : t('mobile.delete_account')}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={20} color="#4B5563" />
-                </PressableWithFade>
-
-                <View style={styles.divider} />
-
-                <PressableWithFade
-                  style={styles.menuItem}
-                  onPress={handleSignOut}
-                  activeOpacity={0.7}
-                  disabled={deleting}
-                  hapticType="medium"
-                >
-                  <Ionicons name="log-out-outline" size={24} color="#111827" />
-                  <Text style={styles.menuItemText}>{t('mobile.sign_out')}</Text>
-                </PressableWithFade>
-              </View>
+                  <PressableWithFade
+                    style={styles.menuItem}
+                    onPress={handleDeleteAccount}
+                    disabled={deleting}
+                    hapticType="heavy"
+                    testID="profile-delete-account"
+                  >
+                    <Ionicons name="trash-outline" size={24} color={colors.error} />
+                    <Text style={[styles.menuItemText, styles.deleteAccountText]}>
+                      {deleting ? t('mobile.deleting_account') : t('mobile.delete_account')}
+                    </Text>
+                  </PressableWithFade>
+                </View>
+              </ScrollView>
             </View>
           </Animated.View>
         </View>
       </View>
-
-      <EditProfileModal
-        visible={showEditProfile}
-        onClose={() => setShowEditProfile(false)}
-        onProfileUpdated={() => {
-          // AuthContext will automatically update via onAuthStateChange listener
-        }}
-      />
-
-      <FeedbackModal
-        visible={showFeedback}
-        onClose={() => setShowFeedback(false)}
-      />
     </Modal>
   );
 }
@@ -307,100 +222,108 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
   },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
   drawerWrapper: {
     flex: 1,
     justifyContent: 'flex-end',
     position: 'relative',
   },
   drawerContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '90%',
-    minHeight: '65%',
+    maxHeight: '88%',
+    minHeight: '54%',
   },
   drawer: {
     flex: 1,
+    minHeight: 0,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
+    alignItems: 'flex-start',
+    padding: spacing.xl,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    minHeight: 44,
+    borderBottomColor: colors.border,
+    gap: spacing.md,
   },
-  profileSection: {
+  profileHeader: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
-    gap: 12,
+    gap: spacing.md,
+    minWidth: 0,
   },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#3B82F6',
-    justifyContent: 'center',
+  avatarButton: {
+    flexShrink: 0,
+  },
+  avatarWrap: {
+    position: 'relative',
+  },
+  avatarBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    borderWidth: 2,
+    borderColor: colors.surface,
     alignItems: 'center',
-    overflow: 'hidden',
-  },
-  avatarImage: {
-    width: 56,
-    height: 56,
-  },
-  avatarText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
+    justifyContent: 'center',
   },
   profileInfo: {
     flex: 1,
+    minWidth: 0,
   },
   profileName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontWeight: '700',
+    color: colors.text,
     marginBottom: 4,
   },
   profileEmail: {
     fontSize: 14,
-    color: '#4B5563',
+    color: colors.textSecondary,
   },
   closeButton: {
-    padding: 4,
-    minWidth: 44,
-    minHeight: 44,
+    flexShrink: 0,
+    padding: spacing.xs,
+    minWidth: touch.minSize,
+    minHeight: touch.minSize,
     justifyContent: 'center',
     alignItems: 'center',
   },
   menu: {
-    padding: 8,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    gap: 12,
-    minHeight: 44,
+    padding: spacing.lg,
+    gap: spacing.md,
+    minHeight: touch.minRowHeight,
   },
   menuItemText: {
     flex: 1,
     fontSize: 16,
-    color: '#111827',
+    color: colors.text,
   },
   deleteAccountText: {
-    color: '#EF4444',
+    color: colors.error,
   },
   divider: {
     height: 1,
-    backgroundColor: '#E5E7EB',
-    marginVertical: 8,
+    backgroundColor: colors.border,
+    marginVertical: spacing.sm,
   },
 });
-

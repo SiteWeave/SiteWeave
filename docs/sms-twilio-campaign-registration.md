@@ -1,104 +1,94 @@
 # Twilio SMS campaign registration (A2P / 10DLC)
 
-**Quick path:** Publish updated legal pages → paste **`docs/legal/twilio-opt-in-script.txt`** into Twilio → use the two legal URLs as opt-in proof. No screenshots required.
+**Quick path:** Deploy web consent page + edge functions → publish updated legal pages → paste **`docs/legal/twilio-opt-in-script.txt`** into Twilio → add legal URLs + screenshot of `/sms-consent/{token}` as opt-in proof.
 
 | Asset | Location |
 |-------|----------|
 | Paste script | [docs/legal/twilio-opt-in-script.txt](./legal/twilio-opt-in-script.txt) |
 | Privacy Policy (publish to site) | [docs/legal/privacy-policy.md](./legal/privacy-policy.md) |
 | Terms of Service (publish to site) | [docs/legal/terms-of-service.md](./legal/terms-of-service.md) |
+| Public consent page | `https://www.siteweave.org/sms-consent/{token}` |
 
 Deploy Edge Functions before live SMS so copy matches `supabase/functions/_shared/smsCompliance.ts`.
 
 ## “Not verified yet” — how do I get screenshots?
 
-Campaign registration and **sending to real users** are separate. Reviewers mainly need to see **what you will send** and **where consent is explained** — not proof that production SMS already works to strangers.
+Campaign registration and **sending to real users** are separate. Reviewers mainly need to see **where consent is explained** and **what you will send** — not proof that production SMS already works to strangers.
 
 You do **not** need full 10DLC approval before submitting proof. Use one or more of these:
 
-### Option A — No SMS required (usually enough)
+### Option A — Web consent page (recommended, no Twilio SMS required)
 
-Host public `https://` images (OneDrive/Google Drive “Anyone with the link”) of:
+1. Deploy `create-sms-consent-link`, `sms-consent-request`, `confirm-sms-web-consent`, and the web app with `/sms-consent/:token`.
+2. In SiteWeave, add a test contact phone and tap **Get SMS consent link**.
+3. Open the link on your mobile browser (or use dev tools mobile viewport).
+4. Screenshot the page showing disclosure, masked phone, checkbox, and Submit.
+5. Host the image at a public `https://` URL and add it to **Opt-in policy proof** alongside the legal page URLs.
 
-1. **App UI** — task row with **SMS OK?** / pending consent (no Twilio needed).
-2. **App UI** — contact form phone field with the SMS consent hint (no Twilio needed).
-3. **Message collateral** — a single image or PDF showing the **exact** opt-in, confirmation, HELP, and STOP reply texts (copy from the “Opt-in description” section below, or from `supabase/functions/_shared/smsCompliance.ts`). Twilio calls this “campaign collateral”; it does not have to be a photo of a live thread.
+The web form works **before** SMS kill switches are enabled — it does not send Twilio messages until optional post-confirm SMS after flags are on.
 
-Paste those URLs into **Opt-in policy proof** (one per line). Pair with the detailed **Opt-in description** text field — that is often what reviewers read most closely.
+### Option B — App UI collateral (no SMS required)
 
-### Option B — One real test to your own phone (if Twilio lets you send at all)
+Host public `https://` images of:
 
-Many accounts can still send **before** the campaign is approved, with limits:
+1. **Contact / trade partner card** — SMS consent status badge + **Get SMS consent link** with PM attestation.
+2. **Task row** — **Consent link** button for assignees without confirmed SMS.
+3. **Message collateral** — exact opt-in, confirmation, HELP, and STOP texts from `supabase/functions/_shared/smsCompliance.ts`.
 
-| Account state | What usually works |
-|---------------|-------------------|
-| **Trial** | SMS only to [phone numbers you verify in Twilio Console](https://console.twilio.com/us1/develop/phone-numbers/manage/verified) (your mobile). |
-| **Paid, brand/campaign pending** | Often the same: test to your verified number, or low-volume sends until US carrier filtering blocks unregistered traffic. |
-| **Campaign approved** | Send to assignees in production. |
+### Option C — Reply YES test (alternate path)
 
-Steps:
+If Twilio allows sends to your verified number before campaign approval:
 
-1. In Twilio Console → **Phone Numbers** → **Verified Caller IDs** (or **Verified** numbers), add **your** mobile.
-2. Configure Supabase Twilio secrets + deploy `twilio-sms-inbound` (see [email-deployment-guide.md](./email-deployment-guide.md)).
-3. In SiteWeave, add your number on a test contact/task and tap **SMS OK?** (or trigger `sms_opt_in_request`).
-4. Screenshot the opt-in on your phone; reply **YES**; screenshot confirmation.
-
-If send fails with “unregistered campaign” / 30034, fall back to **Option A** — that is normal pre-approval.
-
-### Option C — Twilio Console test (no SiteWeave deploy)
-
-In **Messaging** → your Messaging Service or number, some accounts can send a **test message** to a verified number with the same body text you document. Screenshot that thread for proof.
+1. Verify your mobile in Twilio Console.
+2. Tap **SMS OK?** on a task (requires SMS flags enabled — see [SMS-NOTIFICATIONS-RESTORE.md](./SMS-NOTIFICATIONS-RESTORE.md)).
+3. Screenshot opt-in and YES confirmation on your phone.
 
 ---
 
-**Order of operations that works in practice:** submit campaign with Option A proofs → get brand/campaign approved → then turn on production sends to assignees.
+**Order of operations:** deploy web consent → screenshot page → submit campaign with legal URLs + screenshot → get brand/campaign approved → enable SMS kill switches → test end-to-end ping.
 
 ## Opt-in type
 
-Choose **Via text** (reply-based double opt-in, not a public keyword ad).
+Choose **Via website** as primary. Document **Via text** (reply YES) as an alternate path in the description field (see paste script).
 
-## Opt-in description (paste and replace placeholders)
+## Opt-in description
 
-Replace `[YOUR_TWILIO_NUMBER]` with your production long code or the number on your Messaging Service.
+Use the full text in [docs/legal/twilio-opt-in-script.txt](./legal/twilio-opt-in-script.txt). It covers:
 
-```
-SiteWeave sends transactional project SMS only after explicit text consent.
-
-1. Keyword / confirmation: Assignees reply YES (optionally with a 6-character code included in the first message, e.g. "Reply YES ABC123").
-2. Number to text: Recipients reply to [YOUR_TWILIO_NUMBER] (the same SiteWeave sender that delivered the opt-in SMS).
-3. Welcome / initial message (sent automatically when a PM adds a phone or taps "SMS OK?" on a task): "{Org} via (SiteWeave): Welcome! Reply YES {code} to confirm receiving project task SMS alerts. Msg&data rates may apply. HELP/STOP anytime. Terms/Privacy: www.siteweave.org/legal"
-4. Message frequency: As needed for assigned project work (task due reminders, assignment pings, invites)—not scheduled marketing; typically low volume per recipient.
-5. Disclaimers: Msg&data rates may apply on opt-in, HELP, confirmation, and substantive messages.
-6. HELP / STOP: HELP returns program instructions and legal links; STOP (or STOPALL/UNSUBSCRIBE) opts the number out globally and sends an unsubscribe confirmation.
-7. Terms & Privacy: https://www.siteweave.org/legal/terms-of-service and https://www.siteweave.org/legal/privacy-policy (also referenced in the opt-in SMS).
-8. Double opt-in: The initial SMS asks the recipient to reply YES{code}; substantive SMS is blocked in sms_phone_consent until status=confirmed.
-9. Confirmation message after YES: "You're confirmed for SiteWeave project SMS. You'll receive task and project messages as needed. Msg&data rates may apply. Reply STOP to opt out."
-
-Substantive examples (only after confirmation): task due reminders and "open project" links. Each includes "Reply STOP to opt out."
-```
+- PM generates shareable link / QR
+- Recipient opens `/sms-consent/{token}` on phone browser
+- Required checkbox + program disclosure
+- Alternate YES-reply path via **SMS OK?**
+- HELP / STOP / Msg&data rates / legal URLs
 
 ## Opt-in policy proof (one HTTPS URL per line)
-
-After publishing the updated legal pages, paste:
 
 ```
 https://www.siteweave.org/legal/privacy-policy
 https://www.siteweave.org/legal/terms-of-service
 ```
 
-These pages include Sections **16** (Privacy — SMS program) and **18** (Terms — SMS terms) with the full flow, HELP/STOP, and message samples.
+Add a hosted screenshot URL of the live web consent page (Option A).
 
-Optional extras: app UI screenshots or hosted message-collateral images (see Option A above).
+Privacy Section **18** and Terms Section **18** describe both web-form and text-reply consent.
 
 ## Technical references
 
-- Opt-in + gating: `supabase/functions/_shared/smsConsent.ts`, `smsCompliance.ts`
+- Web consent: `supabase/functions/_shared/smsWebConsent.ts`, `create-sms-consent-link`, `sms-consent-request`, `confirm-sms-web-consent`
+- SMS reply opt-in + gating: `supabase/functions/_shared/smsConsent.ts`, `smsCompliance.ts`
 - Inbound YES/STOP/HELP: `supabase/functions/twilio-sms-inbound`
-- Deploy: `supabase functions deploy twilio-sms-inbound dispatch-notification invite_or_add_member process-task-notifications`
+- Schema: `supabase/migrations/20260708180000_sms_consent_requests.sql`
+- Deploy:
+  ```bash
+  supabase functions deploy create-sms-consent-link sms-consent-request confirm-sms-web-consent
+  supabase functions deploy twilio-sms-inbound dispatch-notification invite_or_add_member process-task-notifications
+  ```
 - Setup: [email-deployment-guide.md](./email-deployment-guide.md) (SMS section)
+- Enable sends after approval: [SMS-NOTIFICATIONS-RESTORE.md](./SMS-NOTIFICATIONS-RESTORE.md)
 
-## After code changes (production)
+## After campaign approval
 
-1. Deploy functions (above).
-2. After campaign approval, send a real opt-in to an assignee (or your verified test number).
-3. Keep Option A collateral URLs in the registration; update with live phone screenshots if Twilio asks for more detail.
+1. Enable client + server SMS flags (restore doc).
+2. PM generates consent link for a real assignee → assignee confirms on phone.
+3. Ping task → substantive SMS + email as configured.
+4. Verify STOP opts out globally.
