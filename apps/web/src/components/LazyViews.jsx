@@ -1,11 +1,12 @@
 import React, { Suspense, lazy } from 'react'
 import LoadingSpinner from './LoadingSpinner'
 import { ErrorBoundary } from './ErrorBoundary'
+import TeamHubView from '../views/TeamHubView'
 
 export const DashboardView = lazy(() => import('../views/DashboardView'))
 export const ProjectWorkspaceView = lazy(() => import('../views/ProjectWorkspaceView'))
 export const CalendarView = lazy(() => import('../views/CalendarView'))
-export const TeamHubView = lazy(() => import('../views/TeamHubView'))
+export { TeamHubView }
 export const TeamView = lazy(() => import('../views/TeamView'))
 export const ProjectTrashView = lazy(() => import('../views/ProjectTrashView'))
 export const SettingsView = lazy(() => import('../views/SettingsView'))

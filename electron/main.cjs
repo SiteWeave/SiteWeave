@@ -58,18 +58,39 @@ if (!VITE_DEV_SERVER_URL && autoUpdater && typeof autoUpdater.autoDownload !== '
   autoUpdater.autoInstallOnAppQuit = true;
 }
 
-// Check for updates 5 seconds after app starts (fallback if renderer never signals ready)
-setTimeout(() => {
-  if (autoUpdater && typeof autoUpdater.checkForUpdatesAndNotify === 'function') {
-    autoUpdater.checkForUpdatesAndNotify();
-  }
-}, 5000);
+let updateCheckInFlight = false;
 
-// When renderer has attached update listeners, run a check immediately so we don't miss the event
-ipcMain.on('update-listeners-ready', () => {
-  if (autoUpdater && typeof autoUpdater.checkForUpdatesAndNotify === 'function') {
-    autoUpdater.checkForUpdatesAndNotify();
+function shouldIgnoreUpdateError(message) {
+  const msg = String(message || '');
+  return (
+    msg.includes('latest.yml') ||
+    msg.includes('404') ||
+    msg.includes('No published versions') ||
+    /already downloading|cancelled|canceled|ENOENT|same version|not available/i.test(msg)
+  );
+}
+
+function runUpdateCheck() {
+  if (VITE_DEV_SERVER_URL || !autoUpdater || typeof autoUpdater.checkForUpdatesAndNotify !== 'function') {
+    return;
   }
+  if (updateCheckInFlight) return;
+  updateCheckInFlight = true;
+  autoUpdater.checkForUpdatesAndNotify()
+    .catch((error) => {
+      const msg = error?.message || String(error);
+      if (!shouldIgnoreUpdateError(msg)) {
+        console.error('Auto-updater check error:', msg);
+      }
+    })
+    .finally(() => {
+      updateCheckInFlight = false;
+    });
+}
+
+// Run one check after the renderer attaches update listeners (avoids missing events).
+ipcMain.on('update-listeners-ready', () => {
+  setTimeout(runUpdateCheck, 1500);
 });
 
 // OAuth Server for loopback method
@@ -481,18 +502,32 @@ app.on('before-quit', () => {
 });
 
 // Auto-updater events
-autoUpdater.on('update-available', () => {
-  mainWindow?.webContents.send('update-available');
+autoUpdater.on('update-available', (info) => {
+  const currentVersion = app.getVersion();
+  const nextVersion = info?.version;
+  if (nextVersion && nextVersion === currentVersion) {
+    return;
+  }
+  mainWindow?.webContents.send('update-available', {
+    version: nextVersion || '',
+    currentVersion,
+  });
 });
 
-autoUpdater.on('update-downloaded', () => {
-  mainWindow?.webContents.send('update-downloaded');
+autoUpdater.on('update-downloaded', (info) => {
+  mainWindow?.webContents.send('update-downloaded', {
+    version: info?.version || '',
+  });
+});
+
+autoUpdater.on('update-not-available', () => {
+  mainWindow?.webContents.send('update-not-available');
 });
 
 autoUpdater.on('error', (error) => {
   const msg = error.message || String(error);
-  if (msg.includes('latest.yml') || msg.includes('404') || msg.includes('No published versions')) {
-    console.log('Update check: No release artifacts found (normal for new releases)', msg);
+  if (shouldIgnoreUpdateError(msg)) {
+    console.log('Update check:', msg);
     return;
   }
   console.error('Auto-updater error:', msg);
@@ -595,21 +630,19 @@ function isRetryableUpdateError(err) {
 
 ipcMain.handle('check-for-updates', async () => {
   const runCheck = async () => {
-    const result = await autoUpdater.checkForUpdatesAndNotify();
+    const result = await autoUpdater.checkForUpdates();
     const info = result?.updateInfo;
-    if (info && typeof autoUpdater.downloadUpdate === 'function') {
-      autoUpdater.downloadUpdate().catch((dlErr) => {
-        console.error('Auto-updater download error:', dlErr.message || dlErr);
-        mainWindow?.webContents.send('update-error', dlErr.message || String(dlErr));
-      });
+    const currentVersion = app.getVersion();
+    if (!info || info.version === currentVersion) {
+      return { success: true, updateInfo: null };
     }
     return {
       success: true,
-      updateInfo: info ? {
+      updateInfo: {
         version: info.version,
         releaseDate: info.releaseDate,
-        path: info.path
-      } : null
+        path: info.path,
+      },
     };
   };
   try {

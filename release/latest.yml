@@ -1,8 +1,8 @@
-version: 1.0.79
+version: 1.0.80
 files:
-  - url: SiteWeave-Setup-1.0.79.exe
-    sha512: 2CGu7cTlUbd3hEoG2ZUJnduV1e2GZKmWbQLTumlv2wzgSn7sOIUHMdUHDAizLJQaf7GMk3CJfm/vS/b4jzXS+w==
-    size: 89709913
-path: SiteWeave-Setup-1.0.79.exe
-sha512: 2CGu7cTlUbd3hEoG2ZUJnduV1e2GZKmWbQLTumlv2wzgSn7sOIUHMdUHDAizLJQaf7GMk3CJfm/vS/b4jzXS+w==
-releaseDate: '2026-07-13T14:57:14.135Z'
+  - url: SiteWeave-Setup-1.0.80.exe
+    sha512: iSvfyTCaWRjThnY5j2gGukxvVxpqo8GZvRHzZzeed1On/hqINGsoRv2LwN0RJKCKsWf75dPqPpQFAmKTx6MxBg==
+    size: 89645782
+path: SiteWeave-Setup-1.0.80.exe
+sha512: iSvfyTCaWRjThnY5j2gGukxvVxpqo8GZvRHzZzeed1On/hqINGsoRv2LwN0RJKCKsWf75dPqPpQFAmKTx6MxBg==
+releaseDate: '2026-07-13T16:14:28.161Z'

@@ -43,7 +43,7 @@ export default defineConfig(({ mode }) => {
                   format: 'cjs',
                   entryFileNames: 'main.cjs'
                 },
-                external: ['electron', 'http', 'url', 'path', 'https', 'net', 'fs', 'child_process']
+                external: ['electron', 'http', 'url', 'path', 'https', 'net', 'fs', 'child_process', 'electron-updater']
               }
             }
           }
@@ -99,7 +99,8 @@ export default defineConfig(({ mode }) => {
         '@fullcalendar/react',
         '@fullcalendar/daygrid',
         '@fullcalendar/timegrid',
-        '@fullcalendar/interaction'
+        '@fullcalendar/interaction',
+        'qrcode',
       ],
       esbuildOptions: {
         resolveExtensions: ['.js', '.jsx', '.ts', '.tsx', '.json']

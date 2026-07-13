@@ -19,17 +19,28 @@ function UpdateNotification() {
     setIsElectron(hasElectron);
     if (!hasElectron || !window.electronAPI) return;
 
-    window.electronAPI.onUpdateAvailable(() => {
+    window.electronAPI.onUpdateAvailable((payload) => {
+      const nextVersion = typeof payload === 'string' ? payload : payload?.version;
+      if (nextVersion) setNewVersion(nextVersion);
       setUpdateAvailable(true);
       setCheckMessage(null);
       setUpdateError(null);
     });
 
-    window.electronAPI.onUpdateDownloaded(() => {
+    window.electronAPI.onUpdateDownloaded((payload) => {
+      const nextVersion = typeof payload === 'string' ? payload : payload?.version;
+      if (nextVersion) setNewVersion(nextVersion);
       setUpdateDownloaded(true);
       setUpdateAvailable(false);
       setDownloadPercent(null);
       setCheckMessage(null);
+      setUpdateError(null);
+    });
+
+    window.electronAPI.onUpdateNotAvailable?.(() => {
+      setUpdateAvailable(false);
+      setUpdateDownloaded(false);
+      setDownloadPercent(null);
       setUpdateError(null);
     });
 

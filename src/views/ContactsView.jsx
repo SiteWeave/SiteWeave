@@ -53,16 +53,32 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
 
     const contacts = state.contacts || [];
     const projects = state.projects || [];
-    const tradePartners = contacts.filter(c => c.type === 'Subcontractor');
+    const tradePartners = useMemo(
+        () => contacts.filter((c) => c.type === 'Subcontractor'),
+        [contacts],
+    );
+
+    const tradePartnerPhoneKey = useMemo(
+        () => tradePartners
+            .map((contact) => normalizeAssigneePhone(contact?.phone, { defaultRegion: 'US' }).e164)
+            .filter(Boolean)
+            .sort()
+            .join('|'),
+        [tradePartners],
+    );
 
     useEffect(() => {
         let cancelled = false;
         (async () => {
-            const map = await loadSmsConsentByPhones(supabaseClient, tradePartners, state.currentOrganization?.id);
+            const map = await loadSmsConsentByPhones(
+                supabaseClient,
+                tradePartners,
+                state.currentOrganization?.id,
+            );
             if (!cancelled) setSmsConsentMap(map);
         })();
         return () => { cancelled = true; };
-    }, [tradePartners]);
+    }, [tradePartnerPhoneKey, state.currentOrganization?.id]);
 
     const tradeOptions = useMemo(() => {
         const trades = new Set(tradePartners.map(c => c.trade).filter(Boolean));

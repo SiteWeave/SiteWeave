@@ -7,7 +7,6 @@ import { useToast } from '../context/ToastContext'
 import Avatar from '../components/Avatar'
 import Icon from '../components/Icon'
 import TrialCountdownBanner from '../components/TrialCountdownBanner'
-import NotificationCenterBell from '../components/NotificationCenterBell'
 import GlobalSearch from '../components/GlobalSearch'
 
 export default function AppShell({ session }) {
@@ -88,7 +87,6 @@ export default function AppShell({ session }) {
               >
                 <Icon path="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" className="w-5 h-5" />
               </button>
-              <NotificationCenterBell />
               <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold">
                 WEB
               </span>

@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
 import Avatar from './Avatar';
+import { normalizeAssigneePhone } from '@siteweave/core-logic';
 import { SmsConsentStatusBadge } from './SmsConsentActions';
 import SmsConsentActions from './SmsConsentActions';
 import { supabaseClient } from '../context/AppContext';
@@ -53,7 +54,10 @@ function ContactCard({
     };
 
     const hasManagementActions = showActions && (onEdit || onDelete || onAssignToProject);
-    const showSmsConsentSection = showActions && organizationId && contact.phone;
+    const normalizedPhone = normalizeAssigneePhone(contact?.phone, { defaultRegion: 'US' });
+    const phoneReadyForSms = normalizedPhone.isValid && Boolean(normalizedPhone.e164);
+    const showSmsConsentSection = showActions && organizationId && phoneReadyForSms;
+    const resolvedSmsStatus = smsConsentStatus ?? (phoneReadyForSms ? 'none' : null);
     const displayName = isTradePartner && contact.company
         ? contact.company
         : contact.name;
@@ -100,8 +104,8 @@ function ContactCard({
                                     : t('contacts.add_email_for_reminders')}
                             </span>
                         )}
-                        {smsConsentStatus ? (
-                            <SmsConsentStatusBadge status={smsConsentStatus} />
+                        {resolvedSmsStatus ? (
+                            <SmsConsentStatusBadge status={resolvedSmsStatus} />
                         ) : null}
                         {contact.workContext?.assignedProjectNames?.length > 0 && (
                             <span className="text-xs text-gray-500 truncate">
@@ -158,7 +162,7 @@ function ContactCard({
                         organizationId={organizationId}
                         phone={contact.phone}
                         contactId={contact.id}
-                        smsConsentStatus={smsConsentStatus}
+                        smsConsentStatus={resolvedSmsStatus}
                         onConsentStatusChange={onSmsConsentStatusChange}
                         compact
                     />

@@ -94,6 +94,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         () => projects.find((p) => String(p.id) === String(state.selectedProjectId)),
         [projects, state.selectedProjectId],
     );
+    const [projectHydrating, setProjectHydrating] = useState(false);
     const projectContacts = useMemo(
         () => contacts.filter(
             (contact) =>

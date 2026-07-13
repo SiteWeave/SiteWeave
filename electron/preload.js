@@ -18,7 +18,7 @@ try {
     // Update notifications
     onUpdateAvailable: (callback) => {
       try {
-        ipcRenderer.on('update-available', callback);
+        ipcRenderer.on('update-available', (event, payload) => callback(payload));
       } catch (error) {
         console.error('Error setting up update available callback:', error);
       }
@@ -26,7 +26,7 @@ try {
 
     onUpdateDownloaded: (callback) => {
       try {
-        ipcRenderer.on('update-downloaded', callback);
+        ipcRenderer.on('update-downloaded', (event, payload) => callback(payload));
       } catch (error) {
         console.error('Error setting up update downloaded callback:', error);
       }
@@ -45,6 +45,14 @@ try {
         ipcRenderer.on('update-download-progress', (event, progress) => callback(progress));
       } catch (error) {
         console.error('Error setting up update download progress callback:', error);
+      }
+    },
+
+    onUpdateNotAvailable: (callback) => {
+      try {
+        ipcRenderer.on('update-not-available', callback);
+      } catch (error) {
+        console.error('Error setting up update not available callback:', error);
       }
     },
 
