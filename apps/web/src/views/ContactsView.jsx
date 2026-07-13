@@ -13,6 +13,7 @@ import { loadSmsConsentByPhones, resolveContactSmsConsent } from '../utils/smsWe
 import {
   defaultProjectCrewRoleForContact,
   ensureContactIdForProjectAssignment,
+  isTradePartnerContact,
   normalizeAssigneePhone,
 } from '@siteweave/core-logic';
 import ProjectCrewRoleSelect from '../components/ProjectCrewRoleSelect';
@@ -54,7 +55,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const contacts = state.contacts || [];
     const projects = state.projects || [];
     const tradePartners = useMemo(
-        () => contacts.filter((c) => c.type === 'Subcontractor'),
+        () => contacts.filter(isTradePartnerContact),
         [contacts],
     );
 

@@ -1,7 +1,7 @@
 {
   "name": "siteweave",
   "private": true,
-  "version": "1.0.80",
+  "version": "1.0.81",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite",

@@ -6,6 +6,19 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { i18nReady } from './i18n/config.js'
 import './index.css'
 
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'dev'
+const BUILD_VERSION_KEY = 'siteweave_build_version'
+
+if (typeof window !== 'undefined') {
+  const previousBuild = localStorage.getItem(BUILD_VERSION_KEY)
+  if (previousBuild && previousBuild !== APP_VERSION) {
+    sessionStorage.removeItem('siteweave_app_state')
+    sessionStorage.removeItem('siteweave_app_state_v2')
+    sessionStorage.removeItem('siteweave_user_id')
+  }
+  localStorage.setItem(BUILD_VERSION_KEY, APP_VERSION)
+}
+
 // Unregister stale service workers (desktop parity; avoids cached shell on deploy)
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then((registrations) => {

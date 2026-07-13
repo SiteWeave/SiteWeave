@@ -5,7 +5,9 @@
  * @returns {{ e164: string | null, isValid: boolean }}
  */
 export function normalizeAssigneePhone(raw, options = {}) {
-    const trimmed = String(raw ?? '').trim();
+    let trimmed = String(raw ?? '').trim();
+    // Strip extension suffixes common in legacy contact records (ext 123, x456).
+    trimmed = trimmed.replace(/\s*(?:ext(?:ension)?\.?|x)\s*#?\s*\d+\s*$/i, '').trim();
     if (!trimmed) {
         return { e164: null, isValid: false };
     }

@@ -11,6 +11,11 @@
   to = "/index.html"
   status = 200
 
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
 # Long cache for hashed build assets. Do NOT set Content-Type on "/assets/*" —
 # that would mark CSS (and fonts, etc.) as JavaScript and the browser will not apply styles.
 [[headers]]

@@ -35,6 +35,7 @@ export {
 } from './utils/dateOnly.js';
 
 export { normalizeAssigneePhone } from './utils/assigneePhone.js';
+export { isTradePartnerContact } from './utils/contactType.js';
 
 export {
   SITEWEAVE_PHYSICAL_ADDRESS,

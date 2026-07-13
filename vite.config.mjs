@@ -4,8 +4,10 @@ import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { readFileSync } from 'fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const appVersion = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')).version
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -15,6 +17,9 @@ export default defineConfig(({ mode }) => {
   
   return {
     root: process.cwd(),
+    define: {
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+    },
     resolve: {
       alias: {
         '@siteweave/core-logic': path.resolve(__dirname, './packages/core-logic/src/index.js'),

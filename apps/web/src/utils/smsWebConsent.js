@@ -1,10 +1,28 @@
 import { normalizeAssigneePhone } from '@siteweave/core-logic';
 
+const PHONE_QUERY_CHUNK = 80;
+
 const fnBase = (name) => {
   const url = import.meta.env.VITE_SUPABASE_URL;
   if (!url) throw new Error('VITE_SUPABASE_URL is not set');
   return `${url.replace(/\/$/, '')}/functions/v1/${name}`;
 };
+
+async function queryConsentRowsInChunks(supabaseClient, table, columns, phoneList, extraFilter) {
+  const rows = [];
+  for (let i = 0; i < phoneList.length; i += PHONE_QUERY_CHUNK) {
+    const chunk = phoneList.slice(i, i + PHONE_QUERY_CHUNK);
+    let query = supabaseClient.from(table).select(columns).in('phone_e164', chunk);
+    if (extraFilter) query = extraFilter(query);
+    const { data, error } = await query;
+    if (error) {
+      console.warn(`loadSmsConsentByPhones(${table}):`, error.message);
+      continue;
+    }
+    rows.push(...(data || []));
+  }
+  return rows;
+}
 
 export async function fetchSmsConsentRequest(token) {
   const res = await fetch(`${fnBase('sms-consent-request')}?token=${encodeURIComponent(token)}`, {
@@ -68,34 +86,31 @@ export async function loadSmsConsentByPhones(supabaseClient, contacts, organizat
   }
   if (phones.size === 0) return new Map();
 
-  const { data, error } = await supabaseClient
-    .from('sms_phone_consent')
-    .select('phone_e164, status')
-    .in('phone_e164', [...phones]);
-
-  if (error) {
-    console.warn('loadSmsConsentByPhones:', error.message);
-    return new Map();
-  }
-  const map = new Map((data || []).map((row) => [row.phone_e164, row.status]));
+  const phoneList = [...phones];
+  const consentRows = await queryConsentRowsInChunks(
+    supabaseClient,
+    'sms_phone_consent',
+    'phone_e164, status',
+    phoneList,
+  );
+  const map = new Map(consentRows.map((row) => [row.phone_e164, row.status]));
 
   if (organizationId) {
     const now = Date.now();
-    const { data: pendingRows, error: pendingErr } = await supabaseClient
-      .from('sms_consent_requests')
-      .select('phone_e164, status, expires_at')
-      .eq('organization_id', organizationId)
-      .eq('status', 'pending')
-      .in('phone_e164', [...phones]);
+    const pendingRows = await queryConsentRowsInChunks(
+      supabaseClient,
+      'sms_consent_requests',
+      'phone_e164, status, expires_at',
+      phoneList,
+      (query) => query.eq('organization_id', organizationId).eq('status', 'pending'),
+    );
 
-    if (!pendingErr) {
-      for (const row of pendingRows || []) {
-        const expires = new Date(row.expires_at).getTime();
-        if (Number.isNaN(expires) || expires <= now) continue;
-        const current = map.get(row.phone_e164);
-        if (!current || current === 'none') {
-          map.set(row.phone_e164, 'pending');
-        }
+    for (const row of pendingRows) {
+      const expires = new Date(row.expires_at).getTime();
+      if (Number.isNaN(expires) || expires <= now) continue;
+      const current = map.get(row.phone_e164);
+      if (!current || current === 'none') {
+        map.set(row.phone_e164, 'pending');
       }
     }
   }

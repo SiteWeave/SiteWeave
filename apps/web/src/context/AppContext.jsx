@@ -32,8 +32,9 @@ export const AppContext = createContext();
 const appStateRefForLazy = { current: null };
 
 // Helper functions for sessionStorage persistence
-const STORAGE_KEY = 'siteweave_app_state';
+const STORAGE_KEY = 'siteweave_app_state_v2';
 const STORAGE_USER_KEY = 'siteweave_user_id';
+const LEGACY_STORAGE_KEY = 'siteweave_app_state';
 
 /** Stable project shape for UI/debug (e.g. start_date always present, not omitted by realtime payloads). */
 function normalizeProjectRecord(p) {
@@ -51,7 +52,7 @@ const saveStateToStorage = (state) => {
     // Only save data arrays, not user/auth state
     const dataToSave = {
       projects: state.projects,
-      contacts: state.contacts,
+      // contacts omitted — large, org-scoped; stale session cache breaks SMS UI on legacy orgs
       tasks: state.tasks,
       files: state.files,
       calendarEvents: state.calendarEvents,
@@ -89,7 +90,7 @@ const loadStateFromStorage = (currentUserId) => {
     
     return {
       projects: normalizeProjectsArray(parsed.projects || []),
-      contacts: parsed.contacts || [],
+      contacts: [],
       tasks: parsed.tasks || [],
       files: parsed.files || [],
       calendarEvents: parsed.calendarEvents || [],
