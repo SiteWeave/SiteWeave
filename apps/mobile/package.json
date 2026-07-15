@@ -22,7 +22,7 @@
     "@react-native-voice/voice": "^3.2.4",
     "@siteweave/core-logic": "file:../../packages/core-logic",
     "@siteweave/i18n": "file:../../packages/i18n",
-    "@supabase/supabase-js": "^2.103.0",
+    "@supabase/supabase-js": "2.103.0",
     "cross-env": "^7.0.3",
     "expo": "~54.0.35",
     "expo-apple-authentication": "~8.0.8",
