@@ -12,6 +12,7 @@ import Avatar from './Avatar';
 import PermissionGuard from './PermissionGuard';
 import MsProjectImportModal from './MsProjectImportModal';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 const DEFAULT_SMART_NOTIFICATION_FIELDS = {
     task_notifications_use_org_defaults: false,
@@ -300,8 +301,8 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
 
     if (showDuplicateDialog) {
         return (
-            <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
-                <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
+            <ModalOverlay onClose={() => setShowDuplicateDialog(false)}>
+                <div className={`bg-white rounded-lg shadow-2xl p-8 w-full max-w-md ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
                     <h2 className="text-2xl font-bold mb-6">{t('projectModal.duplicate_title')}</h2>
                     <div className="mb-4">
                         <label className="block text-sm font-semibold mb-1 text-gray-600">{t('projectModal.duplicate_name_label')}</label>
@@ -351,13 +352,14 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                         </button>
                     </div>
                 </div>
-            </div>
+            </ModalOverlay>
         );
     }
 
     return (
-        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <>
+        <ModalOverlay onClose={onClose}>
+            <div className={`bg-white rounded-lg shadow-2xl p-8 w-full max-w-2xl ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
                     <h2 className="text-2xl font-bold min-w-0">{isEditMode ? t('projectModal.edit_project') : t('projectModal.create_project')}</h2>
                     {isEditMode && (
@@ -614,6 +616,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                     </div>
                 </form>
             </div>
+        </ModalOverlay>
             {showMsProjectImportModal && !isEditMode && (
                 <MsProjectImportModal
                     context="newProject"
@@ -624,7 +627,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                     }}
                 />
             )}
-        </div>
+    </>
     );
 }
 

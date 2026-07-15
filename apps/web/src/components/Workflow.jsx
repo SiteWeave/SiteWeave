@@ -480,8 +480,8 @@ const Workflow = ({ projectId }) => {
 
             {/* Create Workflow Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-start justify-center overflow-y-auto py-8 z-50">
+                    <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[min(90dvh,90vh)] overflow-y-auto">
                         <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-xl font-bold">Create New Workflow</h3>

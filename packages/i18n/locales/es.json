@@ -1009,7 +1009,7 @@
     "delete_error": "Error al eliminar programación: {{message}}",
     "sent_success": "¡Informe enviado correctamente!",
     "export_link_warning": "Advertencia de enlace de exportación: {{message}}",
-    "export_link_included": "El correo incluyó un enlace listo para imprimir.",
+    "export_link_included": "El correo incluyó un enlace de descarga PDF.",
     "send_error": "Error al enviar informe: {{message}}",
     "export_no_document": "La exportación no devolvió un documento.",
     "pdf_save_error": "No se pudo guardar el PDF.",

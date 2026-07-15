@@ -3052,7 +3052,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 </div>
             </div>
             {dependencyDrawerTask && (
-                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setDependencyDrawerTaskId(null)}>
+                <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto py-8 bg-black/60 p-4 backdrop-blur-sm" onClick={() => setDependencyDrawerTaskId(null)}>
                     <div
                         className="w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-2xl"
                         onClick={(event) => event.stopPropagation()}

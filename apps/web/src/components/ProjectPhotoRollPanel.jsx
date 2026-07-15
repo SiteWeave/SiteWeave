@@ -85,14 +85,14 @@ export default function ProjectPhotoRollPanel({ projectId, t }) {
       )}
       {viewer ? (
         <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-6"
+          className="fixed inset-0 z-50 bg-black/90 flex items-start justify-center overflow-y-auto py-8 p-6"
           onClick={() => setViewer(null)}
           role="presentation"
         >
           <img
             src={viewer.full_url || viewer.thumbnail_url}
             alt={viewer.caption || viewer.task_title || 'Project photo'}
-            className="max-h-[90vh] max-w-full object-contain"
+            className="max-h-[min(90dvh,90vh)] max-w-full object-contain"
           />
         </div>
       ) : null}

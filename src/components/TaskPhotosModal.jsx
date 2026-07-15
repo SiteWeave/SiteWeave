@@ -28,14 +28,14 @@ function TaskPhotosModal({
 
     return (
         <div
-            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[1px]"
+            className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto py-8 p-4 bg-black/40 backdrop-blur-[1px]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="task-photos-modal-title"
             onClick={onClose}
         >
             <div
-                className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5"
+                className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[min(90dvh,90vh)] overflow-y-auto p-5"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-start justify-between gap-3 mb-4">

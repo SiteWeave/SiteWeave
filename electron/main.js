@@ -508,7 +508,23 @@ ipcMain.handle('save-html-as-pdf', async (event, { html, defaultFilename }) => {
       hidden.loadFile(tmpHtml).catch(reject);
     });
 
-    await new Promise((r) => setTimeout(r, 400));
+    // Wait for <img> loads (task photos) before printToPDF — did-finish-load alone is not enough.
+    try {
+      await hidden.webContents.executeJavaScript(`
+        Promise.all(Array.from(document.images || []).map((img) => {
+          if (img.complete) return Promise.resolve();
+          return new Promise((resolve) => {
+            const done = () => resolve();
+            img.addEventListener('load', done, { once: true });
+            img.addEventListener('error', done, { once: true });
+            setTimeout(done, 10000);
+          });
+        }))
+      `);
+    } catch (_) {
+      /* proceed anyway */
+    }
+    await new Promise((r) => setTimeout(r, 200));
 
     const pdfBuffer = await hidden.webContents.printToPDF({
       printBackground: true,

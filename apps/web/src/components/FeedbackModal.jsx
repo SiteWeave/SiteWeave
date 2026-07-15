@@ -5,7 +5,8 @@ import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
 import Icon from './Icon';
-import packageJson from '../config/version.js';
+import packageJson from '../../package.json';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 async function resolveAppVersion() {
     if (window.electronAPI?.getAppVersion) {
@@ -83,13 +84,13 @@ function FeedbackModal({ isOpen, onClose }) {
     };
 
     return (
-        <div
-            className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50"
+        <ModalOverlay
+            onClose={handleClose}
             role="dialog"
             aria-modal="true"
             aria-labelledby="feedback-modal-title"
         >
-            <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className={`bg-white rounded-lg shadow-2xl p-6 w-full max-w-2xl ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
                 <div className="flex justify-between items-center mb-6">
                     <h2 id="feedback-modal-title" className="text-2xl font-bold text-gray-900">
                         {t('settings.send_feedback')}
@@ -215,7 +216,7 @@ function FeedbackModal({ isOpen, onClose }) {
                     </div>
                 </form>
             </div>
-        </div>
+        </ModalOverlay>
     );
 }
 

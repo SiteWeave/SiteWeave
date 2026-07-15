@@ -19,6 +19,7 @@ import { logWeatherImpactRecorded, logWeatherImpactScheduleApplied } from '../ut
 import { applyScheduleToWeatherImpact } from '../utils/weatherScheduleApply';
 import LoadingSpinner from './LoadingSpinner';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 /**
  * Modal: log weather / schedule impact, optionally shift task & phase dates (uniform downstream shift; no FS cascade).
@@ -499,8 +500,8 @@ function WeatherImpactModal({
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
-            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-xl">
+        <ModalOverlay onClose={onClose} role="dialog" aria-modal="true">
+            <div className={`${MODAL_PANEL_MAX_H} w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-xl`}>
                 <div className="border-b border-gray-200 px-5 py-4 flex items-center justify-between">
                     <h2 className="text-lg font-semibold text-gray-900">
                         {editingImpact ? t('weather.impact_edit_title') : t('weather.impact_title')}
@@ -704,7 +705,7 @@ function WeatherImpactModal({
                     )}
                 </div>
             </div>
-        </div>
+        </ModalOverlay>
     );
 }
 

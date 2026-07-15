@@ -8,9 +8,9 @@ import {
   getOrganizationProgressReportSchedules,
   getProgressReportHistory,
   sendManualReport,
-  formatScheduleNextSendAt,
 } from '@siteweave/core-logic';
 import { getLocalizedFrequencyLabel } from '@siteweave/i18n';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 /**
  * Progress Report Dashboard Component
@@ -204,11 +204,7 @@ function ProgressReportDashboard() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {schedule.next_send_at
-                        ? formatScheduleNextSendAt(
-                            schedule.next_send_at,
-                            i18n.language,
-                            schedule.send_timezone || 'America/New_York'
-                          )
+                        ? new Date(schedule.next_send_at).toLocaleDateString(i18n.language)
                         : '—'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -252,10 +248,12 @@ function ProgressReportDashboard() {
 
       {/* View History modal/panel */}
       {historyScheduleId && (
-        <div className="fixed inset-0 z-50 overflow-y-auto" aria-modal="true">
-          <div className="flex min-h-screen items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/30" onClick={() => setHistoryScheduleId(null)} />
-            <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
+        <ModalOverlay
+          onClose={() => setHistoryScheduleId(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+            <div className={`relative bg-white rounded-lg shadow-xl max-w-lg w-full ${MODAL_PANEL_MAX_H} flex flex-col overflow-hidden`}>
               <div className="flex items-center justify-between p-4 border-b">
                 <h3 className="text-lg font-semibold text-gray-900">{t('progressReports.dashboard.send_history')}</h3>
                 <button
@@ -306,8 +304,7 @@ function ProgressReportDashboard() {
                 )}
               </div>
             </div>
-          </div>
-        </div>
+        </ModalOverlay>
       )}
 
       {/* Recent Reports */}

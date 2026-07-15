@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 function parseLeadDays(raw) {
   const values = String(raw || '')
@@ -88,8 +89,8 @@ export default function ProjectSmartNotificationsModal({
   if (!project) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/20 backdrop-blur-[2px]">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
+    <ModalOverlay onClose={onClose}>
+      <div className={`${MODAL_PANEL_MAX_H} w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-2xl`}>
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-xl font-bold text-gray-900">{t('projectModal.smart_notif_title')}</h2>
@@ -170,6 +171,6 @@ export default function ProjectSmartNotificationsModal({
           </div>
         </form>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

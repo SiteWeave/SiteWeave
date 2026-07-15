@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 function ConfirmDialog({ isOpen, onClose, onConfirm, title, message, confirmText, cancelText }) {
     const { t } = useTranslation();
@@ -8,8 +9,8 @@ function ConfirmDialog({ isOpen, onClose, onConfirm, title, message, confirmText
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-md">
+        <ModalOverlay onClose={onClose}>
+            <div className={`bg-white rounded-lg shadow-2xl p-6 w-full max-w-md ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
                 <h3 className="text-lg font-bold mb-4">{title}</h3>
                 <p className="text-gray-600 mb-6">{message}</p>
                 <div className="flex justify-end gap-3">
@@ -27,7 +28,7 @@ function ConfirmDialog({ isOpen, onClose, onConfirm, title, message, confirmText
                     </button>
                 </div>
             </div>
-        </div>
+        </ModalOverlay>
     );
 }
 

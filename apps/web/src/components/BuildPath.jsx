@@ -435,9 +435,9 @@ export function PhaseModal({ phase, onClose, onSave, isLoading }) {
     };
 
     return (
-        <div className="fixed inset-0 backdrop-blur-[2px] bg-black/40 flex items-center justify-center z-[60] p-4">
+        <div className="fixed inset-0 backdrop-blur-[2px] bg-black/40 flex items-start justify-center overflow-y-auto py-8 z-[60] p-4">
             <div
-                className="bg-white rounded-xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto shadow-2xl"
+                className="bg-white rounded-xl p-6 w-full max-w-md mx-4 max-h-[min(90dvh,90vh)] overflow-y-auto shadow-2xl"
                 role="dialog"
                 aria-modal="true"
                 onClick={(e) => e.stopPropagation()}

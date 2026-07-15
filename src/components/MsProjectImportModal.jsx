@@ -14,6 +14,7 @@ import {
 import { importMsProjectXmlSchedule, fetchScheduleImportTemplates, saveScheduleImportTemplate } from '../utils/msProjectImportService.js';
 import { ensureOrganizationForWrites } from '../utils/organizationContext';
 import { translateImportMessage } from '@siteweave/i18n';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 /**
  * @param {{
@@ -252,8 +253,8 @@ export default function MsProjectImportModal({ onClose, context, projectId: exis
     const moreTasks = (preview?.tasks.length || 0) - taskNames.length;
 
     return (
-        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-hidden flex flex-col">
+        <ModalOverlay onClose={onClose}>
+            <div className={`bg-white rounded-xl shadow-2xl w-full max-w-lg ${MODAL_PANEL_MAX_H} overflow-hidden flex flex-col`}>
 
                 {/* Header */}
                 <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200">
@@ -539,6 +540,6 @@ export default function MsProjectImportModal({ onClose, context, projectId: exis
                     </PermissionGuard>
                 </div>
             </div>
-        </div>
+        </ModalOverlay>
     );
 }

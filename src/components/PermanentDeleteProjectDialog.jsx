@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 function PermanentDeleteProjectDialog({
   isOpen,
@@ -21,8 +22,8 @@ function PermanentDeleteProjectDialog({
   const impactItems = t('projectTrash.permanent_delete_impact', { returnObjects: true });
 
   return (
-    <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-lg">
+    <ModalOverlay onClose={onClose}>
+      <div className={`bg-white rounded-lg shadow-2xl p-6 w-full max-w-lg ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
         <h3 className="text-lg font-bold text-gray-900 mb-2">
           {t('projectTrash.permanent_delete_title')}
         </h3>
@@ -70,7 +71,7 @@ function PermanentDeleteProjectDialog({
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 

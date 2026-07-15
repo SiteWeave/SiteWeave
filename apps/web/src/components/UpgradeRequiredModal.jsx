@@ -1,5 +1,6 @@
 import React from 'react';
 import { isSmsNotificationsEnabled } from '@siteweave/core-logic';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 const SALES_URL = 'https://www.siteweave.org/#contact';
 
@@ -64,8 +65,8 @@ function UpgradeRequiredModal({ isOpen, onClose, feature = 'exports' }) {
   };
 
   return (
-    <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
-      <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-md">
+    <ModalOverlay onClose={onClose} role="dialog" aria-modal="true">
+      <div className={`bg-white rounded-lg shadow-2xl p-6 w-full max-w-md ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
         <h3 className="text-lg font-bold text-gray-900 mb-3">{title}</h3>
         <p className="text-gray-600 mb-6 text-sm leading-relaxed">{body}</p>
         <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
@@ -85,7 +86,7 @@ function UpgradeRequiredModal({ isOpen, onClose, feature = 'exports' }) {
           </button>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 

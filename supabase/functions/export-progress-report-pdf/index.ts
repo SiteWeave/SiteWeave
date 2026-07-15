@@ -6,67 +6,17 @@ import {
   callGenerateProgressReport,
   GenerateProgressReportError,
 } from '../_shared/generateProgressReportClient.ts'
-import { defaultProgressReportPdfFilename } from '../_shared/progressReportPdf.ts'
+import {
+  defaultProgressReportPdfFilename,
+  isValidSignedProgressReportExportRequest,
+  prepareProgressReportPrintHtml,
+} from '../_shared/progressReportPdf.ts'
 import { assertCanExportProfessionalDocs, EXPORT_FEATURE_LOCKED_ERROR } from '../_shared/workspaceTier.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-}
-
-const REPORT_EXPORT_LINK_SECRET = (Deno.env.get('PROGRESS_REPORT_EXPORT_LINK_SECRET') || '').trim()
-const SUPABASE_SERVICE_ROLE_KEY = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').trim()
-const EFFECTIVE_REPORT_EXPORT_LINK_SECRET = REPORT_EXPORT_LINK_SECRET || SUPABASE_SERVICE_ROLE_KEY
-
-function base64UrlEncode(bytes: Uint8Array): string {
-  let binary = ''
-  for (const b of bytes) binary += String.fromCharCode(b)
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
-}
-
-async function signPayload(payload: string, secret: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)))
-  return base64UrlEncode(signature)
-}
-
-async function isValidSignedExportRequest(url: URL): Promise<boolean> {
-  const scheduleId = url.searchParams.get('schedule_id')?.trim()
-  const expRaw = url.searchParams.get('exp')?.trim()
-  const sig = url.searchParams.get('sig')?.trim()
-  if (!scheduleId || !expRaw || !sig || !EFFECTIVE_REPORT_EXPORT_LINK_SECRET) return false
-  const exp = Number(expRaw)
-  if (!Number.isFinite(exp) || exp < Math.floor(Date.now() / 1000)) return false
-  const expected = await signPayload(`${scheduleId}:${exp}`, EFFECTIVE_REPORT_EXPORT_LINK_SECRET)
-  return expected === sig
-}
-
-function injectPrintStyles(html: string): string {
-  // Match Electron printToPDF + @page so Chromium does not paginate to extra blank sheets.
-  // html/body height:auto avoids min-height/100% table quirks that add leading/trailing empty pages.
-  const extra = `<style>
-@media print {
-  @page { size: A4; margin: 12mm; }
-  html, body {
-    height: auto !important;
-    min-height: 0 !important;
-    margin: 0;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-}
-</style>`
-  if (html.includes('<head>')) {
-    return html.replace('<head>', `<head>${extra}`)
-  }
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"/>${extra}</head><body>${html}</body></html>`
 }
 
 serve(async (req) => {
@@ -82,7 +32,7 @@ serve(async (req) => {
   }
 
   const requestUrl = new URL(req.url)
-  const signedAccess = req.method === 'GET' && await isValidSignedExportRequest(requestUrl)
+  const signedAccess = req.method === 'GET' && await isValidSignedProgressReportExportRequest(requestUrl)
 
   const authHeader = req.headers.get('Authorization')
   if (!signedAccess && !authHeader) {
@@ -252,7 +202,12 @@ serve(async (req) => {
       brandingData,
     )
 
-    const html = injectPrintStyles(emailContent.html)
+    // Same branded HTML as in-app export. Signed GET (email links) gets a Save as PDF toolbar;
+    // app POST path stays chrome-free for Electron / html2canvas.
+    const html = await prepareProgressReportPrintHtml(emailContent.html, {
+      showSaveToolbar: req.method === 'GET',
+      inlineImages: true,
+    })
     const reportName = String((schedule as { name?: string | null }).name ?? '')
     const suggested_pdf_filename = defaultProgressReportPdfFilename(reportName, emailContent.subject)
     const html_filename = suggested_pdf_filename.replace(/\.pdf$/i, '.html')

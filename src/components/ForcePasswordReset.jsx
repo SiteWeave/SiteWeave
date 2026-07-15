@@ -4,6 +4,7 @@ import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
 import Icon from './Icon';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 /**
  * ForcePasswordReset Component
@@ -112,8 +113,8 @@ function ForcePasswordReset({ show, onComplete }) {
   if (!show) return null;
 
   return (
-    <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50 backdrop-blur-xs">
-      <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full mx-4">
+    <ModalOverlay>
+      <div className={`bg-white rounded-lg shadow-2xl p-8 max-w-md w-full ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
         <div className="text-center mb-6">
           <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <Icon path="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" className="w-8 h-8 text-blue-600" />
@@ -231,7 +232,7 @@ function ForcePasswordReset({ show, onComplete }) {
           </button>
         </form>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 

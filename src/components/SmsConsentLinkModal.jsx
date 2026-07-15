@@ -56,7 +56,7 @@ export default function SmsConsentLinkModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-[1px]"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-8 bg-black/30 p-4 backdrop-blur-[1px]"
       role="dialog"
       aria-modal="true"
       onClick={onClose}

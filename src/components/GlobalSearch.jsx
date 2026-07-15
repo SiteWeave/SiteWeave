@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 function GlobalSearch({ isOpen, onClose }) {
     const { state, dispatch } = useAppContext();
@@ -99,8 +100,8 @@ function GlobalSearch({ isOpen, onClose }) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-start justify-center pt-20 z-50">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4">
+        <ModalOverlay onClose={onClose} align="start">
+            <div className={`bg-white rounded-lg shadow-xl w-full max-w-2xl ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
                 <div className="p-4 border-b">
                     <input
                         type="text"
@@ -157,7 +158,7 @@ function GlobalSearch({ isOpen, onClose }) {
                     </div>
                 </div>
             </div>
-        </div>
+        </ModalOverlay>
     );
 }
 

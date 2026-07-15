@@ -1008,7 +1008,7 @@
     "delete_error": "Error deleting schedule: {{message}}",
     "sent_success": "Report sent successfully!",
     "export_link_warning": "Export link warning: {{message}}",
-    "export_link_included": "Email included a print-ready export link.",
+    "export_link_included": "Email included a PDF download link.",
     "send_error": "Error sending report: {{message}}",
     "export_no_document": "Export did not return a document.",
     "pdf_save_error": "Could not save PDF.",

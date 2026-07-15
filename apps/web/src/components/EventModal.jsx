@@ -9,6 +9,7 @@ import DateRangePicker from './DateRangePicker';
 import { parseRecurrence, validateRecurrence } from '../utils/recurrenceService';
 import { getStoredCalendarToken } from '../utils/calendarIntegration';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 const DEFAULT_CATEGORY_SPECS = [
     { id: 'meeting', color: '#3B82F6' },
@@ -409,8 +410,8 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
     );
 
     return (
-        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-2xl p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <ModalOverlay onClose={onClose}>
+            <div className={`bg-white rounded-lg shadow-2xl p-5 w-full max-w-2xl ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-xl font-bold">
                         {isEditMode ? t('calendar.event_edit_title') : t('calendar.event_add_title')}
@@ -868,7 +869,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                     </div>
                 </form>
             </div>
-        </div>
+        </ModalOverlay>
     );
 }
 

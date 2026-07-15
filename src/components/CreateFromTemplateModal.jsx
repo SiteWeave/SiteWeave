@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import DateDropdown from './DateDropdown';
 import { createProjectFromTemplate } from '../utils/projectTemplateService';
 import { ensureOrganizationForWrites } from '../utils/organizationContext';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 export default function CreateFromTemplateModal({ onClose, onCreated }) {
   const { t } = useTranslation();
@@ -78,8 +79,8 @@ export default function CreateFromTemplateModal({ onClose, onCreated }) {
   };
 
   return (
-    <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
+    <ModalOverlay onClose={onClose}>
+      <div className={`bg-white rounded-lg shadow-2xl p-8 w-full max-w-md ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
         <h2 className="text-xl font-bold mb-4">{t('templates.create_title')}</h2>
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
@@ -118,6 +119,6 @@ export default function CreateFromTemplateModal({ onClose, onCreated }) {
           </div>
         </form>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

@@ -3,8 +3,8 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1'
 import { buildProgressReportEmail } from '../_shared/progressReportEmailTemplates.ts'
+import { buildBrandedProgressReportPdf } from '../_shared/buildProgressReportPdf.ts'
 import { defaultProgressReportPdfFilename } from '../_shared/progressReportPdf.ts'
 import {
   callGenerateProgressReport,
@@ -263,11 +263,19 @@ serve(async (req) => {
     let reportExportUrl: string | null = null
     let reportExportError: string | null = null
     try {
+      // Real application/pdf only (never text/html — bucket mime rules broke that before).
       reportExportUrl = await createReportExportUrl({
         supabase,
         schedule,
         subject: emailContent.subject,
-        text: emailTextToPdfText(emailContent.text),
+        reportData: (filtered_data || {}) as Record<string, unknown>,
+        branding: {
+          ...brandingData,
+          organization_name:
+            (filtered_data as { organization_name?: string } | undefined)?.organization_name ||
+            (report_data as { organization_name?: string } | undefined)?.organization_name ||
+            null,
+        },
       })
     } catch (exportError) {
       reportExportError = exportError instanceof Error ? exportError.message : String(exportError)
@@ -278,7 +286,7 @@ serve(async (req) => {
       ? injectProgressReportExportButton(emailContent.html, reportExportUrl)
       : emailContent.html
     const emailText = reportExportUrl
-      ? `${emailContent.text}\n\nOpen print-ready report: ${reportExportUrl}`
+      ? `${emailContent.text}\n\nDownload PDF: ${reportExportUrl}`
       : emailContent.text
 
     // Determine recipients (null-safe: relation may be missing or empty)
@@ -574,29 +582,10 @@ function zonedDateTimeToUtc(
   return new Date(utcGuess)
 }
 
-function injectPrintStyles(html: string): string {
-  const extra = `<style>
-@media print {
-  @page { size: A4; margin: 12mm; }
-  html, body {
-    height: auto !important;
-    min-height: 0 !important;
-    margin: 0;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-}
-</style>`
-  if (html.includes('<head>')) {
-    return html.replace('<head>', `<head>${extra}`)
-  }
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"/>${extra}</head><body>${html}</body></html>`
-}
-
 function injectProgressReportExportButton(html: string, reportExportUrl: string): string {
   const safeUrl = reportExportUrl.replace(/"/g, '&quot;')
   const pdfCell = `<td style="vertical-align:middle;text-align:right;padding-left:16px;white-space:nowrap;">
-  <a href="${safeUrl}" target="_blank" rel="noreferrer" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:12px;font-weight:600;padding:8px 14px;border-radius:6px;">Need a PDF version?</a>
+  <a href="${safeUrl}" target="_blank" rel="noreferrer" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:12px;font-weight:600;padding:8px 14px;border-radius:6px;">Download PDF</a>
 </td>`
 
   // Remove legacy top-of-email PDF callout if present in cached HTML
@@ -633,18 +622,25 @@ async function ensureReportExportBucket(supabase: ReturnType<typeof createClient
   throw new Error(`Could not create storage bucket "${bucketName}": ${error.message}`)
 }
 
-function defaultProgressReportExportFilename(
-  schedule: { name?: string | null },
-  subject: string,
-): string {
-  return defaultProgressReportPdfFilename(String(schedule?.name ?? ''), subject)
-}
-
 async function createReportExportUrl(opts: {
   supabase: ReturnType<typeof createClient>
-  schedule: { organization_id?: string | null; id?: string | null; name?: string | null }
+  schedule: {
+    organization_id?: string | null
+    id?: string | null
+    name?: string | null
+    custom_subject?: string | null
+    report_audience_type?: string | null
+    report_sections?: Record<string, unknown> | null
+  }
   subject: string
-  text: string
+  reportData: Record<string, unknown>
+  branding: {
+    logo_url?: string | null
+    primary_color?: string | null
+    secondary_color?: string | null
+    company_footer?: string | null
+    organization_name?: string | null
+  }
 }) {
   const disallowedExportBuckets = new Set(['task_photos'])
   const candidateBuckets = Array.from(
@@ -652,16 +648,21 @@ async function createReportExportUrl(opts: {
   ).filter((bucketName) => !disallowedExportBuckets.has(bucketName))
   const org = String(opts.schedule.organization_id || 'org')
   const scheduleId = String(opts.schedule.id || 'schedule')
-  const pdfBytes = await buildProgressReportPdfBytes({
+
+  const pdfBytes = await buildBrandedProgressReportPdf({
     subject: opts.subject,
-    text: opts.text,
+    reportData: opts.reportData,
+    schedule: opts.schedule,
+    branding: opts.branding,
   })
+
+  const filename = defaultProgressReportPdfFilename(String(opts.schedule.name ?? ''), opts.subject)
   let lastError: string | null = null
 
   for (const bucketName of candidateBuckets) {
     try {
       await ensureReportExportBucket(opts.supabase, bucketName)
-      const objectPath = `${org}/${scheduleId}/${Date.now()}-${crypto.randomUUID()}-${defaultProgressReportExportFilename(opts.schedule, opts.subject)}`
+      const objectPath = `${org}/${scheduleId}/${Date.now()}-${crypto.randomUUID()}-${filename}`
       const { error: uploadError } = await opts.supabase.storage
         .from(bucketName)
         .upload(objectPath, pdfBytes, {
@@ -671,7 +672,12 @@ async function createReportExportUrl(opts: {
         })
       if (uploadError) {
         lastError = `upload failed in bucket "${bucketName}": ${uploadError.message}`
-        console.error('Report PDF export upload failed', { bucketName, scheduleId, org, error: uploadError.message })
+        console.error('Report PDF export upload failed', {
+          bucketName,
+          scheduleId,
+          org,
+          error: uploadError.message,
+        })
         continue
       }
 
@@ -702,148 +708,4 @@ async function createReportExportUrl(opts: {
     }
   }
   throw new Error(lastError || 'Failed to create report export link')
-}
-
-/** pdf-lib StandardFonts (WinAnsi) cannot encode many Unicode glyphs; strip/replace before measureText/drawText. */
-function sanitizePdfLibText(text: string): string {
-  const replaced = String(text || '')
-    .replace(/\u2192/g, '->')
-    .replace(/\u27f6/g, '->')
-    .replace(/\u2713|\u2714|\u2611/g, '[x]')
-    .replace(/\u2610/g, '[ ]')
-    .replace(/[\u2013\u2014]/g, '-')
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201c\u201d]/g, '"')
-    .replace(/\u2026/g, '...')
-    .replace(/\u00a0|\u202f|\u2007/g, ' ')
-  let decomposed: string
-  try {
-    decomposed = replaced.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-  } catch {
-    decomposed = replaced
-  }
-  let out = ''
-  for (const ch of decomposed) {
-    const c = ch.charCodeAt(0)
-    if (ch === '\n' || ch === '\r' || ch === '\t') {
-      out += ch
-      continue
-    }
-    if (c >= 32 && c <= 126) {
-      out += ch
-      continue
-    }
-    out += ' '
-  }
-  return out.replace(/ +(\n|$)/g, '$1').replace(/[ \t]+/g, ' ').trim()
-}
-
-function emailTextToPdfText(text: string): string {
-  const body = String(text || '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-  return sanitizePdfLibText(`${body}\n\nGenerated by SiteWeave`.trim())
-}
-
-async function buildProgressReportPdfBytes(opts: { subject: string; text: string }) {
-  const pdfDoc = await PDFDocument.create()
-  const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica)
-  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-
-  const pageWidth = 612
-  const pageHeight = 792
-  const margin = 54
-  const bodyFontSize = 11
-  const lineHeight = 16
-  const sectionGap = 8
-  const maxTextWidth = pageWidth - margin * 2
-
-  let page = pdfDoc.addPage([pageWidth, pageHeight])
-  let cursorY = pageHeight - margin
-
-  const startNewPage = () => {
-    page = pdfDoc.addPage([pageWidth, pageHeight])
-    cursorY = pageHeight - margin
-  }
-
-  const ensureRoom = (heightNeeded: number) => {
-    if (cursorY - heightNeeded < margin) startNewPage()
-  }
-
-  const drawWrappedLine = (text: string, font: typeof regularFont, size: number, color: ReturnType<typeof rgb>) => {
-    const wrapped = wrapText(sanitizePdfLibText(text), font, size, maxTextWidth)
-    for (const line of wrapped) {
-      if (!line.trim()) {
-        cursorY -= lineHeight / 2
-        continue
-      }
-      ensureRoom(lineHeight)
-      page.drawText(line, {
-        x: margin,
-        y: cursorY,
-        size,
-        font,
-        color,
-      })
-      cursorY -= lineHeight
-    }
-  }
-
-  drawWrappedLine(sanitizePdfLibText(opts.subject || 'Progress Report'), boldFont, 18, rgb(0.12, 0.23, 0.54))
-  cursorY -= 6
-
-  const blocks = String(opts.text || '').split(/\n\s*\n/g).map((block) => block.trim()).filter(Boolean)
-  for (const block of blocks) {
-    const isSection = /^[A-Za-z][A-Za-z\s&'/-]+:$/.test(block)
-    if (isSection) {
-      const heading = sanitizePdfLibText(block.replace(/:$/, ''))
-      if (heading.trim()) {
-        ensureRoom(lineHeight + sectionGap)
-        page.drawText(heading, {
-          x: margin,
-          y: cursorY,
-          size: 13,
-          font: boldFont,
-          color: rgb(0.11, 0.17, 0.26),
-        })
-        cursorY -= lineHeight
-        cursorY -= 2
-      }
-      continue
-    }
-
-    for (const rawLine of block.split('\n')) {
-      const line = rawLine.trimEnd()
-      if (!line) {
-        cursorY -= lineHeight / 2
-        continue
-      }
-      drawWrappedLine(line, regularFont, bodyFontSize, rgb(0.2, 0.23, 0.27))
-    }
-    cursorY -= sectionGap
-  }
-
-  return await pdfDoc.save()
-}
-
-function wrapText(text: string, font: typeof PDFDocument.prototype['embedFont'] extends (...args: never[]) => Promise<infer T> ? T : never, fontSize: number, maxWidth: number) {
-  const words = String(text || '').split(/\s+/).filter(Boolean)
-  if (words.length === 0) return ['']
-
-  const lines: string[] = []
-  let current = words[0]
-
-  for (let i = 1; i < words.length; i += 1) {
-    const candidate = `${current} ${words[i]}`
-    if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
-      current = candidate
-    } else {
-      lines.push(current)
-      current = words[i]
-    }
-  }
-
-  lines.push(current)
-  return lines
 }

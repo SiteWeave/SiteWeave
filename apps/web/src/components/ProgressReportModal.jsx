@@ -19,6 +19,7 @@ import { defaultProgressReportPdfFilename } from '../utils/progressReportPdfFile
 import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import UpgradeRequiredModal from './UpgradeRequiredModal';
 import { isExportFeatureLockedError } from '@siteweave/core-logic';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 /**
  * Progress Report Modal Component
@@ -157,8 +158,14 @@ function ProgressReportModal({ projectId, onClose }) {
 
   if (showBuilder) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-[min(1440px,96vw)] max-h-[90vh] overflow-y-auto">
+      <ModalOverlay
+        onClose={() => {
+          setShowBuilder(false);
+          setEditingScheduleId(null);
+          loadSchedules();
+        }}
+      >
+        <div className={`bg-white rounded-xl shadow-2xl w-full max-w-[min(1440px,96vw)] ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
             <h2 className="text-2xl font-bold text-gray-900">
               {editingScheduleId
@@ -197,14 +204,14 @@ function ProgressReportModal({ projectId, onClose }) {
             />
           </div>
         </div>
-      </div>
+      </ModalOverlay>
     );
   }
 
   return (
     <>
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-[min(1440px,96vw)] max-h-[90vh] overflow-y-auto">
+    <ModalOverlay onClose={onClose}>
+      <div className={`bg-white rounded-xl shadow-2xl w-full max-w-[min(1440px,96vw)] ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <h2 className="text-2xl font-bold text-gray-900">
             {projectId ? t('progressReports.project_heading') : t('progressReports.org_heading')}
@@ -352,13 +359,17 @@ function ProgressReportModal({ projectId, onClose }) {
               )}
             </div>
           )}
-
-          {/* Send History panel */}
+        </div>
+      </div>
+    </ModalOverlay>
           {historyScheduleId && (
-            <div className="fixed inset-0 z-[60] overflow-y-auto" aria-modal="true">
-              <div className="flex min-h-screen items-center justify-center p-4">
-                <div className="fixed inset-0 bg-black/30" onClick={() => setHistoryScheduleId(null)} />
-                <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[80vh] flex flex-col">
+            <ModalOverlay
+              zIndexClass="z-[60]"
+              onClose={() => setHistoryScheduleId(null)}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className={`relative bg-white rounded-xl shadow-2xl max-w-md w-full ${MODAL_PANEL_MAX_H} flex flex-col overflow-hidden`}>
                   <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
                     <div>
                       <h3 className="text-base font-semibold text-gray-900">{t('progressReports.report_history')}</h3>
@@ -402,13 +413,9 @@ function ProgressReportModal({ projectId, onClose }) {
                       </ul>
                     )}
                   </div>
-                </div>
               </div>
-            </div>
+            </ModalOverlay>
           )}
-        </div>
-      </div>
-    </div>
     <UpgradeRequiredModal
       isOpen={showExportUpgrade}
       onClose={() => setShowExportUpgrade(false)}

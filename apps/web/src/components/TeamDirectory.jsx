@@ -659,8 +659,8 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
       />
 
       {showAssignModal && assignMember && (
-        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-start justify-center overflow-y-auto py-8 z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[min(90dvh,90vh)] overflow-y-auto">
             <h2 className="text-2xl font-bold mb-2">{t('contacts.assign_title')}</h2>
             <p className="text-gray-600 text-sm mb-4">
               {t('contacts.assign_description', { name: assignMember.name })}

@@ -5,6 +5,7 @@ import { TRADE_OPTIONS, normalizeAssigneePhone } from '@siteweave/core-logic';
 import { getContactIdentityError, normalizeContactFields } from '../utils/contactValidation';
 import LoadingSpinner from './LoadingSpinner';
 import { FieldError, fieldInputClassName } from './FormAlert';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 import SmsConsentActions from './SmsConsentActions';
 import { resolveContactSmsConsent, loadSmsConsentByPhones } from '../utils/smsWebConsent';
 
@@ -181,8 +182,8 @@ function AddContactModal({
   const labelClass = 'mb-1 block text-sm font-semibold text-slate-800';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] bg-white/20 p-4">
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-xl ring-1 ring-slate-200/80">
+    <ModalOverlay onClose={onClose}>
+      <div className={`w-full max-w-lg ${MODAL_PANEL_MAX_H} overflow-y-auto rounded-xl bg-white p-6 shadow-xl ring-1 ring-slate-200/80`}>
         <h2 className="text-xl font-semibold text-slate-900">{t(titleKey)}</h2>
         {isStaff && !isEditMode && (
           <p className="mt-1.5 text-sm leading-relaxed text-slate-500">{t('contacts.add_staff_subtitle')}</p>
@@ -342,7 +343,7 @@ function AddContactModal({
           </div>
         </form>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 

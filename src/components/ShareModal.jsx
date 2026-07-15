@@ -17,6 +17,7 @@ import {
   resolveOwnerContactId,
 } from '../utils/projectInviteBlocklist';
 import { FieldError, fieldInputClassName } from './FormAlert';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 function ShareModal({ projectId, onClose }) {
   const { t } = useTranslation();
@@ -416,8 +417,9 @@ function ShareModal({ projectId, onClose }) {
     || 'Team';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] bg-white/20">
-      <div className="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl ring-1 ring-slate-200/80 max-h-[90vh] overflow-y-auto">
+    <>
+    <ModalOverlay onClose={onClose}>
+      <div className={`w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl ring-1 ring-slate-200/80 ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-slate-900">{t('projectDetail.manage_project_crew')}</h2>
@@ -698,12 +700,13 @@ function ShareModal({ projectId, onClose }) {
           </div>
         </form>
       </div>
+    </ModalOverlay>
       <UpgradeRequiredModal
         isOpen={showGuestLimitUpgrade}
         onClose={() => setShowGuestLimitUpgrade(false)}
         feature="guest_collaborators"
       />
-    </div>
+    </>
   );
 }
 

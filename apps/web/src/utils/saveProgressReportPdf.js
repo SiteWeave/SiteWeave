@@ -63,7 +63,21 @@ async function savePdfWithJsPdf(html, filename) {
   wrap.append(...Array.from(parsed.body.childNodes));
   document.body.appendChild(wrap);
 
-  await new Promise((r) => setTimeout(r, 600));
+  // Wait for images (inlined data URIs are usually already complete; remotes may need time).
+  await Promise.all(
+    Array.from(wrap.querySelectorAll('img')).map(
+      (img) =>
+        img.complete
+          ? Promise.resolve()
+          : new Promise((resolve) => {
+              const done = () => resolve();
+              img.addEventListener('load', done, { once: true });
+              img.addEventListener('error', done, { once: true });
+              setTimeout(done, 10000);
+            }),
+    ),
+  );
+  await new Promise((r) => setTimeout(r, 100));
 
   const canvas = await html2canvas(wrap, {
     scale: 2,

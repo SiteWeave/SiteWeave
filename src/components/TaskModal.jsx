@@ -9,6 +9,7 @@ import { validateRecurrence } from '../utils/recurrenceService';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 import PermissionGuard from './PermissionGuard';
 import { getProjectMemberContacts } from '../utils/projectMemberContacts';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 const fieldClass =
     'w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 shadow-xs transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
@@ -208,8 +209,8 @@ function TaskModal({
     );
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 p-4 backdrop-blur-[2px]">
-            <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl sm:p-8">
+        <ModalOverlay onClose={onClose}>
+            <div className={`${MODAL_PANEL_MAX_H} w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl sm:p-8`}>
                 <h2 className="mb-6 text-xl font-semibold tracking-tight text-gray-900">
                     {t('taskModal.create_title', { project: project.name })}
                 </h2>
@@ -579,7 +580,7 @@ function TaskModal({
                     </div>
                 </form>
             </div>
-        </div>
+        </ModalOverlay>
     );
 }
 

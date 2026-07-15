@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { saveProjectAsTemplate } from '../utils/projectTemplateService';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 export default function SaveAsTemplateModal({ projectId, projectName, onClose, onSaved }) {
   const { t } = useTranslation();
@@ -43,8 +44,8 @@ export default function SaveAsTemplateModal({ projectId, projectName, onClose, o
   };
 
   return (
-    <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
+    <ModalOverlay onClose={onClose}>
+      <div className={`bg-white rounded-lg shadow-2xl p-8 w-full max-w-md ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
         <h2 className="text-xl font-bold mb-4">{t('templates.save_title')}</h2>
         <p className="text-sm text-gray-600 mb-4">{t('templates.save_description')}</p>
         <form onSubmit={handleSubmit}>
@@ -62,6 +63,6 @@ export default function SaveAsTemplateModal({ projectId, projectName, onClose, o
           </div>
         </form>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

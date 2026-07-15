@@ -17,6 +17,7 @@ import {
   resolveOwnerContactId,
 } from '../utils/projectInviteBlocklist';
 import { FieldError, fieldInputClassName } from './FormAlert';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 function ShareModal({ projectId, onClose }) {
   const { t } = useTranslation();
@@ -416,8 +417,9 @@ function ShareModal({ projectId, onClose }) {
     || 'Team';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-[2px] bg-white/20">
-      <div className="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl ring-1 ring-slate-200/80 max-h-[90vh] overflow-y-auto">
+    <>
+    <ModalOverlay onClose={onClose}>
+      <div className={`w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl ring-1 ring-slate-200/80 ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold text-slate-900">{t('projectDetail.manage_project_crew')}</h2>
@@ -445,7 +447,7 @@ function ShareModal({ projectId, onClose }) {
                   <button
                     type="button"
                     onClick={scrollToDirectory}
-                    className="mt-4 inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold shadow-xs app-action-primary"
+                    className="mt-4 inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition active:scale-[0.98] hover:bg-blue-700"
                   >
                     {t('share.crew_empty_cta')}
                   </button>
@@ -599,7 +601,7 @@ function ShareModal({ projectId, onClose }) {
               <button
                 type="button"
                 onClick={addEmails}
-                className="rounded-lg px-3 py-2 text-sm font-medium app-action-secondary"
+                className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition active:scale-[0.98] hover:bg-slate-200"
               >
                 Add
               </button>
@@ -691,19 +693,20 @@ function ShareModal({ projectId, onClose }) {
             <button
               type="submit"
               disabled={submitting || entries.length === 0}
-              className="rounded-lg px-4 py-2 text-sm font-semibold shadow-xs app-action-primary disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-xs transition active:scale-[0.98] hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? 'Adding…' : t('share.add_count_to_crew', { count: entries.length })}
             </button>
           </div>
         </form>
       </div>
+    </ModalOverlay>
       <UpgradeRequiredModal
         isOpen={showGuestLimitUpgrade}
         onClose={() => setShowGuestLimitUpgrade(false)}
         feature="guest_collaborators"
       />
-    </div>
+    </>
   );
 }
 

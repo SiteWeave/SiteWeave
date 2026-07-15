@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { getLocalizedEventCategoryName } from '@siteweave/i18n';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 const DEFAULT_CATEGORY_SPECS = [
     { id: 'meeting', color: '#3B82F6' },
@@ -255,8 +256,8 @@ function CategoryColorManager({ isOpen, onClose }) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+        <ModalOverlay onClose={onClose}>
+            <div className={`bg-white rounded-xl shadow-xl w-full max-w-md ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
                 <div className="flex items-center justify-between p-4 border-b border-gray-200">
                     <h2 className="text-lg font-semibold text-gray-900">{t('calendar.category_manager_title')}</h2>
                     <button type="button"
@@ -358,7 +359,7 @@ function CategoryColorManager({ isOpen, onClose }) {
                     </button>
                 </div>
             </div>
-        </div>
+        </ModalOverlay>
     );
 }
 
