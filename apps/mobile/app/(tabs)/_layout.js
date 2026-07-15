@@ -5,7 +5,6 @@ import FloatingTabBar from '../../components/ui/FloatingTabBar';
 import AppUpdateBanner from '../../components/AppUpdateBanner';
 import { CreateActionProvider } from '../../context/CreateActionContext';
 import { NotificationCountProvider } from '../../context/NotificationCountContext';
-import { WidgetSnapshotSync } from '../../context/WidgetSnapshotContext';
 import { SheetOverlayProvider } from '../../context/SheetOverlayContext';
 
 export const unstable_settings = {
@@ -56,7 +55,6 @@ function TabScaffold() {
 export default function TabLayout() {
   return (
     <NotificationCountProvider>
-      <WidgetSnapshotSync />
       <SheetOverlayProvider>
         <CreateActionProvider>
           <View style={{ flex: 1 }}>

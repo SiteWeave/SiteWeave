@@ -1,23 +1,26 @@
+import { HOME_SCREEN_WIDGETS_ENABLED } from './widgetFeatureFlags';
 import {
   buildWidgetSnapshot,
   WIDGET_STATES,
+  resolvePinnedProject,
 } from './widgetSnapshot';
 import { writeWidgetSnapshot, patchWidgetSnapshot } from './widgetBridge';
 import { getPinnedProjectId } from './widgetPreferences';
-import { resolvePinnedProject } from './widgetSnapshot';
 
-export async function publishHomeWidgetSnapshot({
-  tasks = [],
-  events = [],
-  projects = [],
-  kpis = {},
-  weather = null,
-  locale = 'en',
-  experienceMode = 'field',
-  primaryColor = '#3B82F6',
-  sync = { isOnline: true, pendingCount: 0 },
-  unreadNotifications = 0,
-}) {
+export async function publishHomeWidgetSnapshot(args) {
+  if (!HOME_SCREEN_WIDGETS_ENABLED) return null;
+  const {
+    tasks = [],
+    events = [],
+    projects = [],
+    kpis = {},
+    weather = null,
+    locale = 'en',
+    experienceMode = 'field',
+    primaryColor = '#3B82F6',
+    sync = { isOnline: true, pendingCount: 0 },
+    unreadNotifications = 0,
+  } = args || {};
   const pinnedProjectId = await getPinnedProjectId();
   const pinnedProject = resolvePinnedProject(projects, pinnedProjectId);
 
@@ -49,7 +52,7 @@ export async function publishHomeWidgetSnapshot({
 }
 
 export async function publishWeatherWidgetPatch(weather) {
-  if (!weather) return null;
+  if (!HOME_SCREEN_WIDGETS_ENABLED || !weather) return null;
   return patchWidgetSnapshot({
     weather: {
       tempF: weather.temperature,

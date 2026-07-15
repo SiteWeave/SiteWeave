@@ -1,36 +1,9 @@
-const path = require('path');
-
-const androidWidgetConfig = {
-  widgets: [
-    {
-      name: 'SiteBrief',
-      label: 'Site Brief',
-      description: "Today's tasks, weather, and overdue alerts.",
-      minWidth: '320dp',
-      minHeight: '120dp',
-      targetCellWidth: 5,
-      targetCellHeight: 2,
-      updatePeriodMillis: 1800000,
-    },
-    {
-      name: 'SiteBriefSmall',
-      label: 'Site Brief Compact',
-      description: 'Due counts and weather at a glance.',
-      minWidth: '120dp',
-      minHeight: '120dp',
-      targetCellWidth: 2,
-      targetCellHeight: 2,
-      updatePeriodMillis: 1800000,
-    },
-  ],
-};
-
 module.exports = function(env) {
   return {
     expo: {
       name: "SiteWeave",
       slug: "siteweave-mobile",
-      version: "1.0.5",
+      version: "1.0.6",
       main: "./main.js",
       runtimeVersion: {
         policy: "appVersion",
@@ -88,7 +61,8 @@ module.exports = function(env) {
           }
         ],
         "./plugins/removePushEntitlement.js",
-        ["react-native-android-widget", androidWidgetConfig],
+        // TEMP: home-screen widgets disabled for App Store submit.
+        // Re-enable with: ["react-native-android-widget", androidWidgetConfig]
       ],
       extra: {
         router: {
@@ -101,4 +75,3 @@ module.exports = function(env) {
     }
   };
 };
-

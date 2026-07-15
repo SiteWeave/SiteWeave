@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { HOME_SCREEN_WIDGETS_ENABLED } from './widgetFeatureFlags';
 import {
   WIDGET_STORAGE_KEY,
   buildWidgetSnapshot,
@@ -20,7 +21,7 @@ async function readSnapshotJson() {
 }
 
 async function reloadAndroidWidgets() {
-  if (Platform.OS !== 'android') return;
+  if (!HOME_SCREEN_WIDGETS_ENABLED || Platform.OS !== 'android') return;
 
   try {
     const { requestWidgetUpdate } = require('react-native-android-widget');
@@ -47,6 +48,7 @@ async function reloadAndroidWidgets() {
 }
 
 export async function readWidgetSnapshot() {
+  if (!HOME_SCREEN_WIDGETS_ENABLED) return null;
   const raw = await readSnapshotJson();
   if (!raw) return null;
   try {
@@ -57,12 +59,14 @@ export async function readWidgetSnapshot() {
 }
 
 export async function writeWidgetSnapshot(snapshot) {
+  if (!HOME_SCREEN_WIDGETS_ENABLED) return;
   const json = JSON.stringify(snapshot);
   await persistSnapshotJson(json);
   await reloadAndroidWidgets();
 }
 
 export async function patchWidgetSnapshot(patch) {
+  if (!HOME_SCREEN_WIDGETS_ENABLED) return null;
   const existing = await readWidgetSnapshot();
   const nextPatch = {
     ...patch,
@@ -76,10 +80,12 @@ export async function patchWidgetSnapshot(patch) {
 }
 
 export async function clearWidgetSnapshot() {
+  if (!HOME_SCREEN_WIDGETS_ENABLED) return;
   const loggedOut = buildLoggedOutWidgetSnapshot();
   await writeWidgetSnapshot(loggedOut);
 }
 
 export async function getWidgetSnapshotForTaskHandler() {
+  if (!HOME_SCREEN_WIDGETS_ENABLED) return buildLoggedOutWidgetSnapshot();
   return readWidgetSnapshot();
 }

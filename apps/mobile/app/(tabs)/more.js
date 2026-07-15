@@ -22,7 +22,6 @@ import { useBranding } from '../../context/BrandingContext';
 import { colors, spacing, touch } from '../../theme';
 import { scrollBottomPadding, contentTopInset } from '../../utils/layoutInsets';
 import { ensureLocaleLoaded, normalizeLng } from '@siteweave/i18n';
-import WidgetPinnedProjectSheet from '../../components/WidgetPinnedProjectSheet';
 
 export default function MoreScreen() {
   const insets = useSafeAreaInsets();
@@ -37,7 +36,6 @@ export default function MoreScreen() {
   const [showProfile, setShowProfile] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
-  const [showWidgetProjectPicker, setShowWidgetProjectPicker] = useState(false);
 
   const displayName =
     user?.user_metadata?.full_name?.trim() ||
@@ -106,21 +104,6 @@ export default function MoreScreen() {
           {t('settings.title')}
         </Text>
         <Card style={styles.card}>
-          <PressableWithFade
-            style={[styles.row, styles.rowBorder]}
-            onPress={() => {
-              haptics.light();
-              setShowWidgetProjectPicker(true);
-            }}
-            testID="more-widget-project"
-          >
-            <Ionicons name="apps-outline" size={24} color={colors.textSecondary} />
-            <Text variant="body" style={styles.rowLabel}>
-              {t('mobile.widget_pinned_project_title', { defaultValue: 'Widget project' })}
-            </Text>
-            <Ionicons name="chevron-forward" size={20} color={colors.textSubtle} />
-          </PressableWithFade>
-
           <PressableWithFade
             style={[styles.row, styles.rowBorder]}
             onPress={() => {
@@ -238,10 +221,6 @@ export default function MoreScreen() {
       <ChangePasswordSheet
         visible={showChangePassword}
         onClose={() => setShowChangePassword(false)}
-      />
-      <WidgetPinnedProjectSheet
-        visible={showWidgetProjectPicker}
-        onClose={() => setShowWidgetProjectPicker(false)}
       />
     </View>
   );

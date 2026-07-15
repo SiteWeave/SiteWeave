@@ -52,6 +52,10 @@ Thumbs.db
 ios/
 android/
 
+# TEMP: home-screen widget sources (disabled for App Store submit)
+widgets/
+widget-android/
+
 # Webpack config (not needed for mobile)
 webpack.config.js
 
