@@ -98,6 +98,8 @@ function resolveSections(schedule: ScheduleLike) {
     show_phase_delta: s.show_phase_delta === true,
     show_blockers: s.show_blockers === true,
     show_weather_impacts: s.show_weather_impacts === true,
+    show_schedule_adjustments: s.show_schedule_adjustments === true,
+    keep_original_completion_date: s.keep_original_completion_date !== false,
     include_task_photos:
       schedule.report_audience_type === 'internal' || s.include_task_photos === true,
     show_task_phase: s.show_task_phase === true,
@@ -533,9 +535,26 @@ export async function buildBrandedProgressReportPdf(opts: {
       }
     }
 
+    const scheduleAdj = Array.isArray(block.schedule_adjustments) ? block.schedule_adjustments : []
+    if (sections.show_schedule_adjustments && scheduleAdj.length > 0) {
+      drawSectionHeading(ctx, 'Schedule improvements')
+      for (const w of scheduleAdj as any[]) {
+        drawBullet(
+          ctx,
+          `${w.note || 'Schedule pull-forward'}: ${w.applied_workdays ?? ''} workday(s) pulled forward${
+            w.project_name ? ` (${w.project_name})` : ''
+          }`,
+        )
+      }
+    }
+
     const snap = block.snapshot as Record<string, unknown> | undefined
     const hasActivity =
-      statusChanges.length > 0 || completed.length > 0 || phases.length > 0 || weather.length > 0
+      statusChanges.length > 0 ||
+      completed.length > 0 ||
+      phases.length > 0 ||
+      weather.length > 0 ||
+      scheduleAdj.length > 0
     if (!hasActivity && snap) {
       drawSectionHeading(ctx, 'Snapshot')
       if (snap.open_total != null || snap.completed_total != null) {

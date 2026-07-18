@@ -383,6 +383,27 @@ function maxTaskDueDate(taskList: { due_date?: string | null; start_date?: strin
   return max
 }
 
+function keepOriginalCompletionDateEnabled(sections: { keep_original_completion_date?: boolean } | null | undefined): boolean {
+  return sections?.keep_original_completion_date !== false
+}
+
+function resolveReportProjectEndDate(
+  project: { due_date?: string | null; client_due_date?: string | null } | null | undefined,
+  taskList: { due_date?: string | null; start_date?: string | null; duration_days?: number | null }[],
+  keepOriginal: boolean,
+): string | null {
+  if (keepOriginal && project?.client_due_date) return project.client_due_date
+  return maxTaskDueDate(taskList) || project?.due_date || null
+}
+
+function resolveReportScheduleDueDate(
+  project: { due_date?: string | null; client_due_date?: string | null } | null | undefined,
+  keepOriginal: boolean,
+): string | null {
+  if (keepOriginal && project?.client_due_date) return project.client_due_date
+  return project?.due_date ?? null
+}
+
 /** PostgREST `.in('project_id', uuid[])` query strings grow with org size; chunk to stay under URL/proxy limits. */
 const ORG_PROJECT_IN_CHUNK_SIZE = 75
 
@@ -606,7 +627,7 @@ serve(async (req) => {
     if (schedule.project_id) {
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
-        .select('name, status, status_color, due_date, start_date')
+        .select('name, status, status_color, due_date, start_date, client_due_date')
         .eq('id', schedule.project_id)
         .single()
       if (projectError || !projectData) {
@@ -628,7 +649,7 @@ serve(async (req) => {
     if (!schedule.project_id) {
       const { data: projectsData, error: projectsErr } = await supabase
         .from('projects')
-        .select('id, name, status, status_color, due_date, start_date')
+        .select('id, name, status, status_color, due_date, start_date, client_due_date')
         .eq('organization_id', schedule.organization_id)
       if (projectsErr) {
         return new Response(
@@ -827,6 +848,72 @@ serve(async (req) => {
       weatherImpacts = mapOrgWideWeatherImpactRows(filteredWeatherRows)
     }
 
+    // Applied schedule pull-forwards (early completion) in the reporting window
+    let scheduleAdjustments: any[] = []
+    const includeScheduleAdjustments = schedule.report_sections?.show_schedule_adjustments === true
+    if (includeScheduleAdjustments) {
+      const mapAdj = (rows: any[], projectNameFallback: string | null = null) =>
+        (rows || []).map((row: any) => ({
+          id: row.id,
+          project_id: row.project_id,
+          project_name: row.projects?.name || projectNameFallback || null,
+          source_task_id: row.source_task_id,
+          note: row.note,
+          applied_workdays: row.applied_workdays,
+          planned_finish: row.planned_finish,
+          actual_finish: row.actual_finish,
+          applied_at: row.applied_at,
+          created_at: row.created_at,
+        }))
+
+      const inWindow = (row: any) => {
+        const ts = row.applied_at || row.created_at
+        if (!ts) return false
+        const d = new Date(ts)
+        return d >= startDate && d <= endDate
+      }
+
+      if (schedule.project_id) {
+        const { data: adjRows, error: adjError } = await supabase
+          .from('schedule_adjustments')
+          .select('*')
+          .eq('organization_id', schedule.organization_id)
+          .eq('project_id', schedule.project_id)
+          .eq('status', 'applied')
+          .order('applied_at', { ascending: false })
+        if (adjError) {
+          return new Response(
+            JSON.stringify({ error: 'Failed to load schedule adjustments for report generation' }),
+            {
+              status: 500,
+              headers: { 'Content-Type': 'application/json', ...corsHeaders },
+            },
+          )
+        }
+        scheduleAdjustments = mapAdj((adjRows || []).filter(inWindow), project?.name || null)
+      } else if (effectiveProjectIds.length > 0) {
+        const a = await fetchInProjectIdChunks(effectiveProjectIds, (chunk) =>
+          supabase
+            .from('schedule_adjustments')
+            .select('*, projects!schedule_adjustments_project_id_fkey(name)')
+            .eq('organization_id', schedule.organization_id)
+            .eq('status', 'applied')
+            .in('project_id', chunk)
+            .order('applied_at', { ascending: false }),
+        )
+        if (a.error) {
+          return new Response(
+            JSON.stringify({ error: 'Failed to load organization schedule adjustments for report generation' }),
+            {
+              status: 500,
+              headers: { 'Content-Type': 'application/json', ...corsHeaders },
+            },
+          )
+        }
+        scheduleAdjustments = mapAdj((a.data || []).filter(inWindow))
+      }
+    }
+
     // Daily site logs — only when the schedule opts in (optional section).
     let dailySiteLogs: any[] = []
     const includeDailySiteLogs = schedule.report_sections?.include_daily_site_logs === true
@@ -947,10 +1034,11 @@ serve(async (req) => {
     // tasks_completed_count = all tasks marked done in the DB (same as snapshot.completed_total).
     // Period-only completions stay in `completed_tasks` for the "Completed this period" section.
     // Schedule timeline (day X of Y): project baseline start→due when both set; else phase calendar envelope only.
+    const keepOriginalCompletionDate = keepOriginalCompletionDateEnabled(schedule.report_sections)
     const scheduleTimeline = schedule.project_id
       ? computeProjectScheduleTimeline(
           phases,
-          project?.due_date ?? null,
+          resolveReportScheduleDueDate(project, keepOriginalCompletionDate),
           new Date(),
           project?.start_date ?? null,
           tasks,
@@ -959,7 +1047,7 @@ serve(async (req) => {
     const vitals = {
       tasks_completed_count: doneTasks.length,
       open_tasks_count: openTasks.length,
-      project_end_date: maxTaskDueDate(tasks),
+      project_end_date: resolveReportProjectEndDate(project, tasks, keepOriginalCompletionDate),
       ...(scheduleTimeline
         ? {
             schedule_day_current: scheduleTimeline.schedule_day_current,
@@ -1062,6 +1150,7 @@ serve(async (req) => {
       project_id: schedule.project_id,
       project_name: project?.name,
       weather_impacts: weatherImpacts,
+      schedule_adjustments: scheduleAdjustments,
       daily_site_logs: dailySiteLogs,
       start_date: startDate,
       end_date: endDate,
@@ -1114,7 +1203,7 @@ serve(async (req) => {
           (chunk) =>
             supabase
               .from('projects')
-              .select('id, name, status, status_color, due_date')
+              .select('id, name, status, status_color, due_date, client_due_date')
               .eq('organization_id', schedule.organization_id)
               .in('id', chunk),
         )
@@ -1255,9 +1344,10 @@ async function buildOrgStandardProjectSlices(opts: {
     const openTasks = projTasks.filter((t: any) => !t.completed)
     const doneTasks = projTasks.filter((t: any) => t.completed)
 
+    const keepOriginalCompletionDate = keepOriginalCompletionDateEnabled(schedule.report_sections)
     const scheduleTimeline = computeProjectScheduleTimeline(
       projPhases,
-      projMeta?.due_date ?? null,
+      resolveReportScheduleDueDate(projMeta, keepOriginalCompletionDate),
       new Date(),
       projMeta?.start_date ?? null,
       projTasks,
@@ -1266,7 +1356,7 @@ async function buildOrgStandardProjectSlices(opts: {
     const vitals: any = {
       tasks_completed_count: doneTasks.length,
       open_tasks_count: openTasks.length,
-      project_end_date: maxTaskDueDate(projTasks),
+      project_end_date: resolveReportProjectEndDate(projMeta, projTasks, keepOriginalCompletionDate),
       ...(scheduleTimeline
         ? {
             schedule_day_current: scheduleTimeline.schedule_day_current,
@@ -1286,6 +1376,9 @@ async function buildOrgStandardProjectSlices(opts: {
       rowMatchesOrgSlice({ project_name: p.project_name, project_id: null }, pid, projName),
     )
     const weather_impacts = (filteredData.weather_impacts || []).filter((w: any) =>
+      rowMatchesOrgSlice({ project_name: w.project_name, project_id: w.project_id }, pid, projName),
+    )
+    const schedule_adjustments = (filteredData.schedule_adjustments || []).filter((w: any) =>
       rowMatchesOrgSlice({ project_name: w.project_name, project_id: w.project_id }, pid, projName),
     )
     const last_week_done = (filteredData.last_week_done || []).filter(matches)
@@ -1325,6 +1418,7 @@ async function buildOrgStandardProjectSlices(opts: {
       completed_tasks,
       phase_progress,
       weather_impacts,
+      schedule_adjustments,
       last_week_done,
       this_week_plan,
       next_week_plan,
@@ -1350,6 +1444,7 @@ function filterDataByAudience(data: any, schedule: any) {
       start_date: data.start_date,
       end_date: data.end_date,
       weather_impacts: data.weather_impacts,
+      schedule_adjustments: data.schedule_adjustments,
       status_changes: undefined,
       completed_tasks: undefined,
       phase_progress: undefined,

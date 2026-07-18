@@ -14,27 +14,53 @@ import StreamComposer from './StreamComposer';
 import StreamPostCard from './StreamPostCard';
 import ReportContentModal from '../moderation/ReportContentModal';
 import { SkeletonCard } from '../ui/Skeleton';
+import { useAppContext } from '../../context/AppContext';
+
+function postMatchesSearch(post, search) {
+  const q = search.trim().toLowerCase();
+  if (!q) return true;
+  const title = (post?.title || '').toLowerCase();
+  const body = (post?.body || '').toLowerCase();
+  return title.includes(q) || body.includes(q);
+}
 
 export default function ProjectStreamView({ project, supabaseClient, currentUserId, embedded = false }) {
   const { t } = useTranslation();
   const { addToast } = useToast();
+  const { state } = useAppContext();
+  const canPost = state.userRole?.permissions?.can_send_messages !== false;
   const [posts, setPosts] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [loadingOlder, setLoadingOlder] = React.useState(false);
   const [hasMore, setHasMore] = React.useState(false);
   const [reportTarget, setReportTarget] = React.useState(null);
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [debouncedSearch, setDebouncedSearch] = React.useState('');
   const loadingRef = React.useRef(false);
   const postsRef = React.useRef(posts);
+  const searchRef = React.useRef(debouncedSearch);
   postsRef.current = posts;
+  searchRef.current = debouncedSearch;
+
+  React.useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
 
   const load = React.useCallback(async ({ append = false, beforeCreatedAt = null } = {}) => {
-    if (!project?.id || loadingRef.current) return;
+    if (!project?.id) return;
+    if (append && loadingRef.current) return;
     loadingRef.current = true;
     if (append) setLoadingOlder(true);
+    else setLoading(true);
+    const searchAtStart = searchRef.current;
     try {
       const { posts: rows, hasMore: more } = await fetchStreamPosts(supabaseClient, project.id, {
         beforeCreatedAt,
+        search: searchAtStart || undefined,
       });
+      // Drop stale responses if the query changed while fetching.
+      if (searchAtStart !== searchRef.current && !append) return;
       setPosts((prev) => (append ? [...prev, ...rows] : rows));
       setHasMore(more);
     } catch (e) {
@@ -54,9 +80,8 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
   }, [load, loadingOlder]);
 
   React.useEffect(() => {
-    setLoading(true);
     load();
-  }, [load]);
+  }, [load, debouncedSearch]);
 
   React.useEffect(() => {
     if (project?.id) markStreamRead(project.id);
@@ -73,6 +98,10 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
   }, []);
 
   const handlePostChange = React.useCallback((updated) => {
+    if (!postMatchesSearch(updated, searchRef.current)) {
+      setPosts((prev) => removeById(prev, updated.id));
+      return;
+    }
     setPosts((prev) => upsertById(prev, updated, 'prepend'));
   }, []);
 
@@ -96,6 +125,7 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
         async (payload) => {
           const row = payload.new;
           if (!row?.id) return;
+          if (!postMatchesSearch(row, searchRef.current)) return;
           try {
             const enriched = await enrichStreamPost(supabaseClient, row, { reply_count: 0 });
             setPosts((prev) => upsertById(prev, enriched, 'prepend'));
@@ -123,6 +153,10 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
         async (payload) => {
           const row = payload.new;
           if (!row?.id) return;
+          if (!postMatchesSearch(row, searchRef.current)) {
+            setPosts((prev) => removeById(prev, row.id));
+            return;
+          }
           const existing = postsRef.current.find((p) => p.id === row.id);
           try {
             const enriched = await enrichStreamPost(supabaseClient, row, {
@@ -189,7 +223,9 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
       file_url,
       file_name,
     });
-    setPosts((prev) => upsertById(prev, newPost, 'prepend'));
+    if (postMatchesSearch(newPost, searchRef.current)) {
+      setPosts((prev) => upsertById(prev, newPost, 'prepend'));
+    }
     addToast(t('stream.posted_success'), 'success');
   };
 
@@ -197,20 +233,32 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
     return <p className="text-sm text-slate-500">{t('stream.select_project')}</p>;
   }
 
+  const searching = Boolean(debouncedSearch);
+
   return (
     <div className={embedded ? 'space-y-4 h-full flex flex-col min-h-0' : 'mx-auto max-w-3xl space-y-8'}>
-      <header className={embedded ? 'space-y-0.5 shrink-0' : 'space-y-1'}>
-        <h2 className={embedded ? 'text-base font-semibold text-slate-900' : 'text-xl font-semibold tracking-tight text-slate-900'}>
-          {t('stream.title')}
-        </h2>
-        {!embedded ? (
-          <p className="text-sm text-slate-500">
-            {t('stream.subtitle')}
-          </p>
-        ) : null}
+      <header className={embedded ? 'space-y-2 shrink-0' : 'space-y-3'}>
+        <div className={embedded ? 'space-y-0.5' : 'space-y-1'}>
+          <h2 className={embedded ? 'text-base font-semibold text-slate-900' : 'text-xl font-semibold tracking-tight text-slate-900'}>
+            {t('stream.title')}
+          </h2>
+          {!embedded ? (
+            <p className="text-sm text-slate-500">
+              {t('stream.subtitle')}
+            </p>
+          ) : null}
+        </div>
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder={t('stream.search_placeholder')}
+          aria-label={t('stream.search_placeholder')}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-full"
+        />
       </header>
 
-      <StreamComposer onSubmit={handlePost} />
+      <StreamComposer onSubmit={handlePost} canPost={canPost} />
 
       {loading ? (
         <div className="space-y-4">
@@ -220,8 +268,12 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
         </div>
       ) : posts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-200 px-6 py-16 text-center">
-          <p className="text-sm font-medium text-slate-500">{t('stream.no_posts')}</p>
-          <p className="mt-1 text-xs text-slate-400">{t('stream.first_update')}</p>
+          <p className="text-sm font-medium text-slate-500">
+            {searching ? t('stream.no_search_results') : t('stream.no_posts')}
+          </p>
+          {!searching ? (
+            <p className="mt-1 text-xs text-slate-400">{t('stream.first_update')}</p>
+          ) : null}
         </div>
       ) : (
         <div className={`space-y-5 ${embedded ? 'flex-1 min-h-0 overflow-y-auto pr-1' : ''}`}>

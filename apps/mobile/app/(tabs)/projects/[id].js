@@ -14,6 +14,9 @@ import {
   calculatePhaseProgressFromTasks,
   groupTasksByPhaseId,
   canManageTaskPhotos,
+  maybeCreateEarlyCompletionAdjustment,
+  suggestWorkdaysGained,
+  getTaskEndDate,
 } from '@siteweave/core-logic';
 import TaskCard from '../../../components/TaskCard';
 import TaskDetailSheet from '../../../components/TaskDetailSheet';
@@ -60,6 +63,7 @@ export default function ProjectDetailScreen() {
   const {
     supabase,
     user,
+    userRole,
     activeOrganization,
     isProjectCollaborator,
     collaborationProjects,
@@ -302,11 +306,41 @@ export default function ProjectDetailScreen() {
 
   const handleCompleteTask = async (taskId) => {
     const prevTasks = tasks;
+    const sourceTask = tasks.find((t) => t.id === taskId);
+    const completedAt = new Date().toISOString();
     setTasks((list) =>
-      list.map((t) => (t.id === taskId ? { ...t, completed: true, percent_complete: 100 } : t)),
+      list.map((t) =>
+        t.id === taskId
+          ? { ...t, completed: true, percent_complete: 100, completed_at: completedAt }
+          : t,
+      ),
     );
     try {
       await completeTask(supabase, taskId);
+      if (sourceTask && project?.organization_id) {
+        const completedTask = {
+          ...sourceTask,
+          completed: true,
+          percent_complete: 100,
+          completed_at: completedAt,
+        };
+        const days = suggestWorkdaysGained(completedTask);
+        if (days > 0) {
+          try {
+            await maybeCreateEarlyCompletionAdjustment(supabase, {
+              organizationId: project.organization_id,
+              projectId: project.id,
+              task: completedTask,
+              plannedFinish: getTaskEndDate(completedTask),
+              userId: user?.id || null,
+              workdaysGained: days,
+              actualFinish: completedAt.slice(0, 10),
+            });
+          } catch (suggestError) {
+            console.error('Schedule gain suggestion failed:', suggestError);
+          }
+        }
+      }
       loadProjectData();
     } catch (error) {
       console.error('Error completing task:', error);
@@ -488,6 +522,32 @@ export default function ProjectDetailScreen() {
       setIsSavingProgress(true);
       await updateTask(supabase, progressTask.id, updates);
       await markGettingStartedTaskUpdated();
+      if (reachedComplete && project?.organization_id) {
+        const completedAt = new Date().toISOString();
+        const completedTask = {
+          ...progressTask,
+          ...updates,
+          completed: true,
+          percent_complete: 100,
+          completed_at: completedAt,
+        };
+        const days = suggestWorkdaysGained(completedTask);
+        if (days > 0) {
+          try {
+            await maybeCreateEarlyCompletionAdjustment(supabase, {
+              organizationId: project.organization_id,
+              projectId: project.id,
+              task: completedTask,
+              plannedFinish: getTaskEndDate(completedTask),
+              userId: user?.id || null,
+              workdaysGained: days,
+              actualFinish: completedAt.slice(0, 10),
+            });
+          } catch (suggestError) {
+            console.error('Schedule gain suggestion failed:', suggestError);
+          }
+        }
+      }
       setShowProgressSheet(false);
       const savedTask = progressTask;
       setProgressTask(null);
@@ -949,6 +1009,7 @@ export default function ProjectDetailScreen() {
             supabase={supabase}
             currentUserId={user?.id}
             contentPaddingBottom={tabScrollBottom}
+            canPost={userRole?.permissions?.can_send_messages !== false}
           />
         ) : null}
 

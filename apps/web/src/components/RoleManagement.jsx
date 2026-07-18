@@ -41,7 +41,7 @@ const PERMISSION_LABELS = {
   can_manage_roles: 'Manage Roles',
   can_manage_contacts: 'Manage Contacts',
   can_manage_users: 'Manage Users',
-  can_send_messages: 'Send Messages',
+  can_send_messages: 'Post in project chat',
   can_view_activity_history: 'View Activity History',
   can_manage_progress_reports: 'Project Progress Reports',
   can_manage_org_progress_reports: 'Organization Progress Reports',

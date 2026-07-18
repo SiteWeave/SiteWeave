@@ -51,14 +51,28 @@ export async function countStreamPostsSince(supabase, projectId, sinceIso) {
 }
 
 /**
+ * Escape special characters for PostgREST `ilike` patterns.
+ * @param {string} value
+ */
+function escapeIlikePattern(value) {
+  return String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/%/g, '\\%')
+    .replace(/_/g, '\\_')
+    .replace(/"/g, '')
+    .replace(/,/g, ' ');
+}
+
+/**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {string} projectId
- * @param {{ limit?: number, beforeCreatedAt?: string }} [options]
+ * @param {{ limit?: number, beforeCreatedAt?: string, search?: string }} [options]
  * @returns {Promise<{ posts: Array, hasMore: boolean }>}
  */
 export async function fetchStreamPosts(supabase, projectId, options = {}) {
   const limit = options.limit ?? 50;
   const beforeCreatedAt = options.beforeCreatedAt ?? null;
+  const search = typeof options.search === 'string' ? options.search.trim() : '';
 
   let query = supabase
     .from('project_stream_posts')
@@ -69,6 +83,12 @@ export async function fetchStreamPosts(supabase, projectId, options = {}) {
 
   if (beforeCreatedAt) {
     query = query.lt('created_at', beforeCreatedAt);
+  }
+
+  if (search) {
+    const pattern = `%${escapeIlikePattern(search)}%`;
+    // Quote patterns so spaces / reserved filter chars don't break `.or()`.
+    query = query.or(`title.ilike."${pattern}",body.ilike."${pattern}"`);
   }
 
   const { data, error } = await query;

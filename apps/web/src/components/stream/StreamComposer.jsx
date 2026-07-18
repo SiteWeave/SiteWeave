@@ -11,7 +11,7 @@ const POST_TYPE_I18N = {
   milestone: 'stream.post_type_milestone',
 };
 
-export default function StreamComposer({ onSubmit }) {
+export default function StreamComposer({ onSubmit, canPost = true }) {
   const { t } = useTranslation();
   const [postType, setPostType] = React.useState('general');
   const [title, setTitle] = React.useState('');
@@ -21,7 +21,15 @@ export default function StreamComposer({ onSubmit }) {
   const fileInputRef = React.useRef(null);
 
   const showTitle = postType === 'announcement' || postType === 'milestone';
-  const canSubmit = (body.trim().length > 0 || file) && !submitting;
+  const canSubmit = canPost && (body.trim().length > 0 || file) && !submitting;
+
+  if (!canPost) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-4 text-sm text-slate-600">
+        {t('stream.composer_blocked')}
+      </div>
+    );
+  }
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
@@ -131,7 +139,7 @@ export default function StreamComposer({ onSubmit }) {
           >
             {t('stream.attach_file')}
           </button>
-          <p className="text-[11px] text-slate-400 select-none">{t('stream.post_hint')}</p>
+          <p className="text-[11px] text-slate-400 select-none">{t('stream.visibility_hint')}</p>
         </div>
         <button
           type="submit"

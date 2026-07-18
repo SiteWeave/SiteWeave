@@ -33,6 +33,7 @@ export default function ProjectStreamPanel({
   currentUserId,
   listHeaderExtra = null,
   contentPaddingBottom = spacing.lg,
+  canPost = true,
 }) {
   const { t, i18n } = useTranslation();
   const { primaryColor } = useBranding();
@@ -43,17 +44,31 @@ export default function ProjectStreamPanel({
   const [error, setError] = useState(null);
   const [body, setBody] = useState('');
   const [viewFilter, setViewFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sending, setSending] = useState(false);
   const [expandedPostId, setExpandedPostId] = useState(null);
   const [replies, setReplies] = useState({});
   const [replyDraft, setReplyDraft] = useState('');
   const composerRef = useRef(null);
+  const searchRef = useRef('');
+
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    searchRef.current = debouncedSearch;
+  }, [debouncedSearch]);
 
   const load = useCallback(async () => {
     if (!project?.id || !supabase) return;
     try {
       setError(null);
-      const { posts: rows } = await fetchStreamPosts(supabase, project.id);
+      const { posts: rows } = await fetchStreamPosts(supabase, project.id, {
+        search: searchRef.current || undefined,
+      });
       setPosts(rows);
     } catch (e) {
       console.error('ProjectStreamPanel load error:', e);
@@ -67,7 +82,7 @@ export default function ProjectStreamPanel({
   useEffect(() => {
     setLoading(true);
     load();
-  }, [load]);
+  }, [load, debouncedSearch]);
 
   useEffect(() => {
     if (!project?.id || !supabase) return;
@@ -101,7 +116,7 @@ export default function ProjectStreamPanel({
 
   const handlePost = async () => {
     const trimmed = body.trim();
-    if (!trimmed || !currentUserId || !project) return;
+    if (!canPost || !trimmed || !currentUserId || !project) return;
     setSending(true);
     try {
       await createStreamPost(supabase, {
@@ -171,6 +186,17 @@ export default function ProjectStreamPanel({
             </Text>
           </PressableWithFade>
         ) : null}
+        <TextInput
+          style={styles.searchInput}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder={t('mobile.stream_search_placeholder')}
+          placeholderTextColor={colors.textSubtle}
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+          testID="stream-search"
+        />
         <FlatList
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -197,38 +223,49 @@ export default function ProjectStreamPanel({
             </PressableWithFade>
           )}
         />
-        <TextInput
-          ref={composerRef}
-          style={styles.composer}
-          value={body}
-          onChangeText={setBody}
-          placeholder={t('mobile.stream_composer_placeholder')}
-          multiline
-          placeholderTextColor={colors.textSubtle}
-        />
-        <View style={styles.composerFooter}>
-          <PressableWithFade
-            style={[
-              styles.postBtn,
-              { backgroundColor: primaryColor },
-              (sending || !body.trim()) && styles.postBtnDisabled,
-            ]}
-            onPress={handlePost}
-            disabled={sending || !body.trim()}
-            testID="stream-post-button"
-          >
-            {sending ? (
-              <ActivityIndicator color={colors.white} size="small" />
-            ) : (
-              <Text variant="caption" style={styles.postBtnText}>
-                {t('mobile.stream_post')}
-              </Text>
-            )}
-          </PressableWithFade>
-        </View>
+        {canPost ? (
+          <>
+            <TextInput
+              ref={composerRef}
+              style={styles.composer}
+              value={body}
+              onChangeText={setBody}
+              placeholder={t('mobile.stream_composer_placeholder')}
+              multiline
+              placeholderTextColor={colors.textSubtle}
+            />
+            <Text variant="caption" style={styles.visibilityHint}>
+              {t('mobile.stream_visibility_hint')}
+            </Text>
+            <View style={styles.composerFooter}>
+              <PressableWithFade
+                style={[
+                  styles.postBtn,
+                  { backgroundColor: primaryColor },
+                  (sending || !body.trim()) && styles.postBtnDisabled,
+                ]}
+                onPress={handlePost}
+                disabled={sending || !body.trim()}
+                testID="stream-post-button"
+              >
+                {sending ? (
+                  <ActivityIndicator color={colors.white} size="small" />
+                ) : (
+                  <Text variant="caption" style={styles.postBtnText}>
+                    {t('mobile.stream_post')}
+                  </Text>
+                )}
+              </PressableWithFade>
+            </View>
+          </>
+        ) : (
+          <Text variant="caption" style={styles.blockedHint}>
+            {t('mobile.stream_composer_blocked')}
+          </Text>
+        )}
       </View>
     ),
-    [listHeaderExtra, error, viewFilter, body, sending, primaryColor, t, load, filterOptions],
+    [listHeaderExtra, error, viewFilter, body, sending, primaryColor, t, load, filterOptions, canPost, searchQuery],
   );
 
   const renderPost = ({ item: post, index }) => {
@@ -317,14 +354,22 @@ export default function ProjectStreamPanel({
       renderItem={renderPost}
       ListHeaderComponent={composerHeader}
       ListEmptyComponent={
-        <PanelEmptyState
-          icon="chatbubbles-outline"
-          title={t('mobile.stream_empty')}
-          hint={t('mobile.stream_empty_hint')}
-          ctaLabel={t('mobile.stream_empty_cta')}
-          onCta={() => composerRef.current?.focus?.()}
-          testID="stream-empty-post"
-        />
+        debouncedSearch ? (
+          <PanelEmptyState
+            icon="search-outline"
+            title={t('mobile.stream_no_search_results')}
+            testID="stream-search-empty"
+          />
+        ) : (
+          <PanelEmptyState
+            icon="chatbubbles-outline"
+            title={t('mobile.stream_empty')}
+            hint={t('mobile.stream_empty_hint')}
+            ctaLabel={canPost ? t('mobile.stream_empty_cta') : undefined}
+            onCta={canPost ? () => composerRef.current?.focus?.() : undefined}
+            testID="stream-empty-post"
+          />
+        )
       }
       contentContainerStyle={[styles.listContent, { paddingBottom: contentPaddingBottom }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -342,6 +387,16 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   headerBlock: { gap: spacing.sm, marginBottom: spacing.md },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: colors.surface,
+  },
   skeletonPosts: { padding: spacing.md, gap: spacing.md, flex: 1 },
   skeletonPost: { marginBottom: spacing.sm },
   heading: { marginBottom: spacing.xs },
@@ -390,6 +445,8 @@ const styles = StyleSheet.create({
   },
   postBtnDisabled: { opacity: 0.45 },
   postBtnText: { color: colors.white, fontWeight: '700', fontSize: 13 },
+  visibilityHint: { color: colors.textSubtle, marginBottom: spacing.sm },
+  blockedHint: { color: colors.textMuted, marginBottom: spacing.md, lineHeight: 18 },
   postRow: {
     paddingVertical: spacing.lg,
     borderBottomWidth: 1,

@@ -80,6 +80,8 @@ function resolveSections(schedule) {
     show_phase_delta:       s.show_phase_delta      === true,
     show_blockers:          s.show_blockers         === true,
     show_weather_impacts:   s.show_weather_impacts  === true,
+    show_schedule_adjustments: s.show_schedule_adjustments === true,
+    keep_original_completion_date: s.keep_original_completion_date !== false,
     include_task_photos:    s.include_task_photos === true,
     include_daily_site_logs: s.include_daily_site_logs === true,
     client_friendly_labels: s.client_friendly_labels !== false, // default true
@@ -262,6 +264,32 @@ function weatherImpactsHtml(reportData, primary, showProjectNames = true) {
             <span style="color:#6b7280;">${escapeHtml(String(w.days_lost ?? ''))} calendar day${Number(w.days_lost) !== 1 ? 's' : ''} lost</span>
             ${w.schedule_shift_applied ? ' · <span style="color:#059669;">schedule updated</span>' : ' · <span style="color:#9ca3af;">logged only</span>'}
             ${w.description ? `<br/><span>${escapeHtml(w.description)}</span>` : ''}
+          </li>
+        `).join('')}
+      </ul>
+    </div>`;
+}
+
+function scheduleAdjustmentsHtml(reportData, primary, showProjectNames = true) {
+  const items = reportData.schedule_adjustments || [];
+  if (!items.length) return '';
+  const projSuffix = (w) =>
+    showProjectNames && w.project_name
+      ? ` <span style="color:#9ca3af;font-size:12px;">(${escapeHtml(w.project_name)})</span>`
+      : '';
+  return `
+    <div style="margin-bottom:28px;">
+      ${sectionHeading('Schedule improvements', primary)}
+      <ul style="margin:0;padding-left:18px;color:#374151;">
+        ${items.map((w) => `
+          <li style="margin-bottom:12px;font-size:14px;line-height:1.6;">
+            <strong>${escapeHtml(w.note || 'Schedule pull-forward')}</strong>
+            ${projSuffix(w)}
+            <br/>
+            <span style="color:#047857;">${escapeHtml(String(w.applied_workdays ?? ''))} workday${Number(w.applied_workdays) !== 1 ? 's' : ''} pulled forward</span>
+            ${w.planned_finish && w.actual_finish
+              ? `<br/><span style="color:#6b7280;">Planned ${escapeHtml(String(w.planned_finish))} · Finished ${escapeHtml(String(w.actual_finish))}</span>`
+              : ''}
           </li>
         `).join('')}
       </ul>
@@ -533,6 +561,7 @@ function standardReportSectionsHtml(reportData, schedule, branding, options = {}
     ${sections.weekly_plan ? weeklyPlanHtml(reportData, primary, sections, showWeeklyProjectTag) : ''}
 
     ${sections.show_weather_impacts && reportData.weather_impacts?.length ? weatherImpactsHtml(reportData, primary, showWeatherProjectNames) : ''}
+    ${sections.show_schedule_adjustments && reportData.schedule_adjustments?.length ? scheduleAdjustmentsHtml(reportData, primary, showWeatherProjectNames) : ''}
 
     ${sections.include_daily_site_logs && reportData.daily_site_logs?.length ? dailySiteLogsHtml(reportData, schedule, primary) : ''}
 
@@ -659,6 +688,7 @@ function generateExecutiveReportEmail(reportData, schedule, branding) {
     </div>` : ''}
 
     ${sections.show_weather_impacts && reportData.weather_impacts?.length ? weatherImpactsHtml(reportData, primary) : ''}
+    ${sections.show_schedule_adjustments && reportData.schedule_adjustments?.length ? scheduleAdjustmentsHtml(reportData, primary) : ''}
 
     ${reportData.project_summary?.length ? `
     <div style="margin-bottom:28px;">
@@ -771,6 +801,15 @@ function generateTextVersion(reportData, schedule, period) {
         const pn = weeklyProjectTag && w.project_name ? ` (${w.project_name})` : '';
         text += `- ${w.title || 'Impact'}${pn}: ${w.days_lost} day(s) lost${w.schedule_shift_applied ? ' (schedule updated)' : ' (logged only)'}\n`;
         if (w.description) text += `  ${w.description}\n`;
+      });
+      text += '\n';
+    }
+
+    if (sections.show_schedule_adjustments && data.schedule_adjustments?.length) {
+      text += `Schedule improvements:\n`;
+      data.schedule_adjustments.forEach((w) => {
+        const pn = weeklyProjectTag && w.project_name ? ` (${w.project_name})` : '';
+        text += `- ${w.note || 'Schedule pull-forward'}${pn}: ${w.applied_workdays} workday(s) pulled forward\n`;
       });
       text += '\n';
     }

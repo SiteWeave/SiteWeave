@@ -250,7 +250,46 @@ export async function updateTask(supabase, taskId, updates) {
  * @returns {Promise<Object>} Updated task
  */
 export async function completeTask(supabase, taskId) {
-  return updateTask(supabase, taskId, { percent_complete: 100, completed: true });
+  const { data: current, error: currentError } = await supabase
+    .from('tasks')
+    .select('id, text, project_id, organization_id, start_date, due_date, duration_days, completed, completed_at')
+    .eq('id', taskId)
+    .maybeSingle();
+  if (currentError) throw currentError;
+
+  const updated = await updateTask(supabase, taskId, { percent_complete: 100, completed: true });
+
+  try {
+    const { suggestWorkdaysGained, getTaskEndDate } = await import('../utils/schedulePullForward.js');
+    const { maybeCreateEarlyCompletionAdjustment } = await import('./scheduleAdjustmentsService.js');
+    const completedTask = { ...(current || {}), ...updated, completed: true };
+    const days = suggestWorkdaysGained(completedTask);
+    let organizationId = completedTask.organization_id || null;
+    if (!organizationId && completedTask.project_id) {
+      const { data: projectRow } = await supabase
+        .from('projects')
+        .select('organization_id')
+        .eq('id', completedTask.project_id)
+        .maybeSingle();
+      organizationId = projectRow?.organization_id || null;
+    }
+    if (days > 0 && completedTask.project_id && organizationId) {
+      await maybeCreateEarlyCompletionAdjustment(supabase, {
+        organizationId,
+        projectId: completedTask.project_id,
+        task: completedTask,
+        plannedFinish: getTaskEndDate(completedTask),
+        workdaysGained: days,
+        actualFinish: completedTask.completed_at
+          ? String(completedTask.completed_at).slice(0, 10)
+          : new Date().toISOString().slice(0, 10),
+      });
+    }
+  } catch (suggestError) {
+    console.error('Schedule gain suggestion after completeTask failed:', suggestError);
+  }
+
+  return updated;
 }
 
 /**

@@ -75,6 +75,8 @@ const DETAIL_TOGGLE_DEFS = [
   { key: 'show_task_phase', labelKey: 'toggle_task_phase', default: false },
   { key: 'show_blockers', labelKey: 'toggle_blockers', default: false },
   { key: 'show_weather_impacts', labelKey: 'toggle_weather', default: true },
+  { key: 'show_schedule_adjustments', labelKey: 'toggle_schedule_adjustments', hintKey: 'toggle_schedule_adjustments_hint', default: false },
+  { key: 'keep_original_completion_date', labelKey: 'toggle_keep_original_completion_date', hintKey: 'toggle_keep_original_completion_date_hint', default: true },
   { key: 'include_task_photos', labelKey: 'toggle_photos', default: false },
   { key: 'include_daily_site_logs', labelKey: 'toggle_daily_site_logs', default: false },
   { key: 'client_friendly_labels', labelKey: 'toggle_friendly_labels', default: true },
@@ -93,6 +95,8 @@ const DEFAULT_SECTIONS = {
   show_task_phase: false,
   show_blockers: false,
   show_weather_impacts: true,
+  show_schedule_adjustments: false,
+  keep_original_completion_date: true,
   include_task_photos: false,
   include_daily_site_logs: false,
   client_friendly_labels: true,
@@ -189,9 +193,10 @@ function ProgressReportBuilder({
 
   const detailToggles = useMemo(
     () =>
-      DETAIL_TOGGLE_DEFS.map(({ key, labelKey, default: defaultOn }) => ({
+      DETAIL_TOGGLE_DEFS.map(({ key, labelKey, hintKey, default: defaultOn }) => ({
         key,
         label: t(builderKey(labelKey)),
+        hint: hintKey ? t(builderKey(hintKey)) : null,
         default: defaultOn,
       })),
     [t]
@@ -307,6 +312,8 @@ function ProgressReportBuilder({
             show_task_phase:        base.show_task_phase        ?? true,
             show_blockers:          base.show_blockers          ?? true,
             show_weather_impacts:   base.show_weather_impacts   ?? true,
+            show_schedule_adjustments: base.show_schedule_adjustments ?? false,
+            keep_original_completion_date: base.keep_original_completion_date ?? true,
             include_task_photos:    base.include_task_photos    ?? true,
             client_friendly_labels: base.client_friendly_labels ?? false,
           }
@@ -728,16 +735,21 @@ function ProgressReportBuilder({
                 <p className="text-xs text-gray-400 mb-3">
                   {t(builderKey('detail_level_hint'))}
                 </p>
-                <div className="space-y-2">
-                  {detailToggles.map(({ key, label }) => (
-                    <label key={key} className="flex items-center gap-2 cursor-pointer">
+                <div className="space-y-3">
+                  {detailToggles.map(({ key, label, hint }) => (
+                    <label key={key} className="flex items-start gap-2 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={!!formData.report_sections[key]}
                         onChange={(e) => updateSection(key, e.target.checked)}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
-                      <span className="text-sm text-gray-700">{label}</span>
+                      <span className="min-w-0">
+                        <span className="block text-sm text-gray-700">{label}</span>
+                        {hint ? (
+                          <span className="mt-0.5 block text-xs text-gray-500 leading-snug">{hint}</span>
+                        ) : null}
+                      </span>
                     </label>
                   ))}
                 </div>

@@ -92,6 +92,19 @@ export function inclusiveBusinessDaysInRange(startDateStr, endDateStr) {
 }
 
 /**
+ * Workdays gained when finishing early: exclusive of actual finish, inclusive of planned end.
+ * Example: finished 2026-04-12, planned 2026-04-15 → counts 13,14,15 business days.
+ */
+export function workdaysGainedBetween(actualFinishIso, plannedEndIso) {
+  if (!actualFinishIso || !plannedEndIso || actualFinishIso >= plannedEndIso) return 0;
+  const dayAfterActual = new Date(`${actualFinishIso}T00:00:00Z`);
+  dayAfterActual.setUTCDate(dayAfterActual.getUTCDate() + 1);
+  const afterIso = toIsoDateUtc(dayAfterActual);
+  if (afterIso > plannedEndIso) return 0;
+  return inclusiveBusinessDaysInRange(afterIso, plannedEndIso);
+}
+
+/**
  * Days lost for weather-style ranges: inclusive business days, minimum 1 when both dates parse (matches prior UX).
  */
 export function inclusiveBusinessDaysLost(startDateStr, endDateStr) {

@@ -325,6 +325,40 @@ export function logWeatherImpactScheduleApplied(impact, user, projectId, organiz
     });
 }
 
+export function logScheduleAdjustmentApplied(adjustment, user, projectId, organizationId, extra = {}) {
+    return logActivity({
+        action: 'updated',
+        entityType: 'schedule_adjustment',
+        entityId: adjustment.id,
+        entityName: adjustment.note || 'Schedule pull-forward',
+        projectId,
+        organizationId,
+        user,
+        details: {
+            event: 'schedule_pull_forward_applied',
+            workdays: adjustment.applied_workdays,
+            source_task_id: adjustment.source_task_id,
+            ...extra,
+        },
+    });
+}
+
+export function logScheduleAdjustmentDismissed(adjustment, user, projectId, organizationId) {
+    return logActivity({
+        action: 'updated',
+        entityType: 'schedule_adjustment',
+        entityId: adjustment.id,
+        entityName: adjustment.note || 'Schedule pull-forward',
+        projectId,
+        organizationId,
+        user,
+        details: {
+            event: 'schedule_pull_forward_dismissed',
+            source_task_id: adjustment.source_task_id,
+        },
+    });
+}
+
 export function logFieldIssueCreated(issue, user, projectId) {
     return logActivity({
         action: 'created',

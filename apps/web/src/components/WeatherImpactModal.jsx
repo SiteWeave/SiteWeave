@@ -200,19 +200,33 @@ function WeatherImpactModal({
             .from('tasks')
             .select('due_date, start_date, duration_days')
             .eq('project_id', project.id);
-        const latestEnd = maxScheduleEndAmongTasks(postTasks || []);
-        const nextDue = latestEnd || null;
-        if (project.due_date !== nextDue) {
-            const { error: projErr } = await supabaseClient
-                .from('projects')
-                .update({ due_date: nextDue })
-                .eq('id', project.id);
-            if (projErr) throw projErr;
-            dispatch({
-                type: 'UPDATE_PROJECT',
-                payload: { ...project, due_date: nextDue },
-            });
+        const latestEnd = maxScheduleEndAmongTasks(postTasks || []) || null;
+        const previousDue = project.due_date || null;
+        const previousClientDue = project.client_due_date || null;
+        let nextClientDue = previousClientDue;
+
+        if (latestEnd && previousDue && latestEnd < previousDue) {
+            nextClientDue = previousClientDue || previousDue;
+        } else if (latestEnd && previousClientDue && latestEnd >= previousClientDue) {
+            nextClientDue = null;
         }
+
+        if (previousDue === latestEnd && previousClientDue === nextClientDue) return;
+
+        const updates = { due_date: latestEnd };
+        if (nextClientDue !== previousClientDue) {
+            updates.client_due_date = nextClientDue;
+        }
+
+        const { error: projErr } = await supabaseClient
+            .from('projects')
+            .update(updates)
+            .eq('id', project.id);
+        if (projErr) throw projErr;
+        dispatch({
+            type: 'UPDATE_PROJECT',
+            payload: { ...project, ...updates },
+        });
     }, [dispatch, project]);
 
     const applyScheduleDelta = useCallback(async (daysDelta, anchorStartDate, anchorEndDate) => {

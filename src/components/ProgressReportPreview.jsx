@@ -11,6 +11,9 @@ import {
   testSendProgressReport,
   computeProjectScheduleTimeline,
   listWeatherImpactsForProject,
+  listScheduleAdjustmentsForProject,
+  resolveReportProjectEndDate,
+  resolveReportScheduleDueDate,
 } from '@siteweave/core-logic';
 import { dedupeTasksById } from '../utils/taskDedupe';
 import {
@@ -75,6 +78,7 @@ function computeOrgProjectPreviewSlice({
   showTaskPhotos,
   showTaskPhaseTag,
   weatherImpactsForProject,
+  scheduleAdjustmentsForProject,
   projectNameForTask,
 }) {
   const phaseNameById = buildPhaseNameMapFromList(projectPhases);
@@ -191,11 +195,12 @@ function computeOrgProjectPreviewSlice({
 
   const totalTaskCount = scoped.length;
   const completedTaskCount = scoped.filter((t) => t?.completed).length;
+  const keepOriginalCompletionDate = reportSections?.keep_original_completion_date !== false;
 
   const scheduleTimeline = project
     ? computeProjectScheduleTimeline(
         projectPhases,
-        project.due_date,
+        resolveReportScheduleDueDate(project, keepOriginalCompletionDate),
         new Date(),
         project.start_date ?? null,
         scoped,
@@ -214,12 +219,11 @@ function computeOrgProjectPreviewSlice({
     vitals: {
       tasks_completed_count: completedTaskCount,
       open_tasks_count: Math.max(0, totalTaskCount - completedTaskCount),
-      project_end_date:
-        scoped.reduce((max, t) => {
-          const d = t?.due_date;
-          if (!d) return max;
-          return !max || d > max ? d : max;
-        }, null) || project?.due_date || null,
+      project_end_date: resolveReportProjectEndDate({
+        project,
+        tasks: scoped,
+        keepOriginalCompletionDate,
+      }),
       ...(scheduleTimeline
         ? {
             schedule_day_current: scheduleTimeline.schedule_day_current,
@@ -232,6 +236,7 @@ function computeOrgProjectPreviewSlice({
     completed_tasks: completedTasks,
     phase_progress: phaseProgressPreview,
     weather_impacts: weatherImpactsForProject || [],
+    schedule_adjustments: scheduleAdjustmentsForProject || [],
     last_week_done: lastWeekDone,
     this_week_plan: thisWeekPlan,
     next_week_plan: nextWeekPlan,
@@ -256,6 +261,8 @@ function StandardPreviewSections({
     const parsed = parsePreviewDay(value);
     return parsed ? parsed.toLocaleDateString(locale) : value;
   };
+
+  const formatScheduleDate = (value) => formatTaskStartDate(value);
 
   return (
     <>
@@ -444,6 +451,32 @@ function StandardPreviewSections({
         </div>
       )}
 
+      {reportSections.show_schedule_adjustments && (d.schedule_adjustments || []).length > 0 && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+          <h2 className="text-sm font-semibold text-emerald-900 mb-2 uppercase tracking-wide">{p('schedule_improvements')}</h2>
+          <ul className="space-y-2">
+            {(d.schedule_adjustments || []).map((adj, i) => (
+              <li key={i} className="text-sm text-emerald-900">
+                <span className="font-semibold">{adj.note || p('schedule_adjustment_fallback')}</span>
+                {showProjectNameOnTasks && adj.project_name ? (
+                  <span className="text-gray-500 font-normal"> ({adj.project_name})</span>
+                ) : null}
+                {typeof adj.applied_workdays === 'number'
+                  ? ` — ${p(adj.applied_workdays === 1 ? 'workdays_pulled_one' : 'workdays_pulled_other', { count: adj.applied_workdays })}`
+                  : ''}
+                {adj.planned_finish && adj.actual_finish ? (
+                  <span className="block text-xs text-emerald-800 mt-1">
+                    {t('scheduleAdjustments.planned_finish')} {formatScheduleDate(adj.planned_finish)}
+                    {' · '}
+                    {t('scheduleAdjustments.actual_finish')} {formatScheduleDate(adj.actual_finish)}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {reportSections.weekly_plan !== false && (
         <div className="rounded-lg border border-gray-200 p-3 space-y-3">
           <h2 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{p('weekly_plan')}</h2>
@@ -524,8 +557,10 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [previewPhases, setPreviewPhases] = useState([]);
   const [previewWeatherImpacts, setPreviewWeatherImpacts] = useState([]);
+  const [previewScheduleAdjustments, setPreviewScheduleAdjustments] = useState([]);
 
   const previewMode = formData?.report_audience_type === 'executive' ? 'executive' : 'standard';
+  const showScheduleAdjustments = formData?.report_sections?.show_schedule_adjustments === true;
 
   /** Schedule row + builder prop — both needed so phase names resolve in the preview */
   const effectiveProjectId = formData?.project_id ?? projectIdProp ?? null;
@@ -620,6 +655,50 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
     })();
     return () => ac.abort();
   }, [effectiveProjectId, effectiveIncludedProjectIds, state.currentOrganization?.id]);
+
+  React.useEffect(() => {
+    if (!showScheduleAdjustments) {
+      setPreviewScheduleAdjustments([]);
+      return undefined;
+    }
+    const pid = effectiveProjectId;
+    const ids = effectiveIncludedProjectIds;
+    if (pid) {
+      const ac = new AbortController();
+      (async () => {
+        try {
+          const rows = await listScheduleAdjustmentsForProject(
+            supabaseClient,
+            pid,
+            { status: 'applied' },
+          );
+          if (ac.signal.aborted) return;
+          setPreviewScheduleAdjustments(rows || []);
+        } catch {
+          if (ac.signal.aborted) return;
+          setPreviewScheduleAdjustments([]);
+        }
+      })();
+      return () => ac.abort();
+    }
+    if (!ids.length || !state.currentOrganization?.id) {
+      setPreviewScheduleAdjustments([]);
+      return undefined;
+    }
+    const ac = new AbortController();
+    (async () => {
+      const { data, error } = await supabaseClient
+        .from('schedule_adjustments')
+        .select('*, projects!schedule_adjustments_project_id_fkey(name)')
+        .eq('organization_id', state.currentOrganization.id)
+        .eq('status', 'applied')
+        .in('project_id', ids)
+        .order('applied_at', { ascending: false });
+      if (ac.signal.aborted) return;
+      setPreviewScheduleAdjustments(error ? [] : data || []);
+    })();
+    return () => ac.abort();
+  }, [showScheduleAdjustments, effectiveProjectId, effectiveIncludedProjectIds, state.currentOrganization?.id]);
 
   React.useEffect(() => {
     if (effectiveProjectId) {
@@ -849,11 +928,12 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
 
   const totalTaskCount = scopedTasks.length;
   const completedTaskCount = scopedTasks.filter((t) => t?.completed).length;
+  const keepOriginalCompletionDate = reportSections.keep_original_completion_date !== false;
 
   const scheduleTimeline = selectedProject
     ? computeProjectScheduleTimeline(
         previewPhases,
-        selectedProject.due_date,
+        resolveReportScheduleDueDate(selectedProject, keepOriginalCompletionDate),
         new Date(),
         selectedProject.start_date ?? null,
         scopedTasks
@@ -925,6 +1005,32 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
         || t('progressReports.builder.untitled_project'),
     }));
 
+  const scheduleAdjustmentFallsInPreviewWindow = (row) => {
+    const ts = row?.applied_at || row?.created_at;
+    if (!ts) return false;
+    const d = new Date(ts).getTime();
+    if (Number.isNaN(d)) return false;
+    return d >= periodStart.getTime() && d <= now.getTime();
+  };
+
+  const scheduleAdjustmentsInWindow = (previewScheduleAdjustments || [])
+    .filter((row) => scheduleAdjustmentFallsInPreviewWindow(row))
+    .map((row) => ({
+      id: row.id,
+      project_id: row.project_id,
+      note: row.note,
+      applied_workdays: row.applied_workdays,
+      planned_finish: row.planned_finish,
+      actual_finish: row.actual_finish,
+      applied_at: row.applied_at,
+      created_at: row.created_at,
+      project_name:
+        row.projects?.name
+        || projectNameForTask(row)
+        || projectName
+        || t('progressReports.builder.untitled_project'),
+    }));
+
   const orgAggregateVitals = React.useMemo(() => {
     if (selectedProject) return null;
     const tot = scopedTasks.length;
@@ -943,6 +1049,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
       const projectTasks = scopedTasks.filter((t) => String(t.project_id) === String(pid));
       const projectPhases = (previewPhases || []).filter((p) => String(p.project_id) === String(pid));
       const weatherFor = (weatherImpactsInWindow || []).filter((w) => String(w.project_id) === String(pid));
+      const scheduleFor = (scheduleAdjustmentsInWindow || []).filter((w) => String(w.project_id) === String(pid));
       return {
         id: String(pid),
         project,
@@ -956,6 +1063,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
           showTaskPhotos,
           showTaskPhaseTag,
           weatherImpactsForProject: weatherFor,
+          scheduleAdjustmentsForProject: scheduleFor,
           projectNameForTask,
         }),
       };
@@ -967,6 +1075,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
     scopedTasks,
     previewPhases,
     weatherImpactsInWindow,
+    scheduleAdjustmentsInWindow,
     locale,
     getTaskAssigneeName,
     reportSections,
@@ -981,15 +1090,15 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
     start_date: periodStart.toISOString(),
     end_date: now.toISOString(),
     weather_impacts: reportSections.show_weather_impacts ? weatherImpactsInWindow : [],
+    schedule_adjustments: reportSections.show_schedule_adjustments ? scheduleAdjustmentsInWindow : [],
     vitals: {
       tasks_completed_count: completedTaskCount,
       open_tasks_count: Math.max(0, totalTaskCount - completedTaskCount),
-      project_end_date:
-        scopedTasks.reduce((max, t) => {
-          const d = t?.due_date;
-          if (!d) return max;
-          return !max || d > max ? d : max;
-        }, null) || selectedProject?.due_date || null,
+      project_end_date: resolveReportProjectEndDate({
+        project: selectedProject,
+        tasks: scopedTasks,
+        keepOriginalCompletionDate,
+      }),
       ...(scheduleVitals ? { ...scheduleVitals } : {}),
     },
     last_week_done: lastWeekDone,
@@ -1043,6 +1152,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
 
       const v = data.vitals;
       const wiCount = (data.weather_impacts || []).length;
+      const saCount = (data.schedule_adjustments || []).length;
       const openCount = v?.open_tasks_count ?? Math.max(0, totalTaskCount - completedTaskCount);
 
       const totalProjectsInScope = selectedProject ? 1 : effectiveIncludedProjectIds.length;
@@ -1078,6 +1188,11 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
       if (wiCount > 0) {
         parts.push(
           p(wiCount === 1 ? 'weather_records_one' : 'weather_records_other', { count: wiCount }),
+        );
+      }
+      if (saCount > 0) {
+        parts.push(
+          p(saCount === 1 ? 'schedule_records_one' : 'schedule_records_other', { count: saCount }),
         );
       }
 
@@ -1116,6 +1231,9 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
       }
       if (wiCount > 0) {
         highlights.push({ type: 'weather', count: wiCount });
+      }
+      if (saCount > 0) {
+        highlights.push({ type: 'schedule_adjustments', count: saCount });
       }
 
       return {
@@ -1165,6 +1283,8 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
         return `${p('schedule_business_days')}: ${item.current}/${item.total}${
           item.pct != null ? ` (${item.pct}%)` : ''
         }`;
+      case 'schedule_adjustments':
+        return `${item.count} ${p('schedule_improvements')}`;
       case 'last_week':
         return `${item.count} — ${p('last_week')}`;
       case 'this_week':

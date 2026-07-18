@@ -19,6 +19,7 @@ export {
   addBusinessDays,
   inclusiveBusinessDaysLost,
   inclusiveBusinessDaysInRange,
+  workdaysGainedBetween,
   buildFederalHolidayMap,
   businessDaysBetween,
 } from './utils/usBusinessCalendar.js';
@@ -140,8 +141,21 @@ export * from './services/progressReportService.js';
 export * from './utils/projectSmartNotifications.js';
 export * from './services/brandingService.js';
 export * from './services/weatherImpactsService.js';
+export * from './services/scheduleAdjustmentsService.js';
 export * from './services/profilePhotosService.js';
 export * from './services/workStatusService.js';
+
+export {
+  getTaskEndDate,
+  getTaskDurationDays,
+  suggestWorkdaysGained,
+  buildPullForwardPreview,
+  snapshotsFromCandidates,
+  collectFsSuccessorIds,
+  getEarliestAllowedStartForPullForward,
+  resolveReportProjectEndDate,
+  resolveReportScheduleDueDate,
+} from './utils/schedulePullForward.js';
 
 export {
   todayIso,

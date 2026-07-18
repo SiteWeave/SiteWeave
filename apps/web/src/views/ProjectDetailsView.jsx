@@ -8,6 +8,10 @@ import {
     deleteTaskPhoto,
     fetchTaskPhotos,
     listWeatherImpactsForProject,
+    listScheduleAdjustmentsForProject,
+    maybeCreateEarlyCompletionAdjustment,
+    suggestWorkdaysGained,
+    getTaskEndDate as getSharedTaskEndDate,
     reorderTaskPhotos,
     updateTaskPhoto,
     uploadTaskPhotoSet,
@@ -42,6 +46,7 @@ import MsProjectImportModal from '../components/MsProjectImportModal';
 import ProgressReportModal from '../components/ProgressReportModal';
 import WeatherImpactModal from '../components/WeatherImpactModal';
 import WeatherDelayMarker from '../components/WeatherDelayMarker';
+import ScheduleGainReviewModal from '../components/ScheduleGainReviewModal';
 import { applyScheduleToWeatherImpact } from '../utils/weatherScheduleApply';
 import PermissionGuard from '../components/PermissionGuard';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -223,6 +228,9 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [selectedWeatherImpact, setSelectedWeatherImpact] = useState(null);
     const [projectRefreshNonce, setProjectRefreshNonce] = useState(0);
     const [weatherImpacts, setWeatherImpacts] = useState([]);
+    const [scheduleAdjustments, setScheduleAdjustments] = useState([]);
+    const [showScheduleGainModal, setShowScheduleGainModal] = useState(false);
+    const [selectedScheduleAdjustment, setSelectedScheduleAdjustment] = useState(null);
     const [applyingWeatherImpactId, setApplyingWeatherImpactId] = useState(null);
     const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
@@ -280,21 +288,31 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     useEffect(() => {
         if (!state.selectedProjectId) {
             setWeatherImpacts([]);
+            setScheduleAdjustments([]);
             return;
         }
         const ac = new AbortController();
         (async () => {
             try {
-                const rows = await listWeatherImpactsForProject(
-                    supabaseClient,
-                    state.selectedProjectId,
-                    state.currentOrganization?.id || null,
-                );
-                if (!ac.signal.aborted) setWeatherImpacts(rows || []);
+                const [weatherRows, adjustmentRows] = await Promise.all([
+                    listWeatherImpactsForProject(
+                        supabaseClient,
+                        state.selectedProjectId,
+                        state.currentOrganization?.id || null,
+                    ),
+                    listScheduleAdjustmentsForProject(supabaseClient, state.selectedProjectId, {
+                        status: ['pending', 'applied'],
+                    }),
+                ]);
+                if (!ac.signal.aborted) {
+                    setWeatherImpacts(weatherRows || []);
+                    setScheduleAdjustments(adjustmentRows || []);
+                }
             } catch (e) {
                 if (!ac.signal.aborted) {
-                    console.error('Error loading weather impacts:', e);
+                    console.error('Error loading schedule impacts:', e);
                     setWeatherImpacts([]);
+                    setScheduleAdjustments([]);
                 }
             }
         })();
@@ -304,6 +322,37 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const pendingUnappliedWeatherImpacts = useMemo(
         () => (weatherImpacts || []).filter((impact) => impact.schedule_shift_applied !== true),
         [weatherImpacts],
+    );
+
+    const pendingScheduleAdjustments = useMemo(
+        () => (scheduleAdjustments || []).filter((row) => row.status === 'pending'),
+        [scheduleAdjustments],
+    );
+
+    const maybeSuggestScheduleGain = useCallback(
+        async (completedTask) => {
+            if (!project?.id || !completedTask?.id) return;
+            try {
+                const days = suggestWorkdaysGained(completedTask);
+                if (days < 1) return;
+                const planned = getSharedTaskEndDate(completedTask);
+                await maybeCreateEarlyCompletionAdjustment(supabaseClient, {
+                    organizationId: project.organization_id,
+                    projectId: project.id,
+                    task: { ...completedTask, due_date: planned || completedTask.due_date },
+                    plannedFinish: planned,
+                    userId: state.user?.id || null,
+                    workdaysGained: days,
+                    actualFinish: completedTask.completed_at
+                        ? String(completedTask.completed_at).slice(0, 10)
+                        : new Date().toISOString().slice(0, 10),
+                });
+                setProjectRefreshNonce((n) => n + 1);
+            } catch (e) {
+                console.error('Failed to create schedule gain suggestion:', e);
+            }
+        },
+        [project, state.user?.id],
     );
 
     useEffect(() => {
@@ -1944,6 +1993,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                     buildTaskCompletionPhotoDetails(completedTask)
                 );
                 await notifySuccessorAssignees(completedTask);
+                await maybeSuggestScheduleGain(completedTask);
             } else if (transitionFromComplete && state.user && prev) {
                 logTaskUncompleted(prev, state.user, prev.project_id);
                 const { error: clearHistoryError } = await supabaseClient
@@ -2163,29 +2213,34 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     };
 
     const handleBulkComplete = async (taskIds) => {
-        const { error } = await supabaseClient.from('tasks').update({ completed: true, percent_complete: 100 }).in('id', taskIds);
+        const completedAt = new Date().toISOString();
+        const { error } = await supabaseClient
+            .from('tasks')
+            .update({ completed: true, percent_complete: 100, completed_at: completedAt })
+            .in('id', taskIds);
         if (error) {
             addToast(t('toast.error_completing_tasks', { message: error.message }), 'error');
         } else {
             // Update each task in the state
-            taskIds.forEach(taskId => {
+            for (const taskId of taskIds) {
                 const sourceTask = allTasks.find((task) => task.id === taskId) || tasksState.find((task) => task.id === taskId);
-                const updatedTask = { ...sourceTask, completed: true, percent_complete: 100 };
+                const updatedTask = {
+                    ...sourceTask,
+                    completed: true,
+                    percent_complete: 100,
+                    completed_at: completedAt,
+                };
                 dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
                 setProjectTasksList(prev => prev.map((task) => task.id === taskId ? updatedTask : task));
-            });
-            if (project && state.user) {
-                taskIds.forEach((taskId) => {
-                    const row = allTasks.find((x) => x.id === taskId) || tasksState.find((x) => x.id === taskId);
-                    if (row) {
-                        logTaskCompleted(
-                            { ...row, completed: true, organization_id: row.organization_id ?? project.organization_id },
-                            state.user,
-                            project.id,
-                            buildTaskCompletionPhotoDetails(row)
-                        );
-                    }
-                });
+                if (project && state.user && sourceTask) {
+                    logTaskCompleted(
+                        { ...updatedTask, organization_id: sourceTask.organization_id ?? project.organization_id },
+                        state.user,
+                        project.id,
+                        buildTaskCompletionPhotoDetails(sourceTask)
+                    );
+                    await maybeSuggestScheduleGain(updatedTask);
+                }
             }
             addToast(t('toast.tasks_completed_successfully', { count: taskIds.length }), 'success');
             setSelectedTasks([]);
@@ -2575,6 +2630,43 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                     onApplied={() => setProjectRefreshNonce((n) => n + 1)}
                 />
             )}
+
+            {showScheduleGainModal && project && selectedScheduleAdjustment ? (
+                <ScheduleGainReviewModal
+                    project={project}
+                    allTasks={allTasks}
+                    taskDependencies={taskDependencies}
+                    adjustment={selectedScheduleAdjustment}
+                    onClose={() => {
+                        setShowScheduleGainModal(false);
+                        setSelectedScheduleAdjustment(null);
+                    }}
+                    onChanged={() => setProjectRefreshNonce((n) => n + 1)}
+                />
+            ) : null}
+
+            {pendingScheduleAdjustments.length > 0 && canEditProjects ? (
+                <div className="mb-4 flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-emerald-950">
+                        {t(
+                            pendingScheduleAdjustments.length === 1
+                                ? 'scheduleAdjustments.banner_one'
+                                : 'scheduleAdjustments.banner_other',
+                            { count: pendingScheduleAdjustments.length },
+                        )}
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setSelectedScheduleAdjustment(pendingScheduleAdjustments[0]);
+                            setShowScheduleGainModal(true);
+                        }}
+                        className="shrink-0 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
+                    >
+                        {t('scheduleAdjustments.review_cta')}
+                    </button>
+                </div>
+            ) : null}
 
             {pendingUnappliedWeatherImpacts.length > 0 && canEditProjects ? (
                 <div className="mb-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">

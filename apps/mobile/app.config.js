@@ -5,9 +5,7 @@ module.exports = function(env) {
       slug: "siteweave-mobile",
       version: "1.0.6",
       main: "./main.js",
-      runtimeVersion: {
-        policy: "appVersion",
-      },
+      runtimeVersion: "1.0.6",
       updates: {
         url: "https://u.expo.dev/0e8aedb2-5084-4046-a750-5032e61afd9a",
         checkAutomatically: "ON_LOAD",
