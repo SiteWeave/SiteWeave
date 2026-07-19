@@ -1453,8 +1453,17 @@
       "status_pending": "SMS: Pendiente",
       "status_confirmed": "SMS: Confirmado",
       "status_opted_out": "SMS: Dado de baja",
-      "share_link": "Enlace de consentimiento"
+      "share_link": "Enlace de consentimiento",
+      "demo_badge": "Página de ejemplo de inscripción — solo ilustración (no se registra consentimiento)",
+      "demo_success_title": "Confirmación de ejemplo",
+      "demo_success_body": "Esto es solo una demostración del flujo de consentimiento SMS. El consentimiento real usa un enlace personal de tu jefe de proyecto."
     }
+  },
+  "not_found": {
+    "title": "Página no encontrada",
+    "body": "Ese enlace no existe o puede haberse movido.",
+    "go_home": "Ir al panel",
+    "go_login": "Iniciar sesión"
   },
   "contacts": {
     "title": "Contactos",
@@ -2447,6 +2456,8 @@
     "sync_tap_retry": "Toca para reintentar",
     "sync_success_title": "Sincronizado",
     "sync_success_body": "{{count}} cambio(s) sincronizado(s) correctamente.",
+    "sync_noop_empty": "No queda nada por sincronizar.",
+    "sync_noop_still_pending": "Todavía hay {{count}} cambio(s) en espera. Revisa tu conexión e inténtalo de nuevo.",
     "sync_partial_title": "Sincronización parcial",
     "sync_partial_body": "Se sincronizaron {{processed}} cambio(s). {{remaining}} siguen en espera.",
     "sync_failed_title": "No se pudo sincronizar",

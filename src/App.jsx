@@ -12,6 +12,7 @@ import LoginView from './views/LoginView'
 import GuestTaskShareView from './views/GuestTaskShareView'
 import GuestCloseoutReviewView from './views/GuestCloseoutReviewView'
 import SmsConsentView from './views/SmsConsentView'
+import NotFoundView from './views/NotFoundView'
 import SetupWizardModal from './components/SetupWizardModal'
 import DesktopOnboardingHost from './components/DesktopOnboardingHost'
 import DirectoryManagementModal from './components/DirectoryManagementModal'
@@ -219,6 +220,9 @@ function App() {
   if (location.pathname.startsWith('/guest/tasks/')) {
     return <GuestTaskShareView />
   }
+  if (location.pathname === '/sms-opt-in') {
+    return <SmsConsentView demo />
+  }
   if (location.pathname.startsWith('/sms-consent/')) {
     return <SmsConsentView />
   }
@@ -238,9 +242,10 @@ function App() {
         <Route path="/guest/punch-list/:token" element={<GuestCloseoutReviewView />} />
         <Route path="/guest/tasks/:token" element={<GuestTaskShareView />} />
         <Route path="/sms-consent/:token" element={<SmsConsentView />} />
+        <Route path="/sms-opt-in" element={<SmsConsentView demo />} />
         <Route path="/signup" element={<SignUpView />} />
         <Route path="/login" element={<LoginView />} />
-        <Route path="*" element={<LoginView />} />
+        <Route path="*" element={<NotFoundView />} />
       </Routes>
     )
   }

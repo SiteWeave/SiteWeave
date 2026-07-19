@@ -6,6 +6,7 @@ import InviteAcceptPage from './components/InviteAcceptPage'
 import GuestTaskShareView from './views/GuestTaskShareView'
 import GuestCloseoutReviewView from './views/GuestCloseoutReviewView'
 import SmsConsentView from './views/SmsConsentView'
+import NotFoundView from './views/NotFoundView'
 import ForcePasswordReset from './components/ForcePasswordReset'
 import AppShell from './layouts/AppShell'
 import LoginView from './views/LoginView'
@@ -284,6 +285,7 @@ export default function AppStandalone() {
       <Route path={ROUTE_PATHS.guestTaskShare} element={<GuestTaskShareView />} />
       <Route path={ROUTE_PATHS.guestPunchListReview} element={<GuestCloseoutReviewView />} />
       <Route path={ROUTE_PATHS.smsConsent} element={<SmsConsentView />} />
+      <Route path={ROUTE_PATHS.smsOptIn} element={<SmsConsentView demo />} />
       <Route path={ROUTE_PATHS.login} element={<LoginView />} />
       <Route path={ROUTE_PATHS.signup} element={<SignUpView />} />
       <Route path={ROUTE_PATHS.projectInvite} element={<ProjectInviteAcceptPage />} />
@@ -315,6 +317,7 @@ export default function AppStandalone() {
         <Route path={ROUTE_PATHS.settings} element={<RouteStateSync view="Settings"><LazyViewWrapper><SettingsView /></LazyViewWrapper></RouteStateSync>} />
         <Route path={ROUTE_PATHS.notifications} element={<RouteStateSync view="Settings"><LazyViewWrapper><SettingsView /></LazyViewWrapper></RouteStateSync>} />
       </Route>
+      <Route path="*" element={<NotFoundView />} />
     </Routes>
     </ToastProvider>
   )

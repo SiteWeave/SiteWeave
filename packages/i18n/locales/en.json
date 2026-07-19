@@ -1452,8 +1452,17 @@
       "status_pending": "SMS: Pending",
       "status_confirmed": "SMS: Confirmed",
       "status_opted_out": "SMS: Opted out",
-      "share_link": "Consent link"
+      "share_link": "Consent link",
+      "demo_badge": "Sample opt-in page — for illustration (no consent is recorded)",
+      "demo_success_title": "Sample confirmation",
+      "demo_success_body": "This is only a demonstration of the SMS opt-in flow. Real consent uses a personal link from your project manager."
     }
+  },
+  "not_found": {
+    "title": "Page not found",
+    "body": "That link doesn’t exist or may have moved.",
+    "go_home": "Go to dashboard",
+    "go_login": "Sign in"
   },
   "contacts": {
     "title": "Contacts",
@@ -2446,6 +2455,8 @@
     "sync_tap_retry": "Tap to retry",
     "sync_success_title": "Synced",
     "sync_success_body": "{{count}} change(s) synced successfully.",
+    "sync_noop_empty": "Nothing left to sync.",
+    "sync_noop_still_pending": "{{count}} change(s) are still waiting. Check your connection and try again.",
     "sync_partial_title": "Partially synced",
     "sync_partial_body": "Synced {{processed}} change(s). {{remaining}} still waiting.",
     "sync_failed_title": "Could not sync",

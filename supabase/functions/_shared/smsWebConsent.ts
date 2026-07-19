@@ -21,7 +21,7 @@ export function buildPublicAppBaseUrl(): string {
   return (
     Deno.env.get('PUBLIC_APP_URL') ||
     Deno.env.get('DESKTOP_APP_URL') ||
-    'https://www.siteweave.org'
+    'https://app.siteweave.org'
   ).replace(/\/$/, '')
 }
 

@@ -24,6 +24,8 @@ export const ROUTE_PATHS = {
   guestTaskShare: '/guest/tasks/:token',
   guestPunchListReview: '/guest/punch-list/:token',
   smsConsent: '/sms-consent/:token',
+  /** Public sample opt-in page for SMS program registration / review */
+  smsOptIn: '/sms-opt-in',
 }
 
 export const PRIMARY_NAV_ITEMS = [

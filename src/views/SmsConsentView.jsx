@@ -7,6 +7,10 @@ import { confirmSmsWebConsent, fetchSmsConsentRequest } from '../utils/smsWebCon
 const TERMS_URL = 'https://www.siteweave.org/legal/terms-of-service';
 const PRIVACY_URL = 'https://www.siteweave.org/legal/privacy-policy';
 
+/** Sample values for the public registration / review page at /sms-opt-in */
+const DEMO_ORG = 'Example Construction Co.';
+const DEMO_MASKED_PHONE = '+1 (***) ***-1234';
+
 function StatusMessage({ title, body, variant = 'neutral' }) {
   const tones = {
     neutral: 'border-gray-200 bg-white text-gray-800',
@@ -22,10 +26,10 @@ function StatusMessage({ title, body, variant = 'neutral' }) {
   );
 }
 
-export default function SmsConsentView() {
+export default function SmsConsentView({ demo = false }) {
   const { token } = useParams();
   const { t } = useTranslation();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!demo);
   const [submitting, setSubmitting] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [request, setRequest] = useState(null);
@@ -34,6 +38,11 @@ export default function SmsConsentView() {
   const [submitError, setSubmitError] = useState(null);
 
   useEffect(() => {
+    if (demo) {
+      setLoading(false);
+      return undefined;
+    }
+
     let cancelled = false;
     (async () => {
       if (!token) {
@@ -54,11 +63,17 @@ export default function SmsConsentView() {
       }
     })();
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, demo]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!agreed || submitting || confirmed) return;
+
+    if (demo) {
+      setConfirmed(true);
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -79,7 +94,7 @@ export default function SmsConsentView() {
     );
   }
 
-  if (loadError === 'not_found') {
+  if (!demo && loadError === 'not_found') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
         <div className="w-full max-w-md">
@@ -93,7 +108,7 @@ export default function SmsConsentView() {
     );
   }
 
-  if (request?.status === 'opted_out') {
+  if (!demo && request?.status === 'opted_out') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
         <div className="w-full max-w-md">
@@ -107,7 +122,7 @@ export default function SmsConsentView() {
     );
   }
 
-  if (request?.status === 'expired') {
+  if (!demo && request?.status === 'expired') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
         <div className="w-full max-w-md">
@@ -121,21 +136,22 @@ export default function SmsConsentView() {
     );
   }
 
-  if (confirmed || request?.status === 'confirmed') {
+  if (confirmed || (!demo && request?.status === 'confirmed')) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
         <div className="w-full max-w-md">
           <StatusMessage
             variant="success"
-            title={t('sms.web_consent.success_title')}
-            body={t('sms.web_consent.success_body')}
+            title={demo ? t('sms.web_consent.demo_success_title') : t('sms.web_consent.success_title')}
+            body={demo ? t('sms.web_consent.demo_success_body') : t('sms.web_consent.success_body')}
           />
         </div>
       </div>
     );
   }
 
-  const orgName = request?.organizationName || t('sms.web_consent.default_org');
+  const orgName = demo ? DEMO_ORG : (request?.organizationName || t('sms.web_consent.default_org'));
+  const maskedPhone = demo ? DEMO_MASKED_PHONE : (request?.maskedPhone || '***');
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-8">
@@ -146,6 +162,11 @@ export default function SmsConsentView() {
           <p className="mt-2 text-sm text-slate-600">
             {t('sms.web_consent.page_subtitle', { org: orgName })}
           </p>
+          {demo ? (
+            <p className="mt-3 text-xs font-medium text-slate-500">
+              {t('sms.web_consent.demo_badge')}
+            </p>
+          ) : null}
         </div>
 
         <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -173,7 +194,7 @@ export default function SmsConsentView() {
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               {t('sms.web_consent.phone_label')}
             </p>
-            <p className="mt-1 text-base font-semibold text-slate-900">{request?.maskedPhone || '***'}</p>
+            <p className="mt-1 text-base font-semibold text-slate-900">{maskedPhone}</p>
           </div>
 
           <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 px-4 py-3">
