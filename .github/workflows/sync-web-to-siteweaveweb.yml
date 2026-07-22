@@ -120,7 +120,26 @@ jobs:
               "path.resolve(__dirname, '../../packages/design-tokens/src/index.js')",
               "path.resolve(__dirname, 'packages/design-tokens/src/index.js')"
             );
+            v = v.replaceAll(
+              "path.resolve(__dirname, '../../packages/design-tokens/src/mobile.js')",
+              "path.resolve(__dirname, 'packages/design-tokens/src/mobile.js')"
+            );
             fs.writeFileSync(vitePath, v);
+          }
+
+          // Belt-and-suspenders: rewrite any leftover monorepo-relative CSS package paths.
+          const cssPath = path.join(root, 'src', 'index.css');
+          if (fs.existsSync(cssPath)) {
+            let css = fs.readFileSync(cssPath, 'utf8');
+            css = css.replaceAll(
+              '../../../packages/design-tokens/',
+              '../packages/design-tokens/'
+            );
+            css = css.replaceAll(
+              '../../packages/design-tokens/',
+              '../packages/design-tokens/'
+            );
+            fs.writeFileSync(cssPath, css);
           }
           NODE
 

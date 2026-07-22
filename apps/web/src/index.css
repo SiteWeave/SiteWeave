@@ -1,11 +1,13 @@
 @import "tailwindcss";
-@import "../../../packages/design-tokens/src/web.css";
+/* Package export resolves in monorepo (apps/web) and SiteWeaveWeb (synced packages/). */
+@import "@siteweave/design-tokens/css";
 
-/* Explicit scan paths so CI/Netlify builds include all utilities (v4 auto-detection can miss files). */
+/* Explicit scan paths so CI/Netlify builds include all utilities (v4 auto-detection can miss files).
+   Prefer node_modules links so paths work in both layouts after npm install. */
 @source "../index.html";
 @source "./**/*.{js,jsx,ts,tsx}";
-@source "../packages/core-logic/src/**/*.{js,jsx,ts,tsx}";
-@source "../../../packages/design-tokens/src/**/*.{js,css}";
+@source "../node_modules/@siteweave/core-logic/src/**/*.{js,jsx,ts,tsx}";
+@source "../node_modules/@siteweave/design-tokens/src/**/*.{js,css}";
 
 /* Professional styling matching main app */
 body {
