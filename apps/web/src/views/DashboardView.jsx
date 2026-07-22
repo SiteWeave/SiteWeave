@@ -17,7 +17,9 @@ import ProjectBoardView from '../components/ProjectBoardView';
 import ProjectListView from '../components/ProjectListView';
 import PermissionGuard from '../components/PermissionGuard';
 import ProjectLimitReachedModal from '../components/ProjectLimitReachedModal';
+import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
 import { useProjectShortcuts } from '../hooks/useKeyboardShortcuts';
+import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import {
   canCreateProject,
   isPersonalWorkspace,
@@ -103,9 +105,11 @@ function DashboardView() {
     const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
     const [showProjectLimitModal, setShowProjectLimitModal] = useState(false);
+    const [showCommsUpgrade, setShowCommsUpgrade] = useState(false);
     const [checklistDismissed, setChecklistDismissedState] = useState(() =>
         state.user?.id ? getChecklistDismissed(state.user.id) : false,
     );
+    const { canProgressReports } = useWorkspaceTier();
 
     useEffect(() => {
         if (!state.user?.id) return;
@@ -206,6 +210,10 @@ function DashboardView() {
             return;
         }
         if (itemId === 'report') {
+            if (!canProgressReports) {
+                setShowCommsUpgrade(true);
+                return;
+            }
             setShowProgressReportModal(true);
         }
     };
@@ -639,11 +647,22 @@ function DashboardView() {
                                 <PermissionGuard permission="can_manage_org_progress_reports">
                                     <button
                                         type="button"
-                                        onClick={() => setShowProgressReportModal(true)}
+                                        onClick={() => {
+                                            if (!canProgressReports) {
+                                                setShowCommsUpgrade(true);
+                                                return;
+                                            }
+                                            setShowProgressReportModal(true);
+                                        }}
                                         title={t('dashboard.org_reports_title')}
                                         data-onboarding="progress-reports"
-                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-emerald-600 text-white hover:bg-emerald-700"
+                                        className="relative whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-emerald-600 text-white hover:bg-emerald-700"
                                     >
+                                        {!canProgressReports && (
+                                            <svg className="w-3 h-3 absolute -top-1 -right-1 text-amber-200" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
+                                                <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                                            </svg>
+                                        )}
                                         {t('dashboard.org_reports')}
                                     </button>
                                 </PermissionGuard>
@@ -834,6 +853,11 @@ function DashboardView() {
             <ProjectLimitReachedModal
                 isOpen={showProjectLimitModal}
                 onClose={() => setShowProjectLimitModal(false)}
+            />
+            <UpgradeRequiredModal
+                isOpen={showCommsUpgrade}
+                onClose={() => setShowCommsUpgrade(false)}
+                feature="progress_reports"
             />
             <ConfirmDialog
                 isOpen={Boolean(projectToTrash)}
