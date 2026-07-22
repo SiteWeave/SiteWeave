@@ -47,6 +47,8 @@ import ShareModal from '../components/ShareModal';
 import SaveAsTemplateModal from '../components/SaveAsTemplateModal';
 import MsProjectImportModal from '../components/MsProjectImportModal';
 import ProgressReportModal from '../components/ProgressReportModal';
+import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
+import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import WeatherImpactModal from '../components/WeatherImpactModal';
 import WeatherDelayMarker from '../components/WeatherDelayMarker';
 import ScheduleGainReviewModal from '../components/ScheduleGainReviewModal';
@@ -291,6 +293,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const canCreateProjects = projectPerms.can_create_projects === true;
     const canManageProgressReports = projectPerms.can_manage_progress_reports === true;
     const canEditTasks = projectPerms.can_edit_tasks === true;
+    const { canPing, canProgressReports } = useWorkspaceTier();
+    const [upgradeFeature, setUpgradeFeature] = useState(null);
 
     const phaseControl = useProjectPhases(project?.id, project);
     const {
@@ -1190,6 +1194,10 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     };
 
     const handlePingAssignee = async (task) => {
+        if (!canPing) {
+            setUpgradeFeature('pings');
+            return;
+        }
         const smsEnabled = isSmsNotificationsEnabled();
         const fallbackContact = task.assignee_id
             ? contacts.find((contact) => contact.id === task.assignee_id)
@@ -2606,10 +2614,21 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                     )}
                     {canManageProgressReports && (
                         <button type="button" 
-                            onClick={() => setShowProgressReportModal(true)}
-                            className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg shadow-xs hover:bg-green-700 transition-colors flex items-center gap-2"
+                            onClick={() => {
+                                if (!canProgressReports) {
+                                    setUpgradeFeature('progress_reports');
+                                    return;
+                                }
+                                setShowProgressReportModal(true);
+                            }}
+                            className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg shadow-xs hover:bg-green-700 transition-colors flex items-center gap-2 relative"
                             title={t('projectDetail.progress_reports_title')}
                         >
+                            {!canProgressReports && (
+                                <svg className="w-3 h-3 absolute -top-1 -right-1 text-amber-600" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
+                                    <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                                </svg>
+                            )}
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                             </svg>
@@ -2626,6 +2645,12 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             {showProgressReportModal && canManageProgressReports && (
                 <ProgressReportModal projectId={project.id} onClose={() => setShowProgressReportModal(false)} />
             )}
+
+            <UpgradeRequiredModal
+                isOpen={Boolean(upgradeFeature)}
+                onClose={() => setUpgradeFeature(null)}
+                feature={upgradeFeature || 'exports'}
+            />
 
             {showSaveAsTemplateModal && canCreateProjects && (
                 <SaveAsTemplateModal 
@@ -3097,6 +3122,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                                     allTasks={allTasks}
                                                                                     onOpenDependencyDrawer={setDependencyDrawerTaskId}
                                                                                     onPingAssignee={handlePingAssignee}
+                                                                                    pingLocked={!canPing}
                                                                                     onCopyGuestLink={handleCopyGuestTaskLink}
                                                                                     onRequestAssigneeSmsConsent={
                                                                                         isSmsNotificationsEnabled()
@@ -3173,6 +3199,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                             allTasks={allTasks}
                                                                             onOpenDependencyDrawer={setDependencyDrawerTaskId}
                                                                             onPingAssignee={handlePingAssignee}
+                                                                            pingLocked={!canPing}
                                                                             onCopyGuestLink={handleCopyGuestTaskLink}
                                                                             onRequestAssigneeSmsConsent={
                                                                                 isSmsNotificationsEnabled()
