@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppContext, supabaseClient } from '../context/AppContext';
@@ -7,6 +7,7 @@ import Icon from './Icon';
 import LiveActivityIndicator from './LiveActivityIndicator';
 import EditableProfileAvatar from './EditableProfileAvatar';
 import TrialCountdownBanner from './TrialCountdownBanner';
+import GlobalSearch from './GlobalSearch';
 import { VIEW_ROUTE_PATHS } from '../config/routes';
 
 const ICONS = {
@@ -22,6 +23,17 @@ const ICONS = {
 
 const NAV_KEYS = { Dashboard: 'dashboard', Projects: 'projects', Calendar: 'calendar', Team: 'trade_partners', Organization: 'organization', Settings: 'settings' };
 
+const ALL_NAV_ITEMS = [
+    { id: 'Dashboard', view: 'Dashboard' },
+    { id: 'Projects', view: 'Projects' },
+    { id: 'Calendar', view: 'Calendar' },
+    { id: 'Team', view: 'Messages' },
+    { id: 'Organization', view: 'Organization' },
+    { id: 'Settings', view: 'Settings' },
+];
+
+const GUEST_HIDDEN_VIEWS = new Set(['Messages', 'Organization', 'Contacts', 'Team']);
+
 function Sidebar() {
     const { t } = useTranslation();
     const { state, dispatch } = useAppContext();
@@ -29,7 +41,33 @@ function Sidebar() {
     const navigate = useNavigate();
     const location = useLocation();
     const [isCollapsed, setIsCollapsed] = useState(false);
+    const [searchOpen, setSearchOpen] = useState(false);
     const projects = state.projects || [];
+
+    const isGuestOnly = Boolean(state.isProjectCollaborator && !state.currentOrganization);
+    const navItems = useMemo(() => {
+        if (!isGuestOnly) return ALL_NAV_ITEMS;
+        return ALL_NAV_ITEMS.filter((item) => !GUEST_HIDDEN_VIEWS.has(item.view) && !GUEST_HIDDEN_VIEWS.has(item.id));
+    }, [isGuestOnly]);
+
+    useEffect(() => {
+        const onKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                setSearchOpen(true);
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, []);
+
+    useEffect(() => {
+        if (!isGuestOnly) return;
+        const guestHiddenPaths = ['/organization', '/trade-partners', '/team', '/team/directory', '/messages'];
+        if (guestHiddenPaths.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`))) {
+            navigate('/', { replace: true });
+        }
+    }, [isGuestOnly, location.pathname, navigate]);
 
     const navigateForView = (targetView, { projectId = null } = {}) => {
         if (projectId) {
@@ -97,20 +135,12 @@ function Sidebar() {
             window.dispatchEvent(new CustomEvent('restartOnboarding'));
         }
     };
-    const navItems = [
-        { id: 'Dashboard', view: 'Dashboard' },
-        { id: 'Projects', view: 'Projects' },
-        { id: 'Calendar', view: 'Calendar' },
-        { id: 'Team', view: 'Messages' },
-        { id: 'Organization', view: 'Organization' },
-        { id: 'Settings', view: 'Settings' }
-    ];
-
     const stopSidebarWheelPropagation = (event) => {
         event.stopPropagation();
     };
 
     return (
+        <>
         <aside
             className={`${isCollapsed ? 'w-16' : 'w-64'} min-w-16 h-screen sticky top-0 bg-white flex flex-col flex-shrink-0 border-r border-gray-100 overflow-hidden overscroll-y-contain transition-all duration-300`}
             onWheel={stopSidebarWheelPropagation}
@@ -119,14 +149,26 @@ function Sidebar() {
                 {!isCollapsed && (
                     <span>SiteWeave</span>
                 )}
-                <button type="button" 
-                    onClick={() => setIsCollapsed(!isCollapsed)}
-                    className="ml-auto p-1.5 hover:bg-gray-100 rounded transition-colors"
-                    title={isCollapsed ? t('common.expand_sidebar') : t('common.collapse_sidebar')}
-                    aria-label={isCollapsed ? t('common.expand_sidebar') : t('common.collapse_sidebar')}
-                >
-                    <Icon path={isCollapsed ? "M11 19l-7-7 7-7m8 14l-7-7 7-7" : "M13 5l7 7-7 7M5 5l7 7-7 7"} className="w-4 h-4" />
-                </button>
+                <div className="ml-auto flex items-center gap-1">
+                    <button
+                        type="button"
+                        onClick={() => setSearchOpen(true)}
+                        className="p-1.5 hover:bg-gray-100 rounded transition-colors text-gray-600"
+                        title={t('common.search', { defaultValue: 'Search' })}
+                        aria-label={t('common.search', { defaultValue: 'Search' })}
+                        data-testid="open-global-search"
+                    >
+                        <Icon path="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" className="w-4 h-4" />
+                    </button>
+                    <button type="button" 
+                        onClick={() => setIsCollapsed(!isCollapsed)}
+                        className="p-1.5 hover:bg-gray-100 rounded transition-colors"
+                        title={isCollapsed ? t('common.expand_sidebar') : t('common.collapse_sidebar')}
+                        aria-label={isCollapsed ? t('common.expand_sidebar') : t('common.collapse_sidebar')}
+                    >
+                        <Icon path={isCollapsed ? "M11 19l-7-7 7-7m8 14l-7-7 7-7" : "M13 5l7 7-7 7M5 5l7 7-7 7"} className="w-4 h-4" />
+                    </button>
+                </div>
             </div>
             {/* Organization Display */}
             {!isCollapsed && (
@@ -262,6 +304,8 @@ function Sidebar() {
                 <LiveActivityIndicator />
             </div>
         </aside>
+        <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
+        </>
     );
 }
 
