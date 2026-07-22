@@ -3,6 +3,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { getBearerToken, isServiceRoleToken } from '../_shared/auth.ts'
 import { buildProgressReportEmail } from '../_shared/progressReportEmailTemplates.ts'
 import { buildBrandedProgressReportPdf } from '../_shared/buildProgressReportPdf.ts'
 import { defaultProgressReportPdfFilename } from '../_shared/progressReportPdf.ts'
@@ -59,9 +60,8 @@ serve(async (req) => {
     const supabaseServiceKey = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim()
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 
-    const authHeader = req.headers.get('Authorization') ?? ''
-    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-    const isServiceRole = token === supabaseServiceKey
+    const token = getBearerToken(req) ?? ''
+    const isServiceRole = isServiceRoleToken(token)
 
     let callerUserId: string | null = null
     if (!isServiceRole) {

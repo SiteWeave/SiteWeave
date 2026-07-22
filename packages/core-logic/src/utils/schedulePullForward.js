@@ -269,6 +269,15 @@ export function buildPullForwardPreview({
   };
 }
 
+/**
+ * True when pull-forward would move at least one incomplete FS successor.
+ * Used to avoid banner / pending rows that cannot be applied.
+ */
+export function hasMovablePullForwardSuccessors(args) {
+  const preview = buildPullForwardPreview(args || {});
+  return (preview.candidates || []).length > 0;
+}
+
 export function snapshotsFromCandidates(candidates = []) {
   return (candidates || [])
     .filter((c) => c.selected !== false)

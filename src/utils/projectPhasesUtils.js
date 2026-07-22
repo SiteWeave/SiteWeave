@@ -36,6 +36,43 @@ export function calculatePhaseProgressFromTasks(taskList) {
     return Math.round(sum / taskList.length);
 }
 
+/**
+ * Build phase rows with task-derived progress when tasks exist.
+ */
+export function buildPhasesWithDerivedProgress(phases, tasks) {
+    if (!phases?.length) return [];
+
+    const tasksByPhaseId = new Map();
+    for (const task of tasks || []) {
+        const phaseId = task.project_phase_id;
+        if (!phaseId) continue;
+        if (!tasksByPhaseId.has(phaseId)) tasksByPhaseId.set(phaseId, []);
+        tasksByPhaseId.get(phaseId).push(task);
+    }
+
+    return phases.map((phase) => {
+        const phaseTasks = tasksByPhaseId.get(phase.id) || [];
+        const progress =
+            phaseTasks.length > 0
+                ? calculatePhaseProgressFromTasks(phaseTasks)
+                : Math.max(0, Math.min(100, Number(phase.progress ?? 0) || 0));
+        return { ...phase, progress, tasks: phaseTasks };
+    });
+}
+
+/**
+ * Project % from all tasks when any exist (incl. unassigned); else phase-weighted fallback.
+ */
+export function computeProjectProgressPercent({ tasks = [], phases = [], projectDueDate = null } = {}) {
+    if (Array.isArray(tasks) && tasks.length > 0) {
+        return calculatePhaseProgressFromTasks(tasks);
+    }
+    if (Array.isArray(phases) && phases.length > 0) {
+        return calculateOverallPhaseProgress(phases);
+    }
+    return 0;
+}
+
 function getTaskEndDateForRollup(task) {
     if (task?.due_date) return task.due_date;
     if (!task?.start_date) return null;

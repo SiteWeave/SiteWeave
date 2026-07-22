@@ -3,9 +3,15 @@ import {
   addDaysToDateOnly,
   formatLocalDateRange,
   calculatePhaseProgressFromTasks,
+  buildPhasesWithDerivedProgress,
+  computeProjectProgressPercent,
 } from '@siteweave/core-logic';
 
-export { calculatePhaseProgressFromTasks };
+export {
+  calculatePhaseProgressFromTasks,
+  buildPhasesWithDerivedProgress,
+  computeProjectProgressPercent,
+};
 
 /** Default phase template (order 1..n). */
 export const DEFAULT_PHASE_TEMPLATE = [

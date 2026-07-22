@@ -85,6 +85,8 @@ export async function maybeCreateEarlyCompletionAdjustment(supabase, args) {
     userId = null,
     workdaysGained = 0,
     actualFinish = null,
+    tasks: tasksHint = null,
+    dependencies: dependenciesHint = null,
   } = args || {};
 
   const days = Math.max(0, Math.trunc(Number(workdaysGained) || 0));
@@ -104,6 +106,47 @@ export async function maybeCreateEarlyCompletionAdjustment(supabase, args) {
     actualFinish ||
     (task.completed_at ? String(task.completed_at).slice(0, 10) : null) ||
     new Date().toISOString().slice(0, 10);
+
+  let tasks = Array.isArray(tasksHint) ? tasksHint : null;
+  let dependencies = Array.isArray(dependenciesHint) ? dependenciesHint : null;
+
+  if (!tasks || !dependencies) {
+    const { data: taskRows, error: tasksError } = await supabase
+      .from('tasks')
+      .select(
+        'id, text, completed, percent_complete, completed_at, start_date, due_date, duration_days',
+      )
+      .eq('project_id', projectId);
+    if (tasksError) throw tasksError;
+    tasks = taskRows || [];
+    const taskIds = tasks.map((row) => row.id);
+    if (taskIds.length === 0) return null;
+
+    const { data: depRows, error: depsError } = await supabase
+      .from('task_dependencies')
+      .select('task_id, successor_task_id, dependency_type, lag_days')
+      .in('task_id', taskIds)
+      .eq('dependency_type', 'finish_to_start');
+    if (depsError) throw depsError;
+    const taskIdSet = new Set(taskIds);
+    dependencies = (depRows || []).filter((dep) => taskIdSet.has(dep.successor_task_id));
+  }
+
+  const { hasMovablePullForwardSuccessors } = await import('../utils/schedulePullForward.js');
+  const sourceTask =
+    (tasks || []).find((row) => row.id === task.id) ||
+    { ...task, completed: true, completed_at: actual };
+  if (
+    !hasMovablePullForwardSuccessors({
+      sourceTask,
+      tasks,
+      dependencies,
+      workdaysGained: days,
+      actualFinishDate: actual,
+    })
+  ) {
+    return null;
+  }
 
   return createScheduleAdjustment(supabase, {
     organization_id: organizationId,

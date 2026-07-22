@@ -238,6 +238,7 @@ function TaskModal({
                                     setDueDate(end);
                                 }}
                                 presets={datePresets}
+                                elevated
                             />
 
                         </div>

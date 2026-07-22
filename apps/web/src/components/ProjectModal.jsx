@@ -493,6 +493,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                         }}
                         presets={datePresets}
                         className="mb-4"
+                        elevated
                     />
 
                     <div className="mb-6">
@@ -521,7 +522,6 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                             </div>
                             <p className="text-xs text-gray-500 mt-1">
                                 {t('projectModal.email_invite_hint')}
-                                {ownerContactId && t('projectModal.auto_added_hint')}
                             </p>
                         </div>
 

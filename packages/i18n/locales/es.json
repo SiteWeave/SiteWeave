@@ -1740,7 +1740,6 @@
     "email_input_placeholder": "Ingresa correos (separados por coma o espacio)",
     "add": "Agregar",
     "email_invite_hint": "Agrega correos de personas sin cuenta. Recibirán una invitación para unirse.",
-    "auto_added_hint": " Se te agrega al proyecto automáticamente.",
     "owner_always_on": "El propietario del proyecto siempre está en el equipo y no se puede quitar.",
     "auto_on_team": "Estás automáticamente en el equipo del proyecto.",
     "contacts_selected_one": "{{count}} contacto existente seleccionado",

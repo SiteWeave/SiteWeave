@@ -320,6 +320,11 @@ allow_dynamic_registration = false
 [functions.send-progress-report]
 verify_jwt = false
 
+# Cron + service-role/sb_secret auth enforced in-handler via requireCronOrServiceRole.
+# Platform JWT verifier rejects sb_secret_* keys before the handler runs.
+[functions.process-scheduled-reports]
+verify_jwt = false
+
 # Service role uses sb_secret_* keys; the platform JWT verifier rejects them before the handler runs.
 [functions.generate-progress-report]
 verify_jwt = false

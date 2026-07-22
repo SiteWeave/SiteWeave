@@ -1734,7 +1734,6 @@
     "email_input_placeholder": "Enter email addresses (comma or space separated)",
     "add": "Add",
     "email_invite_hint": "Add email addresses for people who don't have accounts yet. They'll be invited to join.",
-    "auto_added_hint": " You are added to the project automatically.",
     "owner_always_on": "The project owner is always on the team and cannot be removed.",
     "auto_on_team": "You are automatically on the project team.",
     "contacts_selected_one": "{{count}} existing contact selected",

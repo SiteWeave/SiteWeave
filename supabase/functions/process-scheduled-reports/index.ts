@@ -2,19 +2,75 @@
 // Cron job to process all active schedules that are due
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createServiceClient } from '../_shared/auth.ts'
+import { createServiceClient, requireCronOrServiceRole } from '../_shared/auth.ts'
 import { hasFullTierAccess } from '../_shared/workspaceTier.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
+type InvokeResult = {
+  ok: boolean
+  data: Record<string, unknown> | null
+  error: string | null
+}
+
+/**
+ * Edge-to-edge calls via supabase.functions.invoke() have been dropping/mangling
+ * Authorization in this project (child fns return 401). Use explicit fetch with
+ * service-role Bearer + apikey, matching generateProgressReportClient.
+ */
+async function invokeEdgeFunction(
+  functionName: string,
+  body: Record<string, unknown>,
+): Promise<InvokeResult> {
+  const supabaseUrl = (Deno.env.get('SUPABASE_URL') ?? '').replace(/\/$/, '')
+  const serviceKey = (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').trim()
+  if (!supabaseUrl || !serviceKey) {
+    return { ok: false, data: null, error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' }
+  }
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${serviceKey}`,
+      apikey: serviceKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  let data: Record<string, unknown> | null = null
+  try {
+    data = await response.json() as Record<string, unknown>
+  } catch {
+    data = null
+  }
+
+  if (!response.ok) {
+    const message =
+      typeof data?.error === 'string'
+        ? data.error
+        : `Edge Function returned a non-2xx status code (${response.status})`
+    return { ok: false, data, error: message }
+  }
+
+  return { ok: true, data, error: null }
 }
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
+
+  if (req.method !== 'POST') {
+    return new Response('Method not allowed', { status: 405, headers: corsHeaders })
+  }
+
+  const cronDenied = requireCronOrServiceRole(req, corsHeaders)
+  if (cronDenied) return cronDenied
 
   try {
     const supabase = createServiceClient()
@@ -72,8 +128,9 @@ serve(async (req) => {
 
     const settledResults = await Promise.allSettled(
       tierEligibleSchedules.map((schedule) =>
-        supabase.functions.invoke('send-progress-report', {
-          body: { schedule_id: schedule.id, is_manual: false },
+        invokeEdgeFunction('send-progress-report', {
+          schedule_id: schedule.id,
+          is_manual: false,
         })
       ),
     )
@@ -83,7 +140,7 @@ serve(async (req) => {
 
     for (const [i, result] of settledResults.entries()) {
       const schedule = tierEligibleSchedules[i]
-      if (result.status === 'fulfilled' && !result.value.error) {
+      if (result.status === 'fulfilled' && result.value.ok) {
         results.push({
           schedule_id: schedule.id,
           success: true,
@@ -93,7 +150,7 @@ serve(async (req) => {
         const message =
           result.status === 'rejected'
             ? result.reason?.message || 'Unknown error'
-            : result.value.error?.message || 'Unknown error'
+            : result.value.error || 'Unknown error'
         errors.push({
           schedule_id: schedule.id,
           error: message,
@@ -104,13 +161,13 @@ serve(async (req) => {
     // Process task-start smart notifications once per run.
     let notificationResult: Record<string, unknown> | null = null
     try {
-      const { data: notificationData, error: notificationError } = await supabase.functions.invoke(
-        'process-task-notifications',
-        { body: {} },
-      )
-      notificationResult = notificationError
-        ? { success: false, error: notificationError.message || 'Failed to process task notifications' }
-        : { success: true, ...(notificationData || {}) }
+      const notificationInvoke = await invokeEdgeFunction('process-task-notifications', {})
+      notificationResult = notificationInvoke.ok
+        ? { success: true, ...(notificationInvoke.data || {}) }
+        : {
+            success: false,
+            error: notificationInvoke.error || 'Failed to process task notifications',
+          }
     } catch (error) {
       notificationResult = { success: false, error: error.message || 'Failed to process task notifications' }
     }

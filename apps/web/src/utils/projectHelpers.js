@@ -1,6 +1,6 @@
 import i18n from '../i18n/config';
 import {
-    computeWeightedProjectProgressPercent,
+    computeProjectProgressPercent,
     groupPhasesByProjectId,
     calculatePhaseProgressFromTasks,
     formatDateForDisplay,
@@ -26,10 +26,11 @@ export const calculateProjectProgress = async (projectId, supabaseClient) => {
         ]);
 
         if (error) return 0;
-        if (!phases || phases.length === 0) {
-            return calculatePhaseProgressFromTasks(tasks || []);
-        }
-        return computeWeightedProjectProgressPercent(phases, project?.due_date);
+        return computeProjectProgressPercent({
+            tasks: tasks || [],
+            phases: phases || [],
+            projectDueDate: project?.due_date,
+        });
     } catch (error) {
         console.error('Error calculating project progress:', error);
         return 0;
@@ -70,9 +71,11 @@ export const calculateProjectsProgressMap = async (projects, supabaseClient) => 
             const phases = phasesByProject[project.id] || [];
             const tasks = tasksByProject[project.id] || [];
             acc[project.id] = {
-                progress: phases.length > 0
-                    ? computeWeightedProjectProgressPercent(phases, project?.due_date)
-                    : calculatePhaseProgressFromTasks(tasks),
+                progress: computeProjectProgressPercent({
+                    tasks,
+                    phases,
+                    projectDueDate: project?.due_date,
+                }),
                 phaseCount: phases.length,
                 completeCount: phases.filter((p) => p.progress === 100).length,
             };

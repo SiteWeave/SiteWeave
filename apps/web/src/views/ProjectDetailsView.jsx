@@ -10,6 +10,7 @@ import {
     listWeatherImpactsForProject,
     listScheduleAdjustmentsForProject,
     maybeCreateEarlyCompletionAdjustment,
+    hasMovablePullForwardSuccessors,
     suggestWorkdaysGained,
     getTaskEndDate as getSharedTaskEndDate,
     reorderTaskPhotos,
@@ -35,8 +36,10 @@ import PhaseQuickAdd from '../components/phases/PhaseQuickAdd';
 import PhasesHintBanner from '../components/phases/PhasesHintBanner';
 import useProjectPhases from '../hooks/useProjectPhases';
 import {
-    calculateOverallPhaseProgress,
     calculatePhaseProgressFromTasks,
+    computeProjectProgressPercent,
+    derivePhaseDatesFromTasks,
+    formatPhaseDateRange,
 } from '../utils/projectPhasesUtils';
 import ProjectSidebar from '../components/ProjectSidebar';
 import ProjectSidebarPhases from '../components/phases/ProjectSidebarPhases';
@@ -356,38 +359,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         [weatherImpacts],
     );
 
-    const pendingScheduleAdjustments = useMemo(
-        () => (scheduleAdjustments || []).filter((row) => row.status === 'pending'),
-        [scheduleAdjustments],
-    );
-
-    const maybeSuggestScheduleGain = useCallback(
-        async (completedTask) => {
-            if (!project?.id || !completedTask?.id) return;
-            try {
-                const days = suggestWorkdaysGained(completedTask);
-                // Require ≥2 business days early so same-day / 1-day finishes don't spam the banner.
-                if (days < 2) return;
-                const planned = getSharedTaskEndDate(completedTask);
-                await maybeCreateEarlyCompletionAdjustment(supabaseClient, {
-                    organizationId: project.organization_id,
-                    projectId: project.id,
-                    task: { ...completedTask, due_date: planned || completedTask.due_date },
-                    plannedFinish: planned,
-                    userId: state.user?.id || null,
-                    workdaysGained: days,
-                    actualFinish: completedTask.completed_at
-                        ? String(completedTask.completed_at).slice(0, 10)
-                        : new Date().toISOString().slice(0, 10),
-                });
-                setProjectRefreshNonce((n) => n + 1);
-            } catch (e) {
-                console.error('Failed to create schedule gain suggestion:', e);
-            }
-        },
-        [project, state.user?.id],
-    );
-
     useEffect(() => {
         if (!canViewActivityHistory && activeTab === 'activity') {
             setActiveTab('tasks');
@@ -503,6 +474,58 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         () => (allTasksFromState.length > 0 ? allTasksFromState : projectTasksList),
         [allTasksFromState, projectTasksList]
     );
+
+    const pendingScheduleAdjustments = useMemo(
+        () =>
+            (scheduleAdjustments || []).filter((row) => {
+                if (row.status !== 'pending') return false;
+                const sourceTask =
+                    (allTasks || []).find((task) => task.id === row.source_task_id) || {
+                        id: row.source_task_id,
+                        completed: true,
+                        completed_at: row.actual_finish,
+                        due_date: row.planned_finish,
+                    };
+                return hasMovablePullForwardSuccessors({
+                    sourceTask,
+                    tasks: allTasks,
+                    dependencies: taskDependencies,
+                    workdaysGained: row.suggested_workdays,
+                    actualFinishDate: row.actual_finish || null,
+                });
+            }),
+        [scheduleAdjustments, allTasks, taskDependencies],
+    );
+
+    const maybeSuggestScheduleGain = useCallback(
+        async (completedTask) => {
+            if (!project?.id || !completedTask?.id) return;
+            try {
+                const days = suggestWorkdaysGained(completedTask);
+                // Require ≥2 business days early so same-day / 1-day finishes don't spam the banner.
+                if (days < 2) return;
+                const planned = getSharedTaskEndDate(completedTask);
+                await maybeCreateEarlyCompletionAdjustment(supabaseClient, {
+                    organizationId: project.organization_id,
+                    projectId: project.id,
+                    task: { ...completedTask, due_date: planned || completedTask.due_date },
+                    plannedFinish: planned,
+                    userId: state.user?.id || null,
+                    workdaysGained: days,
+                    actualFinish: completedTask.completed_at
+                        ? String(completedTask.completed_at).slice(0, 10)
+                        : new Date().toISOString().slice(0, 10),
+                    tasks: allTasks,
+                    dependencies: taskDependencies,
+                });
+                setProjectRefreshNonce((n) => n + 1);
+            } catch (e) {
+                console.error('Failed to create schedule gain suggestion:', e);
+            }
+        },
+        [project, state.user?.id, allTasks, taskDependencies],
+    );
+
     const allTaskIdsKey = useMemo(
         () => allTasks.map((task) => task.id).sort().join('|'),
         [allTasks]
@@ -933,13 +956,23 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             const progress = phaseTasks.length > 0
                 ? calculatePhaseProgressFromTasks(phaseTasks)
                 : (phase.progress ?? 0);
-            return { ...phase, progress };
+            const derived = derivePhaseDatesFromTasks(phaseTasks);
+            const start_date =
+                phaseTasks.length > 0 ? derived.start_date : (derived.start_date ?? phase.start_date);
+            const end_date =
+                phaseTasks.length > 0 ? derived.end_date : (derived.end_date ?? phase.end_date);
+            return { ...phase, progress, start_date, end_date };
         })
     ), [projectPhases, tasksByPhaseId]);
 
     const summaryOverallProgress = useMemo(
-        () => calculateOverallPhaseProgress(phasesForSummary),
-        [phasesForSummary],
+        () =>
+            computeProjectProgressPercent({
+                tasks: allTasks,
+                phases: phasesForSummary,
+                projectDueDate: project?.due_date,
+            }),
+        [allTasks, phasesForSummary, project?.due_date],
     );
 
     const photoModalTask = useMemo(
@@ -3053,6 +3086,20 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                     {projectPhases.map((phase) => {
                                                         const phaseTasks = tasksByPhaseId.get(phase.id) || [];
                                                         const rows = mergeWeatherIntoPhaseTasks(phaseTasks, weatherImpacts);
+                                                        const derivedDates = derivePhaseDatesFromTasks(phaseTasks);
+                                                        const phaseStart =
+                                                            phaseTasks.length > 0
+                                                                ? derivedDates.start_date
+                                                                : (derivedDates.start_date ?? phase.start_date);
+                                                        const phaseEnd =
+                                                            phaseTasks.length > 0
+                                                                ? derivedDates.end_date
+                                                                : (derivedDates.end_date ?? phase.end_date);
+                                                        const dateRangeLabel = formatPhaseDateRange(
+                                                            phaseStart,
+                                                            phaseEnd,
+                                                            i18n.language,
+                                                        );
                                                         return (
                                                             <PhaseTaskSection
                                                                 key={phase.id}
@@ -3060,6 +3107,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                 phaseKey={phase.id}
                                                                 phaseId={phase.id}
                                                                 title={phase.name}
+                                                                dateRangeLabel={dateRangeLabel}
                                                                 taskCount={phaseTasks.length}
                                                                 progressPercent={calculatePhaseProgressFromTasks(phaseTasks)}
                                                                 onTaskDrop={handleTaskDrop}
@@ -3285,7 +3333,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                         <h3 className="mb-3 font-bold">
                                             {t('projectDetail.phases_heading', { defaultValue: 'Phases' })}
                                         </h3>
-                                        <ProjectSidebarPhases phases={projectPhases} locale={i18n.language} />
+                                        <ProjectSidebarPhases phases={phasesForSummary} locale={i18n.language} />
                                     </div>
                                 </div>
                             </div>
@@ -3619,6 +3667,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             <BuildPath
                                 project={project}
                                 phaseControl={phaseControl}
+                                tasks={allTasks}
                                 embedded
                                 hideEmbeddedToolbar
                                 isEditing={phasesModalEditing}

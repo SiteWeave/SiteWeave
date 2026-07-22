@@ -1,10 +1,12 @@
 /**
  * Duration-weighted project % from phase rows (matches desktop app semantics).
  * Prefer stored phase.progress (DB task rollup or schedule); use schedule-derived % only when progress is null/undefined.
+ * Project-level progress prefers all tasks via computeProjectProgressPercent (unassigned included).
  */
 
 import { buildFederalHolidayMap, businessDaysBetween } from './usBusinessCalendar.js';
 import { parseLocalDateOnly, localDateOnlyIso, addDaysToDateOnly } from './dateOnly.js';
+import { calculatePhaseProgressFromTasks } from './projectPhasesUtils.js';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -88,6 +90,30 @@ export function computeWeightedProjectProgressPercent(phases, projectDueDate) {
   }, 0);
 
   return Math.round(weighted);
+}
+
+/**
+ * Project-level % for cards, lists, and summaries.
+ *
+ * Tasks are the source of truth for work done — including unassigned / no-phase tasks.
+ * Phases only organize work; empty phases must not zero out real task progress.
+ * When there are no tasks yet, fall back to duration-weighted phase.progress (schedule-only projects).
+ *
+ * @param {{
+ *   tasks?: Array<{ completed?: boolean, percent_complete?: number|null }>,
+ *   phases?: Array<{ progress?: number|null, start_date?: string|null, end_date?: string|null, order?: number }>,
+ *   projectDueDate?: string|null,
+ * }} args
+ * @returns {number} 0–100
+ */
+export function computeProjectProgressPercent({ tasks = [], phases = [], projectDueDate = null } = {}) {
+  if (Array.isArray(tasks) && tasks.length > 0) {
+    return calculatePhaseProgressFromTasks(tasks);
+  }
+  if (Array.isArray(phases) && phases.length > 0) {
+    return computeWeightedProjectProgressPercent(phases, projectDueDate);
+  }
+  return 0;
 }
 
 function taskEffectiveEndDateIso(task) {

@@ -13,7 +13,12 @@
 --      Password: e.g. Tester123!
 --   2. Run this script in Supabase SQL Editor (as a user with permission to
 --      insert into public tables; RLS may apply).
--- ============================================================================
+--
+-- WARNING: This script moves the tester user's profile into "Tester Organization".
+-- Do NOT point v_tester_email at the QA Business Org A admin if you still need
+-- that org for meeting demos. For the golden-project feature demo, use:
+--   scripts/qa-seed-personas.sql → scripts/qa-seed-feature-demo.sql
+-- instead of this script.
 
 DO $$
 DECLARE

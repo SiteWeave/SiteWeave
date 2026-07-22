@@ -3,7 +3,8 @@
 -- ============================================================================
 -- Staging / non-prod only. Creates the cast used by the full feature test plan:
 --   Admin (Business A) — use your real inbox email if you want outbound mail
---   PM, Member          — SQL logins, no mailbox needed
+--   PM + PM2            — two Project Managers (SQL logins, no mailbox needed)
+--   Member              — SQL login, no mailbox needed
 --   Guest               — guest_only + project_collaborators on golden project
 --   Personal owner      — personal workspace + active trial
 --   Pending invitee     — invitations row only (no Auth user)
@@ -14,9 +15,10 @@
 --   1. Edit CONFIG (especially v_admin_email → your real inbox).
 --   2. Run once. Idempotent: re-running updates wiring; does not reset passwords
 --      for users that already exist (unless v_reset_existing_passwords = true).
---   3. Optional: scripts/seed-tester-with-fake-data.sql for bulk fake content
---      (point that script at the admin email, or use the golden project alone).
---   4. Then: scripts/qa-accelerate-time-gated.sql for time-gated features.
+--   3. Then: scripts/qa-seed-feature-demo.sql (bulk + pull-forward / weather / reports).
+--   4. Optional: scripts/qa-accelerate-time-gated.sql for time-gated features.
+--   Do NOT point seed-tester-with-fake-data.sql at the QA admin — it moves the
+--   profile into "Tester Organization" and leaves QA Business Org A.
 --
 -- Shared password for newly created fake personas (default):
 --   QaTest123!
@@ -128,8 +130,9 @@ $$;
 DO $$
 DECLARE
   -- ===================== CONFIG (edit these) =====================
-  v_admin_email     TEXT := 'you@example.com';              -- real inbox recommended
+  v_admin_email     TEXT := 'podotim245@luckfeed.com';      -- real inbox recommended
   v_pm_email        TEXT := 'qa-pm@siteweave.test';
+  v_pm2_email       TEXT := 'qa-pm2@siteweave.test';
   v_member_email    TEXT := 'qa-member@siteweave.test';
   v_guest_email     TEXT := 'qa-guest@siteweave.test';
   v_personal_email  TEXT := 'qa-personal@siteweave.test';
@@ -151,6 +154,7 @@ DECLARE
 
   v_admin_id UUID;
   v_pm_id UUID;
+  v_pm2_id UUID;
   v_member_id UUID;
   v_guest_id UUID;
   v_personal_id UUID;
@@ -169,6 +173,7 @@ DECLARE
 
   v_contact_admin UUID;
   v_contact_pm UUID;
+  v_contact_pm2 UUID;
   v_contact_member UUID;
   v_contact_guest UUID;
   v_contact_personal UUID;
@@ -205,6 +210,7 @@ BEGIN
   -- ---------- Auth users ----------
   v_admin_id := public.qa_ensure_auth_user(v_admin_email, v_shared_password, 'QA Admin', v_reset_existing_passwords);
   v_pm_id := public.qa_ensure_auth_user(v_pm_email, v_shared_password, 'QA Project Manager', v_reset_existing_passwords);
+  v_pm2_id := public.qa_ensure_auth_user(v_pm2_email, v_shared_password, 'QA Project Manager 2', v_reset_existing_passwords);
   v_member_id := public.qa_ensure_auth_user(v_member_email, v_shared_password, 'QA Member', v_reset_existing_passwords);
   v_guest_id := public.qa_ensure_auth_user(v_guest_email, v_shared_password, 'QA Guest', v_reset_existing_passwords);
   v_personal_id := public.qa_ensure_auth_user(v_personal_email, v_shared_password, 'QA Personal Owner', v_reset_existing_passwords);
@@ -272,6 +278,14 @@ BEGIN
   WHERE organization_id = v_org_a AND lower(email) = lower(v_pm_email) LIMIT 1;
 
   INSERT INTO public.contacts (name, type, email, organization_id, created_by_user_id)
+  SELECT 'QA Project Manager 2', 'Team', lower(v_pm2_email), v_org_a, v_admin_id
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.contacts WHERE organization_id = v_org_a AND lower(email) = lower(v_pm2_email)
+  );
+  SELECT id INTO v_contact_pm2 FROM public.contacts
+  WHERE organization_id = v_org_a AND lower(email) = lower(v_pm2_email) LIMIT 1;
+
+  INSERT INTO public.contacts (name, type, email, organization_id, created_by_user_id)
   SELECT 'QA Member', 'Team', lower(v_member_email), v_org_a, v_admin_id
   WHERE NOT EXISTS (
     SELECT 1 FROM public.contacts WHERE organization_id = v_org_a AND lower(email) = lower(v_member_email)
@@ -309,6 +323,17 @@ BEGIN
 
   INSERT INTO public.profiles (id, role, role_id, contact_id, organization_id, account_intent, must_change_password, review_eligible_at)
   VALUES (v_pm_id, 'PM', v_role_pm_a, v_contact_pm, v_org_a, 'workspace_owner', false, now())
+  ON CONFLICT (id) DO UPDATE SET
+    role = 'PM',
+    role_id = EXCLUDED.role_id,
+    contact_id = EXCLUDED.contact_id,
+    organization_id = EXCLUDED.organization_id,
+    account_intent = 'workspace_owner',
+    must_change_password = false,
+    review_eligible_at = COALESCE(public.profiles.review_eligible_at, now());
+
+  INSERT INTO public.profiles (id, role, role_id, contact_id, organization_id, account_intent, must_change_password, review_eligible_at)
+  VALUES (v_pm2_id, 'PM', v_role_pm_a, v_contact_pm2, v_org_a, 'workspace_owner', false, now())
   ON CONFLICT (id) DO UPDATE SET
     role = 'PM',
     role_id = EXCLUDED.role_id,
@@ -392,6 +417,7 @@ BEGIN
   VALUES
     (v_project_a, v_contact_admin, v_org_a, 'PM'),
     (v_project_a, v_contact_pm, v_org_a, 'PM'),
+    (v_project_a, v_contact_pm2, v_org_a, 'PM'),
     (v_project_a, v_contact_member, v_org_a, 'Team'),
     (v_project_a, v_contact_guest, v_org_a, 'Subcontractor')
   ON CONFLICT (project_id, contact_id) DO UPDATE
@@ -564,6 +590,7 @@ BEGIN
   RAISE NOTICE 'QA personas ready (staging). Shared password for NEW users: %', v_shared_password;
   RAISE NOTICE 'Admin:     %  (org A %)', v_admin_email, v_org_a;
   RAISE NOTICE 'PM:        %', v_pm_email;
+  RAISE NOTICE 'PM2:       %', v_pm2_email;
   RAISE NOTICE 'Member:    %', v_member_email;
   RAISE NOTICE 'Guest:     %  (guest_only on project %)', v_guest_email, v_project_a;
   RAISE NOTICE 'Personal:  %  (personal org %)', v_personal_email, v_org_personal;
@@ -572,7 +599,7 @@ BEGIN
   RAISE NOTICE 'Managed:   %  (must_change_password=true)', v_managed_email;
   RAISE NOTICE 'Golden project: % (%)', v_golden_project_name, v_project_a;
   RAISE NOTICE 'Crew roles on golden: Admin/PM→PM, Member→Team, Guest→Subcontractor';
-  RAISE NOTICE 'Next: docs/FULL-FEATURE-TEST-PLAN.md → qa-accelerate-time-gated.sql';
+  RAISE NOTICE 'Next: scripts/qa-seed-feature-demo.sql → meeting feature demos';
   RAISE NOTICE '============================================================';
 END $$;
 
@@ -587,9 +614,10 @@ END $$;
 --   JOIN public.contacts c ON c.organization_id = p.organization_id
 --   JOIN (VALUES
 --     ('qa-pm@siteweave.test', 'PM'),
+--     ('qa-pm2@siteweave.test', 'PM'),
 --     ('qa-member@siteweave.test', 'Team'),
 --     ('qa-guest@siteweave.test', 'Subcontractor'),
---     ('you@example.com', 'PM')  -- your admin email
+--     ('podotim245@luckfeed.com', 'PM')  -- your admin email
 --   ) AS x(email, role) ON lower(c.email) = lower(x.email)
 --   WHERE p.name = 'QA Golden Project' AND p.trashed_at IS NULL
 -- ) v

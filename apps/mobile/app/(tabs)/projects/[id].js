@@ -9,7 +9,7 @@ import {
   completeTask,
   updateTask,
   createTask,
-  computeWeightedProjectProgressPercent,
+  computeProjectProgressPercent,
   buildPhasesWithDerivedProgress,
   calculatePhaseProgressFromTasks,
   groupTasksByPhaseId,
@@ -582,12 +582,15 @@ export default function ProjectDetailScreen() {
     [phases, tasks],
   );
 
-  const derivedProjectProgress = useMemo(() => {
-    if (!phasesWithProgress.length) {
-      return calculatePhaseProgressFromTasks(tasks);
-    }
-    return computeWeightedProjectProgressPercent(phasesWithProgress, project?.due_date);
-  }, [phasesWithProgress, project?.due_date, tasks]);
+  const derivedProjectProgress = useMemo(
+    () =>
+      computeProjectProgressPercent({
+        tasks,
+        phases: phasesWithProgress,
+        projectDueDate: project?.due_date,
+      }),
+    [phasesWithProgress, project?.due_date, tasks],
+  );
 
   useEffect(() => {
     setExpandedPhases((prev) => {

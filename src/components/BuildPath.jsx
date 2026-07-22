@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import PermissionGuard from './PermissionGuard';
@@ -6,7 +6,10 @@ import DateRangePicker from './DateRangePicker';
 import { addDaysIso, localDateIso } from '../utils/dateHelpers';
 import { hasPermission } from '../utils/permissions';
 import useProjectPhases from '../hooks/useProjectPhases';
-import { calculateOverallPhaseProgress } from '../utils/projectPhasesUtils';
+import {
+    buildPhasesWithDerivedProgress,
+    calculateOverallPhaseProgress,
+} from '../utils/projectPhasesUtils';
 import { supabaseClient } from '../context/AppContext';
 
 const schedulePresetChipClass =
@@ -71,6 +74,7 @@ function debounce(func, wait) {
  * @param {boolean} [props.isEditing]
  * @param {(next: boolean) => void} [props.onEditingChange]
  * @param {() => void} [props.onAddPhase]
+ * @param {Array} [props.tasks] — when provided, phase % is derived from tasks (not stale DB progress)
  */
 function BuildPath({
   project,
@@ -81,6 +85,7 @@ function BuildPath({
   isEditing: isEditingProp,
   onEditingChange,
   onAddPhase,
+  tasks = null,
 }) {
     const { t } = useTranslation();
     const { state } = useAppContext();
@@ -95,6 +100,11 @@ function BuildPath({
         deletePhase,
         reorderPhases,
     } = control;
+
+    const displayPhases = useMemo(
+        () => (Array.isArray(tasks) ? buildPhasesWithDerivedProgress(phases, tasks) : phases),
+        [phases, tasks],
+    );
 
     const [isEditingInternal, setIsEditingInternal] = useState(false);
     const isEditing = typeof isEditingProp === 'boolean' ? isEditingProp : isEditingInternal;
@@ -232,7 +242,7 @@ function BuildPath({
         resetDragState();
     };
 
-    const overallPct = calculateOverallPhaseProgress(phases);
+    const overallPct = calculateOverallPhaseProgress(displayPhases);
 
     return (
         <div className="h-full flex flex-col">
@@ -293,7 +303,7 @@ function BuildPath({
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-                {phases.map((phase) => {
+                {displayPhases.map((phase) => {
                     const isDragTarget = dragOverPhase === phase.id;
                     return (
                         <div key={phase.id}>
@@ -486,6 +496,7 @@ export function PhaseModal({ phase, onClose, onSave, isLoading }) {
                         startValue={formData.start_date}
                         endValue={formData.end_date}
                         onChange={({ start, end }) => applyScheduleRange(start, end)}
+                        elevated
                         presets={
                             <ScheduleDatePresets t={t} onSelectRange={applyScheduleRange} />
                         }

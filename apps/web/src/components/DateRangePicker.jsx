@@ -33,6 +33,7 @@ const VIEWPORT_PADDING = 8;
  * SiteWeave-owned schedule range picker (react-day-picker).
  * Preserve: start-then-end clicks; 2 months ≥768px; portal positioning;
  * local YYYY-MM-DD; presets/clear; compact/sm/elevated variants.
+ * Use elevated inside modals (z-70) so the calendar sits above modal backdrops (z-50/z-60).
  * Do not replace with HeroUI DateRangePicker in this migration.
  */
 function DateRangePicker({
@@ -103,7 +104,7 @@ function DateRangePicker({
       top: `${top}px`,
       left: `${left}px`,
       width: compact || size === 'sm' ? `${Math.min(popoverWidth, window.innerWidth - VIEWPORT_PADDING * 2)}px` : undefined,
-      zIndex: elevated ? 60 : 50,
+      zIndex: elevated ? 70 : 50,
     });
   }, [compact, elevated, size]);
 

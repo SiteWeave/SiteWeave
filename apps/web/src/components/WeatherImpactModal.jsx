@@ -574,6 +574,7 @@ function WeatherImpactModal({
                                     }}
                                     presets={datePresets}
                                     compact
+                                    elevated
                                 />
                                 {startDate && endDate ? (
                                     <div>

@@ -4,12 +4,11 @@
  */
 
 import {
-  computeWeightedProjectProgressPercent,
+  computeProjectProgressPercent,
   groupPhasesByProjectId,
 } from '../utils/projectProgressRollup.js';
 import {
   buildPhasesWithDerivedProgress,
-  calculatePhaseProgressFromTasks,
 } from '../utils/projectPhasesUtils.js';
 
 function groupTasksByProjectId(tasks) {
@@ -159,11 +158,14 @@ export async function fetchUserProjectsWithProgress(supabase, userId, options = 
   return projectsList.map((project) => {
     const phases = phasesByProject[project.id] || [];
     const tasks = tasksByProject[project.id] || [];
-    if (phases.length === 0) {
-      return { ...project, progress: calculatePhaseProgressFromTasks(tasks) };
-    }
-    const phasesWithProgress = buildPhasesWithDerivedProgress(phases, tasks);
-    const progress = computeWeightedProjectProgressPercent(phasesWithProgress, project?.due_date);
+    const phasesWithProgress = phases.length > 0
+      ? buildPhasesWithDerivedProgress(phases, tasks)
+      : [];
+    const progress = computeProjectProgressPercent({
+      tasks,
+      phases: phasesWithProgress,
+      projectDueDate: project?.due_date,
+    });
     return { ...project, progress };
   });
 }
