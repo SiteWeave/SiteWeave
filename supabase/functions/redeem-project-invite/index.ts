@@ -65,6 +65,54 @@ serve(async (req) => {
     }
 
     if (!invite) {
+      // Parallel redeem (login bootstrap + accept page) may have already accepted this invite.
+      let acceptedInvite = null
+      if (token) {
+        const token_hash = await sha256Hex(String(token).trim())
+        const { data } = await supabaseAdmin
+          .from('project_access_invites')
+          .select('*')
+          .eq('token_hash', token_hash)
+          .eq('status', 'accepted')
+          .maybeSingle()
+        acceptedInvite = data
+      } else if (shortCode) {
+        const { data } = await supabaseAdmin
+          .from('project_access_invites')
+          .select('*')
+          .eq('short_code', String(shortCode).trim().toUpperCase())
+          .eq('status', 'accepted')
+          .maybeSingle()
+        acceptedInvite = data
+      }
+
+      if (acceptedInvite) {
+        const { data: existingCollab } = await supabaseAdmin
+          .from('project_collaborators')
+          .select('id')
+          .eq('project_id', acceptedInvite.project_id)
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        if (existingCollab || acceptedInvite.accepted_by_user_id === user.id) {
+          const { data: project } = await supabaseAdmin
+            .from('projects')
+            .select('id, name')
+            .eq('id', acceptedInvite.project_id)
+            .maybeSingle()
+          return new Response(
+            JSON.stringify({
+              success: true,
+              alreadyAccepted: true,
+              projectId: acceptedInvite.project_id,
+              projectName: project?.name || null,
+              organizationId: acceptedInvite.organization_id,
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+      }
+
       return new Response(
         JSON.stringify({ success: false, error: 'Invite not found or already used' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

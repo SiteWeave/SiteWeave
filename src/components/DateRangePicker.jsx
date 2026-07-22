@@ -30,8 +30,10 @@ function formatRangeLabel(startIso, endIso, locale) {
 const VIEWPORT_PADDING = 8;
 
 /**
- * Single trigger + popover calendar for selecting a start/end range (YYYY-MM-DD).
- * Popover renders in a portal with fixed positioning so it is not clipped by overflow containers.
+ * SiteWeave-owned schedule range picker (react-day-picker).
+ * Preserve: start-then-end clicks; 2 months ≥768px; portal positioning;
+ * local YYYY-MM-DD; presets/clear; compact/sm/elevated variants.
+ * Do not replace with HeroUI DateRangePicker in this migration.
  */
 function DateRangePicker({
   startValue,
@@ -129,8 +131,18 @@ function DateRangePicker({
       if (popoverRef.current?.contains(e.target)) return;
       setOpen(false);
     };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
     document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [open]);
 
   const handleSelect = (range) => {
@@ -155,8 +167,8 @@ function DateRangePicker({
   const year = new Date().getFullYear();
 
   const pickerStyle = {
-    '--rdp-accent-color': '#2563eb',
-    '--rdp-accent-background-color': '#dbeafe',
+    '--rdp-accent-color': 'var(--sw-color-accent-dark, #2563eb)',
+    '--rdp-accent-background-color': 'var(--sw-color-accent-soft-border, #dbeafe)',
   };
 
   const sm = size === 'sm';

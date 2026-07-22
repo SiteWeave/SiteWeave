@@ -23,6 +23,7 @@ import UpdateNotification from './components/UpdateNotification'
 import { LazyViewWrapper, DashboardView, ProjectDetailsView, ProjectTrashView, CalendarView, TeamHubView, TeamView, SettingsView } from './components/LazyViews'
 import NoOrganizationView from './views/NoOrganizationView'
 import { ROUTE_PATHS } from './config/routes'
+import { getPostAuthNavigatePath } from './utils/workspaceClient'
 
 let oauthCallbackProcessing = false
 let oauthCallbackProcessed = false
@@ -66,11 +67,11 @@ function App() {
             }
             
             if (data.session) {
-              console.log('OAuth login successful (hash fragment), redirecting to home...')
+              console.log('OAuth login successful (hash fragment), redirecting...')
               oauthCallbackProcessed = true
               // Clear the hash from URL
               window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
-              navigate('/')
+              navigate(getPostAuthNavigatePath())
               oauthCallbackProcessing = false
               return
             }
@@ -108,7 +109,7 @@ function App() {
               console.log('Session found after exchange error, proceeding...')
               oauthCallbackProcessed = true
               window.history.replaceState({}, document.title, window.location.pathname)
-              navigate('/')
+              navigate(getPostAuthNavigatePath())
               oauthCallbackProcessing = false
               return
             }
@@ -117,11 +118,11 @@ function App() {
           }
           
           if (data.session) {
-            console.log('OAuth login successful (PKCE), redirecting to home...')
+            console.log('OAuth login successful (PKCE), redirecting...')
             oauthCallbackProcessed = true
             // Clear the OAuth code from URL
             window.history.replaceState({}, document.title, window.location.pathname)
-            navigate('/')
+            navigate(getPostAuthNavigatePath())
             oauthCallbackProcessing = false
             return
           } else {
@@ -245,6 +246,8 @@ function App() {
         <Route path="/sms-opt-in" element={<SmsConsentView demo />} />
         <Route path="/signup" element={<SignUpView />} />
         <Route path="/login" element={<LoginView />} />
+        {/* App opens and post-auth default at `/`; keep login here so sign-out / cold start are not 404. */}
+        <Route path="/" element={<LoginView />} />
         <Route path="*" element={<NotFoundView />} />
       </Routes>
     )

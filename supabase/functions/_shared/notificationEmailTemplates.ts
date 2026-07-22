@@ -297,7 +297,8 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
     safeTasks.length > 1 || (summaryValue !== undefined && summaryValue !== null && Number(summaryValue) > 1)
 
   const projectNameTrimmed = projectName && String(projectName).trim() ? String(projectName).trim() : ''
-  const mastheadTitle = projectNameTrimmed || String(heading || '').trim() || 'SiteWeave'
+  // Brand in the masthead; reminder copy lives in the headline (avoids repeating task/project titles).
+  const mastheadTitle = 'SiteWeave'
   const reminderHeadline = projectNameTrimmed
     ? stripProjectPrefixFromHeading(String(heading || ''), projectNameTrimmed)
     : String(heading || '').trim()
@@ -314,6 +315,8 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
       : ''
 
   const multiWithSharedCta = safeTasks.length > 1 && Boolean(ctaUrl && reviewLinkText)
+  // Single-task digests already put the task name in the headline — don't repeat it in the card.
+  const omitTaskTitles = safeTasks.length === 1
 
   const taskRows = safeTasks
     .map((task) => {
@@ -325,10 +328,13 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
         reviewLinkText,
         calendarTimeZone,
       })
+      const titleHtml = omitTaskTitles
+        ? ''
+        : `<p style="margin:0 0 8px;color:#111827;font-size:17px;line-height:1.35;font-weight:700;">${escapeHtml(task.title)}</p>`
       return `
         <tr>
           <td style="padding:14px 16px;border-top:1px solid #e5e7eb;vertical-align:top;">
-            <p style="margin:0;color:#111827;font-size:17px;line-height:1.35;font-weight:700;">${escapeHtml(task.title)}</p>
+            ${titleHtml}
             ${detailHtml}
           </td>
         </tr>
@@ -448,7 +454,7 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
   const textMultiLink =
     safeTasks.length > 1 && ctaUrl && reviewLinkText ? `${reviewLinkText}: ${ctaUrl}` : ''
 
-  const textParts: string[] = [mastheadTitle, '', ...textProject, '']
+  const textParts: string[] = ['SiteWeave', '', ...textProject, '']
   if (!omitLeadBlock) {
     textParts.push(reminderHeadline || heading, subheading, '')
   }

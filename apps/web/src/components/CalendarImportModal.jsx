@@ -122,16 +122,8 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
             return;
         }
 
-        // Desktop: use loopback OAuth (same as Outlook) so redirect does not open a separate browser
-        // context at localhost without the app's Supabase session.
+        // Desktop: use loopback OAuth + PKCE (public Desktop client; no client secret in the renderer).
         if (window.electronAPI?.isElectron) {
-            const clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
-            if (!clientSecret) {
-                addToast(t('calendar.import_failed', {
-                    message: 'Google Calendar desktop import requires VITE_GOOGLE_CLIENT_SECRET. Add it to your .env and register http://127.0.0.1:5000/google-callback in Google Cloud Console.',
-                }), 'error');
-                return;
-            }
             setIsImporting(true);
             try {
                 const events = await startGoogleCalendarOAuth();

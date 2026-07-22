@@ -6,16 +6,34 @@ const LOCATION_KEY = 'siteweave_onboarding_location_done';
 const INVITE_DEST_KEY = 'siteweave_onboarding_invite_destination';
 const SKIP_WEATHER_KEY = 'siteweave_onboarding_skip_weather';
 
-export const GETTING_STARTED_DISMISSED_KEY = 'siteweave_getting_started_dismissed';
-export const GETTING_STARTED_PROJECT_OPENED_KEY = 'siteweave_getting_started_project_opened';
-export const GETTING_STARTED_WEATHER_LOGGED_KEY = 'siteweave_getting_started_weather_logged';
-export const GETTING_STARTED_INVITE_SENT_KEY = 'siteweave_getting_started_invite_sent';
-export const GETTING_STARTED_TASK_CREATED_KEY = 'siteweave_getting_started_task_created';
-export const GETTING_STARTED_TASK_UPDATED_KEY = 'siteweave_getting_started_task_updated';
+const GETTING_STARTED_DISMISSED = 'siteweave_getting_started_dismissed';
+const GETTING_STARTED_PROJECT_OPENED = 'siteweave_getting_started_project_opened';
+const GETTING_STARTED_WEATHER_LOGGED = 'siteweave_getting_started_weather_logged';
+const GETTING_STARTED_INVITE_SENT = 'siteweave_getting_started_invite_sent';
+const GETTING_STARTED_TASK_CREATED = 'siteweave_getting_started_task_created';
+const GETTING_STARTED_TASK_UPDATED = 'siteweave_getting_started_task_updated';
+
+/** @deprecated Use user-scoped helpers — kept for older imports. */
+export const GETTING_STARTED_DISMISSED_KEY = GETTING_STARTED_DISMISSED;
+/** @deprecated */
+export const GETTING_STARTED_PROJECT_OPENED_KEY = GETTING_STARTED_PROJECT_OPENED;
+/** @deprecated */
+export const GETTING_STARTED_WEATHER_LOGGED_KEY = GETTING_STARTED_WEATHER_LOGGED;
+/** @deprecated */
+export const GETTING_STARTED_INVITE_SENT_KEY = GETTING_STARTED_INVITE_SENT;
+/** @deprecated */
+export const GETTING_STARTED_TASK_CREATED_KEY = GETTING_STARTED_TASK_CREATED;
+/** @deprecated */
+export const GETTING_STARTED_TASK_UPDATED_KEY = GETTING_STARTED_TASK_UPDATED;
 
 export const ONBOARDING_ROUTES = {
   PERMISSIONS: '/(auth)/permissions',
 };
+
+function scopedKey(base, userId) {
+  if (!userId) return base;
+  return `${base}:${userId}`;
+}
 
 export function isOnboardingScreen(segment) {
   return segment === 'permissions';
@@ -25,47 +43,44 @@ export function isAuthSetupScreen(segment) {
   return segment === 'complete-profile';
 }
 
-export async function hasCompletedNotificationsOnboarding() {
+export async function hasCompletedNotificationsOnboarding(userId) {
+  if (!userId) return false;
   try {
-    const [current, legacy] = await Promise.all([
-      AsyncStorage.getItem(NOTIFICATIONS_KEY),
-      AsyncStorage.getItem(LEGACY_NOTIFICATIONS_KEY),
-    ]);
-    return current === '1' || legacy === '1';
+    return (await AsyncStorage.getItem(scopedKey(NOTIFICATIONS_KEY, userId))) === '1';
   } catch {
     return false;
   }
 }
 
-export async function hasCompletedLocationOnboarding() {
+export async function hasCompletedLocationOnboarding(userId) {
+  if (!userId) return false;
   try {
-    return (await AsyncStorage.getItem(LOCATION_KEY)) === '1';
+    return (await AsyncStorage.getItem(scopedKey(LOCATION_KEY, userId))) === '1';
   } catch {
     return false;
   }
 }
 
-export async function markNotificationsDone() {
-  await AsyncStorage.multiSet([
-    [NOTIFICATIONS_KEY, '1'],
-    [LEGACY_NOTIFICATIONS_KEY, '1'],
-  ]);
+export async function markNotificationsDone(userId) {
+  if (!userId) return;
+  await AsyncStorage.setItem(scopedKey(NOTIFICATIONS_KEY, userId), '1');
 }
 
-export async function markLocationDone() {
-  await AsyncStorage.setItem(LOCATION_KEY, '1');
+export async function markLocationDone(userId) {
+  if (!userId) return;
+  await AsyncStorage.setItem(scopedKey(LOCATION_KEY, userId), '1');
 }
 
-export async function hasCompletedOnboarding({ skipWeather = false } = {}) {
-  const notificationsDone = await hasCompletedNotificationsOnboarding();
+export async function hasCompletedOnboarding({ userId, skipWeather = false } = {}) {
+  const notificationsDone = await hasCompletedNotificationsOnboarding(userId);
   if (!notificationsDone) return false;
   if (skipWeather) return true;
-  return hasCompletedLocationOnboarding();
+  return hasCompletedLocationOnboarding(userId);
 }
 
-export async function getNextOnboardingRoute({ skipWeather = false } = {}) {
-  const notificationsDone = await hasCompletedNotificationsOnboarding();
-  const locationDone = skipWeather || (await hasCompletedLocationOnboarding());
+export async function getNextOnboardingRoute({ userId, skipWeather = false } = {}) {
+  const notificationsDone = await hasCompletedNotificationsOnboarding(userId);
+  const locationDone = skipWeather || (await hasCompletedLocationOnboarding(userId));
   if (notificationsDone && locationDone) {
     return null;
   }
@@ -104,34 +119,91 @@ export async function clearPendingInviteOnboarding() {
   await AsyncStorage.multiRemove([INVITE_DEST_KEY, SKIP_WEATHER_KEY]);
 }
 
-export async function markGettingStartedProjectOpened() {
-  await AsyncStorage.setItem(GETTING_STARTED_PROJECT_OPENED_KEY, '1');
+export async function markGettingStartedProjectOpened(userId) {
+  if (!userId) return;
+  await AsyncStorage.setItem(scopedKey(GETTING_STARTED_PROJECT_OPENED, userId), '1');
 }
 
-export async function markGettingStartedWeatherLogged() {
-  await AsyncStorage.setItem(GETTING_STARTED_WEATHER_LOGGED_KEY, '1');
+export async function markGettingStartedWeatherLogged(userId) {
+  if (!userId) return;
+  await AsyncStorage.setItem(scopedKey(GETTING_STARTED_WEATHER_LOGGED, userId), '1');
 }
 
-export async function markGettingStartedInviteSent() {
-  await AsyncStorage.setItem(GETTING_STARTED_INVITE_SENT_KEY, '1');
+export async function markGettingStartedInviteSent(userId) {
+  if (!userId) return;
+  await AsyncStorage.setItem(scopedKey(GETTING_STARTED_INVITE_SENT, userId), '1');
 }
 
-export async function markGettingStartedTaskCreated() {
-  await AsyncStorage.setItem(GETTING_STARTED_TASK_CREATED_KEY, '1');
+export async function markGettingStartedTaskCreated(userId) {
+  if (!userId) return;
+  await AsyncStorage.setItem(scopedKey(GETTING_STARTED_TASK_CREATED, userId), '1');
 }
 
-export async function markGettingStartedTaskUpdated() {
-  await AsyncStorage.setItem(GETTING_STARTED_TASK_UPDATED_KEY, '1');
+export async function markGettingStartedTaskUpdated(userId) {
+  if (!userId) return;
+  await AsyncStorage.setItem(scopedKey(GETTING_STARTED_TASK_UPDATED, userId), '1');
 }
 
-export async function isGettingStartedDismissed() {
+export async function isGettingStartedDismissed(userId) {
+  if (!userId) return false;
   try {
-    return (await AsyncStorage.getItem(GETTING_STARTED_DISMISSED_KEY)) === '1';
+    return (await AsyncStorage.getItem(scopedKey(GETTING_STARTED_DISMISSED, userId))) === '1';
   } catch {
     return false;
   }
 }
 
-export async function dismissGettingStarted() {
-  await AsyncStorage.setItem(GETTING_STARTED_DISMISSED_KEY, '1');
+export async function dismissGettingStarted(userId) {
+  if (!userId) return;
+  await AsyncStorage.setItem(scopedKey(GETTING_STARTED_DISMISSED, userId), '1');
+}
+
+export async function showGettingStarted(userId) {
+  if (!userId) return;
+  await AsyncStorage.removeItem(scopedKey(GETTING_STARTED_DISMISSED, userId));
+}
+
+export async function readGettingStartedState(userId) {
+  if (!userId) {
+    return {
+      dismissed: false,
+      projectOpened: false,
+      inviteSent: false,
+      taskCreated: false,
+      taskUpdated: false,
+    };
+  }
+  const [dismissed, projectOpened, inviteSent, taskCreated, taskUpdated] = await Promise.all([
+    AsyncStorage.getItem(scopedKey(GETTING_STARTED_DISMISSED, userId)),
+    AsyncStorage.getItem(scopedKey(GETTING_STARTED_PROJECT_OPENED, userId)),
+    AsyncStorage.getItem(scopedKey(GETTING_STARTED_INVITE_SENT, userId)),
+    AsyncStorage.getItem(scopedKey(GETTING_STARTED_TASK_CREATED, userId)),
+    AsyncStorage.getItem(scopedKey(GETTING_STARTED_TASK_UPDATED, userId)),
+  ]);
+  return {
+    dismissed: dismissed === '1',
+    projectOpened: projectOpened === '1',
+    inviteSent: inviteSent === '1',
+    taskCreated: taskCreated === '1',
+    taskUpdated: taskUpdated === '1',
+  };
+}
+
+/** Removes obsolete device-global flags so they cannot leak across accounts. */
+export async function clearLegacyDeviceOnboardingFlags() {
+  try {
+    await AsyncStorage.multiRemove([
+      LEGACY_NOTIFICATIONS_KEY,
+      NOTIFICATIONS_KEY,
+      LOCATION_KEY,
+      GETTING_STARTED_DISMISSED,
+      GETTING_STARTED_PROJECT_OPENED,
+      GETTING_STARTED_WEATHER_LOGGED,
+      GETTING_STARTED_INVITE_SENT,
+      GETTING_STARTED_TASK_CREATED,
+      GETTING_STARTED_TASK_UPDATED,
+    ]);
+  } catch {
+    // ignore
+  }
 }

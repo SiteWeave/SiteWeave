@@ -11,7 +11,8 @@ export function normalizeSmartNotificationLeadDays(values, fallback = [14, 7]) {
   if (!Array.isArray(values)) return fallback;
   const parsed = values
     .map((v) => Number(v))
-    .filter((n) => Number.isFinite(n) && n >= 0 && n <= 365)
+    // Day-of-start (0) reminders are excluded — use 1–365 day lead windows only.
+    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 365)
     .map((n) => Math.trunc(n));
   const unique = Array.from(new Set(parsed));
   return unique.length > 0 ? unique.sort((a, b) => b - a) : fallback;

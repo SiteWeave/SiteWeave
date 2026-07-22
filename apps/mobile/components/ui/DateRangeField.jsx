@@ -1,10 +1,18 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Modal, StyleSheet, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import PressableWithFade from '../PressableWithFade';
 import { Text } from './Text';
+import { Icon } from './Icon';
+import { IconCalendar, IconChevronLeft, IconChevronRight } from './tablerIcons';
 import { colors, spacing, touch } from '../../theme';
+import { useBranding } from '../../context/BrandingContext';
+
+/**
+ * SiteWeave-owned schedule range field (single-month bottom sheet).
+ * Contract: tap start then end; swap if end < start; live onChange;
+ * local YYYY-MM-DD; preserve bottom-sheet UX (not a two-calendar web widget).
+ */
 
 function parseDate(value) {
   if (!value) return null;
@@ -65,7 +73,7 @@ function buildMonthWeeks(anchor) {
   return weeks;
 }
 
-function WeekRow({ days, viewMonth, draftStart, draftEnd, onDayPress }) {
+function WeekRow({ days, viewMonth, draftStart, draftEnd, onDayPress, primaryColor, primaryLight }) {
   const rangeStates = days.map((date) => {
     const iso = toIsoDate(date);
     const inMonth = date.getMonth() === viewMonth.getMonth();
@@ -89,7 +97,12 @@ function WeekRow({ days, viewMonth, draftStart, draftEnd, onDayPress }) {
   return (
     <View style={styles.weekRow}>
       {barLeft != null ? (
-        <View style={[styles.weekRangeBar, { left: barLeft, width: barWidth }]} />
+        <View
+          style={[
+            styles.weekRangeBar,
+            { left: barLeft, width: barWidth, backgroundColor: primaryLight || colors.primaryLight },
+          ]}
+        />
       ) : null}
       {days.map((date, index) => {
         const iso = toIsoDate(date);
@@ -107,8 +120,16 @@ function WeekRow({ days, viewMonth, draftStart, draftEnd, onDayPress }) {
               disabled={!inMonth}
               accessibilityRole="button"
               accessibilityState={{ selected: isEndpoint }}
+              accessibilityLabel={inMonth ? iso : undefined}
             >
-              <View style={[styles.dayCircle, isEndpoint && styles.dayCircleEndpoint]}>
+              <View
+                style={[
+                  styles.dayCircle,
+                  isEndpoint && {
+                    backgroundColor: primaryColor || colors.primary,
+                  },
+                ]}
+              >
                 <Text
                   style={[
                     styles.dayText,
@@ -135,17 +156,25 @@ export default function DateRangeField({
   onChange,
   placeholder = 'Select dates',
   disabled = false,
+  /** When false (e.g. parent sheet closed), dismiss nested picker Modal so it cannot block touches. */
+  active = true,
   testID = 'date-range-field',
 }) {
   const { t, i18n } = useTranslation();
+  const { primaryColor } = useBranding();
+  const primaryLight = colors.primaryLight;
   const locale = i18n.language || 'en';
   const [visible, setVisible] = useState(false);
   const [draftStart, setDraftStart] = useState(null);
   const [draftEnd, setDraftEnd] = useState(null);
   const [viewMonth, setViewMonth] = useState(() => parseDate(startValue) || new Date());
 
+  useEffect(() => {
+    if (!active) setVisible(false);
+  }, [active]);
+
   const openPicker = () => {
-    if (disabled) return;
+    if (disabled || !active) return;
     setDraftStart(startValue || null);
     setDraftEnd(endValue || null);
     setViewMonth(parseDate(startValue) || parseDate(endValue) || new Date());
@@ -217,11 +246,12 @@ export default function DateRangeField({
         testID={testID}
         accessibilityRole="button"
         accessibilityLabel={label || 'Select date range'}
+        accessibilityState={{ disabled: Boolean(disabled) }}
       >
         <Text style={[styles.value, !(startValue || endValue) && styles.placeholder]} numberOfLines={1}>
           {displayLabel}
         </Text>
-        <Ionicons name="calendar-outline" size={22} color={colors.textMuted} />
+        <Icon icon={IconCalendar} size={22} color={colors.textMuted} />
       </PressableWithFade>
 
       <Modal transparent animationType="fade" visible={visible} onRequestClose={closePicker}>
@@ -242,7 +272,7 @@ export default function DateRangeField({
               onPress={() => setViewMonth((m) => addMonths(m, -1))}
               accessibilityLabel={t('mobile.calendar_prev_month')}
             >
-              <Ionicons name="chevron-back" size={22} color={colors.text} />
+              <Icon icon={IconChevronLeft} size={22} color={colors.text} />
             </PressableWithFade>
             <Text style={styles.monthTitle}>{monthTitle}</Text>
             <PressableWithFade
@@ -250,7 +280,7 @@ export default function DateRangeField({
               onPress={() => setViewMonth((m) => addMonths(m, 1))}
               accessibilityLabel={t('mobile.calendar_next_month')}
             >
-              <Ionicons name="chevron-forward" size={22} color={colors.text} />
+              <Icon icon={IconChevronRight} size={22} color={colors.text} />
             </PressableWithFade>
           </View>
 
@@ -272,13 +302,20 @@ export default function DateRangeField({
                   draftStart={draftStart}
                   draftEnd={draftEnd}
                   onDayPress={handleDayPress}
+                  primaryColor={primaryColor}
+                  primaryLight={primaryLight}
                 />
               ))}
             </View>
           </View>
 
           <View style={styles.sheetFooter}>
-            <PressableWithFade onPress={handleClear} style={styles.clearBtn}>
+            <PressableWithFade
+              onPress={handleClear}
+              style={styles.clearBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.date_range_clear')}
+            >
               <Text style={styles.clearText}>{t('mobile.date_range_clear')}</Text>
             </PressableWithFade>
           </View>

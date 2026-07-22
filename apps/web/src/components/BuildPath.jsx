@@ -67,8 +67,21 @@ function debounce(func, wait) {
  * @param {ReturnType<typeof useProjectPhases>|null} [props.phaseControl] — shared hook from parent (avoids duplicate fetch)
  * @param {() => void} [props.onPhasesChange] — called after any mutation (parent can sync)
  * @param {boolean} [props.embedded] — hide duplicate header actions when parent provides toolbar
+ * @param {boolean} [props.hideEmbeddedToolbar] — parent renders Add Phase / Edit in its own header
+ * @param {boolean} [props.isEditing]
+ * @param {(next: boolean) => void} [props.onEditingChange]
+ * @param {() => void} [props.onAddPhase]
  */
-function BuildPath({ project, phaseControl = null, onPhasesChange, embedded = false }) {
+function BuildPath({
+  project,
+  phaseControl = null,
+  onPhasesChange,
+  embedded = false,
+  hideEmbeddedToolbar = false,
+  isEditing: isEditingProp,
+  onEditingChange,
+  onAddPhase,
+}) {
     const { t } = useTranslation();
     const { state } = useAppContext();
     const internalControl = useProjectPhases(phaseControl ? null : project?.id, project);
@@ -83,9 +96,19 @@ function BuildPath({ project, phaseControl = null, onPhasesChange, embedded = fa
         reorderPhases,
     } = control;
 
-    const [isEditing, setIsEditing] = useState(false);
+    const [isEditingInternal, setIsEditingInternal] = useState(false);
+    const isEditing = typeof isEditingProp === 'boolean' ? isEditingProp : isEditingInternal;
+    const setIsEditing = (next) => {
+        const value = typeof next === 'function' ? next(isEditing) : next;
+        if (onEditingChange) onEditingChange(value);
+        if (typeof isEditingProp !== 'boolean') setIsEditingInternal(value);
+    };
     const [editingPhase, setEditingPhase] = useState(null);
     const [showPhaseModal, setShowPhaseModal] = useState(false);
+    const openAddPhase = () => {
+        if (onAddPhase) onAddPhase();
+        else setShowPhaseModal(true);
+    };
     const [editingValues, setEditingValues] = useState({});
     const [canEditProjects, setCanEditProjects] = useState(false);
     const [draggedPhase, setDraggedPhase] = useState(null);
@@ -220,7 +243,7 @@ function BuildPath({ project, phaseControl = null, onPhasesChange, embedded = fa
                         <div className="flex gap-2">
                             <button
                                 type="button"
-                                onClick={() => setShowPhaseModal(true)}
+                                onClick={openAddPhase}
                                 className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
                             >
                                 + {t('build_path.add_phase')}
@@ -237,11 +260,11 @@ function BuildPath({ project, phaseControl = null, onPhasesChange, embedded = fa
                 </div>
             )}
 
-            {embedded && isAuthorized() && (
+            {embedded && isAuthorized() && !hideEmbeddedToolbar && (
                 <div className="flex justify-end gap-2 mb-3">
                     <button
                         type="button"
-                        onClick={() => setShowPhaseModal(true)}
+                        onClick={openAddPhase}
                         className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
                     >
                         + {t('build_path.add_phase')}

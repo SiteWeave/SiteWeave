@@ -19,6 +19,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -41,6 +43,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -52,7 +55,8 @@ jobs:
         run: npm ci
 
       - name: Run React Doctor
-        uses: millionco/react-doctor@main
+        # Pin to commit SHA (was @main). Update intentionally when upgrading.
+        uses: millionco/react-doctor@359d9b376fce4cbf037be65ec22df9ae444d836a
         with:
           project: apps/mobile,apps/web
           scope: full

@@ -4,6 +4,7 @@ import 'react-native-reanimated';
 import '../i18n';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { I18nextProvider } from 'react-i18next';
 import i18n, { i18nReady } from '../i18n';
 import { AuthProvider, useAuth } from '../context/AuthContext';
@@ -14,12 +15,14 @@ import { MobileExperienceProvider } from '../context/MobileExperienceContext';
 import { useEffect, useRef, useState } from 'react';
 import NoOrganizationScreen from '../components/NoOrganizationScreen';
 import StoreUpdateModal from '../components/StoreUpdateModal';
+import ReviewPromptModal from '../components/ReviewPromptModal';
 import {
   getNextOnboardingRoute,
   getPendingInviteOnboarding,
   clearPendingInviteOnboarding,
   isOnboardingScreen,
   isAuthSetupScreen,
+  clearLegacyDeviceOnboardingFlags,
 } from '../utils/onboarding';
 import { needsProfileCompletion, hasPendingSignupProfileSetup } from '../utils/authProfile';
 import { getLastNotificationRoute } from '../utils/notifications';
@@ -50,6 +53,10 @@ function RootLayoutNav() {
   }, [user]);
 
   useEffect(() => {
+    clearLegacyDeviceOnboardingFlags().catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (loading) return;
 
     const timer = setTimeout(async () => {
@@ -73,7 +80,10 @@ function RootLayoutNav() {
       }
 
       const pending = await getPendingInviteOnboarding();
-      const nextRoute = await getNextOnboardingRoute({ skipWeather: pending.skipWeather });
+      const nextRoute = await getNextOnboardingRoute({
+        userId: user.id,
+        skipWeather: pending.skipWeather,
+      });
 
       if (nextRoute) {
         if (onOnboardingScreen || onCompleteProfile) return;
@@ -167,22 +177,25 @@ export default function RootLayout() {
   if (!i18nLoaded) return null;
 
   return (
-    <SafeAreaProvider>
-      <I18nextProvider i18n={i18n}>
-        <AuthProvider>
-          <AppUpdateProvider>
-            <SyncStatusProvider>
-              <MobileExperienceProvider>
-                <BrandingProvider>
-                  <RootLayoutNav />
-                </BrandingProvider>
-              </MobileExperienceProvider>
-              <StoreUpdateModal />
-            </SyncStatusProvider>
-          </AppUpdateProvider>
-        </AuthProvider>
-      </I18nextProvider>
-    </SafeAreaProvider>
+    <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
+      <SafeAreaProvider>
+        <I18nextProvider i18n={i18n}>
+          <AuthProvider>
+            <AppUpdateProvider>
+              <SyncStatusProvider>
+                <MobileExperienceProvider>
+                  <BrandingProvider>
+                    <RootLayoutNav />
+                  </BrandingProvider>
+                </MobileExperienceProvider>
+                <StoreUpdateModal />
+                <ReviewPromptModal />
+              </SyncStatusProvider>
+            </AppUpdateProvider>
+          </AuthProvider>
+        </I18nextProvider>
+      </SafeAreaProvider>
+    </KeyboardProvider>
   );
 }
 

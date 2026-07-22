@@ -1,6 +1,6 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildOptInSmsBody } from './smsCompliance.ts'
-import { sendTwilioSms } from './twilioSms.ts'
+import { sendSms } from './signalHouseSms.ts'
 
 export type SmsConsentRow = {
   phone_e164: string
@@ -92,9 +92,9 @@ export async function sendOptInIfEligible(
   const token = randomToken()
   const body = buildOptInSmsBody(organizationName, token)
 
-  const smsResult = await sendTwilioSms({ to: phoneE164, body })
+  const smsResult = await sendSms({ to: phoneE164, body })
   if (!smsResult.success) {
-    return { sent: false, reason: smsResult.error || 'twilio_send_failed' }
+    return { sent: false, reason: smsResult.error || 'sms_send_failed' }
   }
 
   const now = new Date().toISOString()

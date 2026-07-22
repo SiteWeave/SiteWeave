@@ -26,6 +26,7 @@ const TaskItem = memo(function TaskItem({
     pingLocked = false,
     onRequestAssigneeSmsConsent = null,
     onShareSmsConsentLink = null,
+    onCopyGuestLink = null,
     pingingTaskId = null,
     project = null,
 }) {
@@ -40,6 +41,7 @@ const TaskItem = memo(function TaskItem({
     const [editAssigneePhone, setEditAssigneePhone] = useState(String(task.contacts?.phone || '').trim());
     const [editPriority, setEditPriority] = useState(task.priority);
     const [showAllPredecessors, setShowAllPredecessors] = useState(false);
+    const [draftPercent, setDraftPercent] = useState(null);
 
     const rootRef = useRef(null);
     const suppressRowDragRef = useRef(false);
@@ -99,6 +101,22 @@ const TaskItem = memo(function TaskItem({
     };
     const progressPercent = Math.max(0, Math.min(100, Number(task.percent_complete ?? (task.completed ? 100 : 0)) || 0));
     const isComplete = task.completed || progressPercent >= 100;
+
+    // Show the in-progress draft while editing, otherwise the saved value.
+    const displayPercent = draftPercent === null ? progressPercent : draftPercent;
+
+    // Commit the percent once (on blur / Enter) so a single 0→100 edit fires one
+    // update + one toast instead of one per keystroke or spinner click.
+    const commitPercent = useCallback(() => {
+        if (draftPercent === null) return;
+        const bounded = Math.max(0, Math.min(100, Number(draftPercent) || 0));
+        setDraftPercent(null);
+        if (bounded === progressPercent) return;
+        onEdit(task.id, {
+            percent_complete: bounded,
+            completed: bounded >= 100,
+        });
+    }, [draftPercent, progressPercent, onEdit, task.id]);
 
     const daysSelected = () => {
         if (!draftStart || !draftDue) return null;
@@ -385,13 +403,19 @@ const TaskItem = memo(function TaskItem({
                                         draggable={false}
                                         min="0"
                                         max="100"
-                                        value={progressPercent}
+                                        value={displayPercent}
                                         onChange={(e) => {
                                             const bounded = Math.max(0, Math.min(100, Number(e.target.value) || 0));
-                                            onEdit(task.id, {
-                                                percent_complete: bounded,
-                                                completed: bounded >= 100,
-                                            });
+                                            setDraftPercent(bounded);
+                                        }}
+                                        onBlur={commitPercent}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                e.currentTarget.blur();
+                                            } else if (e.key === 'Escape') {
+                                                setDraftPercent(null);
+                                            }
                                         }}
                                         className="h-7 w-14 shrink-0 select-text rounded border border-gray-300 px-1 text-xs text-gray-800 [-moz-appearance:textfield] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                         aria-label={`Percent complete for ${task.text}`}
@@ -633,6 +657,34 @@ const TaskItem = memo(function TaskItem({
                                 <span className="hidden sm:inline max-w-[96px] ui-ellipsis-1">{assigneeLabel}</span>
                             </button>
                         </PermissionGuard>
+
+                        {onCopyGuestLink && (
+                            <PermissionGuard permission="can_assign_tasks">
+                                <button
+                                    type="button"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        onCopyGuestLink(task);
+                                    }}
+                                    className="flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-500 shadow-xs hover:border-blue-200 hover:text-blue-600"
+                                    title={t('tasks.guest_link_title', {
+                                        defaultValue: 'Copy guest link (no account needed)',
+                                    })}
+                                    aria-label={t('tasks.guest_link_aria', {
+                                        defaultValue: 'Copy guest link for {{task}}',
+                                        task: task.text,
+                                    })}
+                                >
+                                    <Icon
+                                        path="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622a4.5 4.5 0 00-1.242-7.244l-4.5-4.5a4.5 4.5 0 00-6.364 6.364l1.757 1.757"
+                                        className="h-3.5 w-3.5 shrink-0"
+                                    />
+                                    <span className="hidden sm:inline">
+                                        {t('tasks.guest_link', { defaultValue: 'Guest link' })}
+                                    </span>
+                                </button>
+                            </PermissionGuard>
+                        )}
 
                         {onPingAssignee &&
                             task.assignee_id &&

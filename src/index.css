@@ -1,7 +1,9 @@
 @import "tailwindcss";
+@import "../packages/design-tokens/src/web.css";
 
 @source "./**/*.{js,jsx,ts,tsx}";
 @source "../packages/core-logic/src/**/*.{js,jsx,ts,tsx}";
+@source "../packages/design-tokens/src/**/*.{js,css}";
 
 /* Professional styling matching main app */
 body {
@@ -137,13 +139,33 @@ textarea:focus-visible {
   }
 }
 
+.animate-slide-in {
+  animation: viewFadeIn 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+.hover-lift {
+  transition: transform 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .btn-smooth:active:not(:disabled) {
     transform: none;
   }
 
-  .view-fade-in {
+  .view-fade-in,
+  .animate-slide-in {
     animation: none;
+  }
+
+  .hover-lift:hover {
+    transform: none;
   }
 }
 

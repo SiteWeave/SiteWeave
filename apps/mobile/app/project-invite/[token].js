@@ -44,6 +44,7 @@ export default function ProjectInviteDeepLinkScreen() {
         await routeAfterAuth(router, {
           inviteDestination: `/(tabs)/projects/${result.projectId}`,
           skipWeather: true,
+          user,
         });
         return;
       }

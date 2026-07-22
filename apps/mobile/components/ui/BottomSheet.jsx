@@ -4,7 +4,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Platform,
   Animated,
   Dimensions,
@@ -12,6 +11,11 @@ import {
   Keyboard,
   PanResponder,
 } from 'react-native';
+import {
+  KeyboardAwareScrollView,
+  KeyboardStickyView,
+  useKeyboardState,
+} from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing, typography, touch } from '../../theme';
 import { sheetScrollEndPadding } from '../../utils/layoutInsets';
@@ -27,6 +31,7 @@ const DISMISS_VELOCITY = 0.85;
 const EXPAND_DRAG = -80;
 const EXPAND_VELOCITY = -1.2;
 const COLLAPSE_DRAG = 60;
+const FOOTER_SCROLL_FALLBACK = touch.sheetButtonHeight + spacing.xl + spacing.md;
 
 const SNAP_ORDER = ['medium', 'large', 'fullscreen'];
 
@@ -88,6 +93,7 @@ export default function BottomSheet({
     primaryPlacementProp ?? (stickyPrimary ? 'footer' : 'both');
   const insets = useSafeAreaInsets();
   const sheetOverlay = useSheetOverlay();
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const hideTabBarRef = useRef(hideTabBar);
   hideTabBarRef.current = hideTabBar;
   const dismissWithoutAnimationRef = useRef(dismissWithoutAnimation);
@@ -97,9 +103,12 @@ export default function BottomSheet({
   const wasVisibleRef = useRef(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [activeSnap, setActiveSnap] = useState(snap);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [rendered, setRendered] = useState(visible);
+  const [closing, setClosing] = useState(false);
+  const [footerHeight, setFooterHeight] = useState(FOOTER_SCROLL_FALLBACK);
+  const [contentHeight, setContentHeight] = useState(0);
   const renderedRef = useRef(visible);
+  const closeTimerRef = useRef(null);
   const activeSnapRef = useRef(snap);
   activeSnapRef.current = activeSnap;
   const targetHeightRef = useRef(null);
@@ -124,7 +133,6 @@ export default function BottomSheet({
   expandVelocityThresholdRef.current = expandVelocityThreshold;
 
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  const kbOffsetAnim = useRef(new Animated.Value(0)).current;
   const dragY = useRef(new Animated.Value(0)).current;
   const scrimOpacity = useRef(new Animated.Value(0)).current;
   const heightAnim = useRef(
@@ -135,6 +143,7 @@ export default function BottomSheet({
   onCloseRef.current = onClose;
 
   const requestClose = useCallback(() => {
+    Keyboard.dismiss();
     onCloseRef.current?.();
   }, []);
 
@@ -145,24 +154,13 @@ export default function BottomSheet({
     return () => sub.remove();
   }, []);
 
-  // ── keyboard listeners ─────────────────────────────────────────────────────
+  // ── reset snap when opening / closing ──────────────────────────────────────
   useEffect(() => {
     if (!visible) {
-      setKeyboardHeight(0);
       setActiveSnap(snap);
       return;
     }
     setActiveSnap(snap);
-
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSub = Keyboard.addListener(showEvt, (e) =>
-      setKeyboardHeight(e?.endCoordinates?.height ?? 0),
-    );
-    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
-
-    return () => { showSub.remove(); hideSub.remove(); };
   }, [visible, snap]);
 
   // ── slide-in / slide-out + scrim ─────────────────────────────────────────
@@ -171,8 +169,15 @@ export default function BottomSheet({
 
     if (visible && !wasVisible) {
       wasVisibleRef.current = true;
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
       renderedRef.current = true;
+      setClosing(false);
       setRendered(true);
+      setContentHeight(0);
+      setFooterHeight(FOOTER_SCROLL_FALLBACK);
       dragY.setValue(0);
       slideAnim.setValue(SCREEN_HEIGHT);
       scrimOpacity.setValue(0);
@@ -211,9 +216,19 @@ export default function BottomSheet({
 
       if (!renderedRef.current) return;
 
+      Keyboard.dismiss();
+      // Stop eating touches immediately — do not wait for the exit animation.
+      setClosing(true);
+
       const finishClose = () => {
+        if (closeTimerRef.current) {
+          clearTimeout(closeTimerRef.current);
+          closeTimerRef.current = null;
+        }
+        if (!renderedRef.current) return;
         renderedRef.current = false;
         dragY.setValue(0);
+        setClosing(false);
         setRendered(false);
         sheetOverlay?.sheetClosed({ hideTabBar: hideTabBarRef.current, reduceMotion });
         onDismissedRef.current?.();
@@ -226,45 +241,33 @@ export default function BottomSheet({
         return;
       }
 
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: SCREEN_HEIGHT,
-          duration: 220,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scrimOpacity, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: false,
-        }),
-      ]).start(finishClose);
+      // Mixed native/JS drivers in parallel can drop the completion callback on some
+      // devices — always force-unmount on a timer so an invisible Modal cannot freeze the page.
+      closeTimerRef.current = setTimeout(finishClose, 280);
+      Animated.timing(slideAnim, {
+        toValue: SCREEN_HEIGHT,
+        duration: 220,
+        useNativeDriver: true,
+      }).start();
+      Animated.timing(scrimOpacity, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: false,
+      }).start();
     }
+
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
   }, [visible, reduceMotion, slideAnim, scrimOpacity, dragY, heightAnim, snap, maxSnap, sheetOverlay]);
 
-  // ── keyboard Y-offset  (useNativeDriver: true) ────────────────────────────
-  // Move the sheet up by keyboardHeight so it sits above the keyboard.
-  useEffect(() => {
-    const target = keyboardHeight > 0 ? -keyboardHeight : 0;
-    if (reduceMotion) { kbOffsetAnim.setValue(target); return; }
-    Animated.timing(kbOffsetAnim, {
-      toValue: target,
-      duration: 260,
-      useNativeDriver: true,
-    }).start();
-  }, [keyboardHeight, kbOffsetAnim, reduceMotion]);
-
   // ── height animation  (useNativeDriver: false) ────────────────────────────
-  // When keyboard is visible, clamp the snap height to the available space
-  // above it so the sheet never extends off-screen.
   const targetHeight = useMemo(() => {
-    const base = resolveBaseHeight(clampSnap(activeSnap, maxSnap));
-    if (!base) return null; // content-sized; no explicit height
-    if (keyboardHeight > 0) {
-      const above = SCREEN_HEIGHT - keyboardHeight - insets.top - spacing.xs;
-      return Math.min(base, Math.max(320, above));
-    }
-    return base;
-  }, [activeSnap, maxSnap, keyboardHeight, insets.top]);
+    return resolveBaseHeight(clampSnap(activeSnap, maxSnap));
+  }, [activeSnap, maxSnap]);
 
   targetHeightRef.current = targetHeight;
 
@@ -311,19 +314,44 @@ export default function BottomSheet({
   // Seed heightAnim when the snap prop itself changes between renders
   useEffect(() => {
     const base = resolveBaseHeight(snap);
-    if (base && keyboardHeight === 0) {
+    if (base) {
       setActiveSnap(snap);
       heightAnim.setValue(base);
     }
   }, [snap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── expand on input focus ──────────────────────────────────────────────────
+  // `content` is outside SNAP_ORDER — allow it to grow into expandOnFocusSnap
   const handleInputFocus = useCallback(() => {
     if (!expandOnFocus) return;
     const target = clampSnap(expandOnFocusSnapRef.current, maxSnapRef.current);
-    if (snapIndex(activeSnap) >= snapIndex(target)) return;
+    if (activeSnap !== 'content' && snapIndex(activeSnap) >= snapIndex(target)) return;
+    // Seed height from measured content so content→fixed snap doesn't jump.
+    if (activeSnap === 'content' && contentHeight > 0) {
+      heightAnim.setValue(contentHeight);
+    }
     setActiveSnap(target);
-  }, [expandOnFocus, activeSnap]);
+  }, [expandOnFocus, activeSnap, contentHeight, heightAnim]);
+
+  const isContentSized = targetHeight == null;
+  const stickyOffset = useMemo(
+    () => ({
+      closed: 0,
+      // Sheet shell uses negative bottom inset; lift an extra inset when keyboard opens
+      // so the sticky footer sits flush on the keyboard instead of overlapping it.
+      opened: insets.bottom > 0 ? insets.bottom : 0,
+    }),
+    [insets.bottom],
+  );
+  const onFooterLayout = useCallback((event) => {
+    const next = Math.ceil(event?.nativeEvent?.layout?.height || 0);
+    if (next > 0) setFooterHeight(next);
+  }, []);
+  const onBodyLayout = useCallback((event) => {
+    if (!isContentSized) return;
+    const next = Math.ceil(event?.nativeEvent?.layout?.height || 0);
+    if (next > 0) setContentHeight(next);
+  }, [isContentSized]);
 
   // ── derived props ──────────────────────────────────────────────────────────
   const showHeaderPrimary =
@@ -332,7 +360,7 @@ export default function BottomSheet({
     onPrimary && (stickyPrimary || primaryPlacement === 'footer');
   const isFullscreen = clampSnap(activeSnap, maxSnap) === 'fullscreen';
 
-  const combinedTranslateY = Animated.add(Animated.add(slideAnim, kbOffsetAnim), dragY);
+  const combinedTranslateY = Animated.add(slideAnim, dragY);
   const translatedY = yOffset ? Animated.add(combinedTranslateY, yOffset) : combinedTranslateY;
   const shellPaddingBottom = insets.bottom + spacing.lg;
 
@@ -342,6 +370,9 @@ export default function BottomSheet({
         onMoveShouldSetPanResponder: (_, gestureState) =>
           Math.abs(gestureState.dy) > 6 &&
           Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+        onPanResponderGrant: () => {
+          Keyboard.dismiss();
+        },
         onPanResponderMove: (_, gestureState) => {
           if (gestureState.dy > 0) {
             dragY.setValue(gestureState.dy);
@@ -426,18 +457,78 @@ export default function BottomSheet({
     [dragY, scrimOpacity, requestClose, heightAnim, insets.top, getNextExpandedSnap, getPreviousSnap, animateHeightTo],
   );
 
+  const footerNode = showFooterPrimary ? (
+    <View
+      style={[
+        styles.footer,
+        footerContent || onSecondary ? styles.footerSplit : styles.footerEnd,
+        // Container uses negative bottom inset so the sheet can sit edge-to-edge;
+        // footer must reclaim that safe area or the CTA sits on the home indicator.
+        { paddingBottom: Math.max(spacing.md, insets.bottom) + spacing.sm },
+      ]}
+    >
+      {footerContent || onSecondary ? (
+        <View style={styles.footerLeading}>
+          {onSecondary && secondaryLabel ? (
+            <PressableWithFade
+              onPress={onSecondary}
+              style={styles.footerSecondary}
+              testID={testID ? `${testID}-secondary` : undefined}
+            >
+              <Text style={styles.footerSecondaryText}>{secondaryLabel}</Text>
+            </PressableWithFade>
+          ) : (
+            footerContent
+          )}
+        </View>
+      ) : null}
+      <PressableWithFade
+        onPress={onPrimary}
+        disabled={primaryDisabled || primaryLoading}
+        containerStyle={!(footerContent || onSecondary) ? styles.footerPrimarySolo : undefined}
+        style={[
+          styles.footerPrimary,
+          !(footerContent || onSecondary) && styles.footerPrimaryFill,
+          (primaryDisabled || primaryLoading) && styles.footerPrimaryDisabled,
+        ]}
+        testID={testID ? `${testID}-footer-save` : undefined}
+      >
+        <Text
+          style={[
+            styles.footerPrimaryText,
+            (primaryDisabled || primaryLoading) && styles.footerPrimaryTextDisabled,
+          ]}
+        >
+          {primaryLoading ? '…' : primaryLabel || 'Save'}
+        </Text>
+      </PressableWithFade>
+    </View>
+  ) : footerContent ? (
+    <View style={[styles.footer, { paddingBottom: Math.max(spacing.md, insets.bottom) + spacing.sm }]}>
+      {footerContent}
+    </View>
+  ) : null;
+
   return (
     <Modal
       visible={rendered}
       animationType="none"
       transparent
+      statusBarTranslucent={Platform.OS === 'android'}
       onRequestClose={requestClose}
       accessibilityViewIsModal
     >
-      <View style={[styles.container, insets.bottom > 0 && { marginBottom: -insets.bottom }]}>
-        <ModalScrim onPress={requestClose} animatedOpacity={scrimOpacity} />
+      <View
+        style={[styles.container, insets.bottom > 0 && { marginBottom: -insets.bottom }]}
+      >
+        <ModalScrim
+          onPress={requestClose}
+          animatedOpacity={scrimOpacity}
+          pointerEvents={rendered && !closing ? 'auto' : 'none'}
+        />
 
         <Animated.View
+          pointerEvents={closing ? 'none' : 'box-none'}
           style={[
             styles.outerWrapper,
             styles.sheetShell,
@@ -448,7 +539,7 @@ export default function BottomSheet({
             style={[
               styles.sheet,
               isFullscreen && [styles.sheetFullscreen, { paddingTop: insets.top + spacing.sm }],
-              { paddingBottom: shellPaddingBottom },
+              { paddingBottom: showFooterPrimary || footerContent ? spacing.sm : shellPaddingBottom },
               targetHeight
                 ? { height: heightAnim, minHeight: targetHeight }
                 : [styles.sheetContent, { maxHeight: '90%' }, minHeight ? { minHeight } : null],
@@ -530,55 +621,24 @@ export default function BottomSheet({
               )}
             </View>
 
-            <SheetFocusProvider onInputFocus={handleInputFocus}>
-              <View style={[styles.body, targetHeight == null ? styles.bodyContent : styles.bodyFlex]}>
+            <SheetFocusProvider
+              onInputFocus={handleInputFocus}
+              contentSized={isContentSized}
+              footerHeight={showFooterPrimary || footerContent ? footerHeight : 0}
+              keyboardOpen={keyboardVisible}
+            >
+              <View
+                style={[styles.body, isContentSized ? styles.bodyContent : styles.bodyFlex]}
+                onLayout={onBodyLayout}
+              >
                 {children}
               </View>
             </SheetFocusProvider>
 
-            {showFooterPrimary ? (
-              <View
-                style={[
-                  styles.footer,
-                  footerContent || onSecondary ? styles.footerSplit : styles.footerEnd,
-                ]}
-              >
-                {footerContent || onSecondary ? (
-                  <View style={styles.footerLeading}>
-                    {onSecondary && secondaryLabel ? (
-                      <PressableWithFade
-                        onPress={onSecondary}
-                        style={styles.footerSecondary}
-                        testID={testID ? `${testID}-secondary` : undefined}
-                      >
-                        <Text style={styles.footerSecondaryText}>{secondaryLabel}</Text>
-                      </PressableWithFade>
-                    ) : (
-                      footerContent
-                    )}
-                  </View>
-                ) : null}
-                <PressableWithFade
-                  onPress={onPrimary}
-                  disabled={primaryDisabled || primaryLoading}
-                  style={[
-                    styles.footerPrimary,
-                    (primaryDisabled || primaryLoading) && styles.footerPrimaryDisabled,
-                  ]}
-                  testID={testID ? `${testID}-footer-save` : undefined}
-                >
-                  <Text
-                    style={[
-                      styles.footerPrimaryText,
-                      (primaryDisabled || primaryLoading) && styles.footerPrimaryTextDisabled,
-                    ]}
-                  >
-                    {primaryLoading ? '…' : primaryLabel || 'Save'}
-                  </Text>
-                </PressableWithFade>
-              </View>
-            ) : footerContent ? (
-              <View style={styles.footer}>{footerContent}</View>
+            {footerNode ? (
+              <KeyboardStickyView offset={stickyOffset} enabled={rendered}>
+                <View onLayout={onFooterLayout}>{footerNode}</View>
+              </KeyboardStickyView>
             ) : null}
           </Animated.View>
         </Animated.View>
@@ -591,24 +651,41 @@ export function useSheetInsets() {
   return useSafeAreaInsets();
 }
 
-function BottomSheetScroll({ children, contentContainerStyle, style, ...props }) {
+function BottomSheetScroll({ children, contentContainerStyle, style, bottomOffset, ...props }) {
   const insets = useSheetInsets();
   const ctx = useSheetFocus();
+  const contentSized = Boolean(ctx?.contentSized);
+  const footerReserve = ctx?.footerHeight > 0 ? ctx.footerHeight : 0;
+  const keyboardOpen = Boolean(ctx?.keyboardOpen);
+  // When the sticky footer is present, reserve enough scroll room that focused inputs
+  // (and inlined Save actions) can scroll above the keyboard.
+  const resolvedBottomOffset =
+    bottomOffset ??
+    (footerReserve + spacing.md + (keyboardOpen ? spacing.lg : 0));
   return (
-    <ScrollView
+    <KeyboardAwareScrollView
       ref={ctx?.scrollRef}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="interactive"
       showsVerticalScrollIndicator={false}
-      contentInsetAdjustmentBehavior={Platform.OS === 'ios' ? 'automatic' : undefined}
+      bottomOffset={resolvedBottomOffset}
+      extraKeyboardSpace={Platform.OS === 'ios' ? spacing.lg : spacing.md}
+      contentInsetAdjustmentBehavior={Platform.OS === 'ios' ? 'never' : undefined}
+      automaticallyAdjustKeyboardInsets={false}
       {...props}
-      style={[styles.scroll, style]}
+      style={[contentSized ? styles.scrollContent : styles.scroll, style]}
       contentContainerStyle={[
-        { paddingBottom: sheetScrollEndPadding(insets) },
+        contentSized ? styles.scrollContentContainer : null,
+        {
+          paddingBottom:
+            sheetScrollEndPadding(insets, contentSized ? -spacing.lg : 0) +
+            (footerReserve > 0 && !contentSized ? spacing.md : spacing.sm),
+        },
         contentContainerStyle,
       ]}
     >
       {children}
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 
@@ -620,7 +697,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
   },
-  // Sits at the bottom; translateY lifts it off-screen or to keyboard-aware position
   outerWrapper: {
     width: '100%',
   },
@@ -721,6 +797,14 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   scroll: { flex: 1 },
+  // content snap: flex:1 collapses when the sheet has no fixed height
+  scrollContent: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  scrollContentContainer: {
+    flexGrow: 0,
+  },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -737,7 +821,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   footerEnd: {
-    justifyContent: 'flex-end',
+    justifyContent: 'stretch',
   },
   footerLeading: {
     flexShrink: 1,
@@ -765,6 +849,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     flexShrink: 0,
+  },
+  footerPrimarySolo: {
+    flex: 1,
+  },
+  footerPrimaryFill: {
+    width: '100%',
   },
   footerPrimaryDisabled: { opacity: 0.45 },
   footerPrimaryText: {

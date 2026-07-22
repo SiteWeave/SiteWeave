@@ -318,7 +318,14 @@ CREATE TABLE IF NOT EXISTS profiles (
     role_id UUID REFERENCES roles(id) ON DELETE SET NULL,
     is_super_admin BOOLEAN DEFAULT false,
     must_change_password BOOLEAN DEFAULT false,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    review_eligible_at TIMESTAMPTZ NULL,
+    review_prompt_shown_at TIMESTAMPTZ NULL,
+    review_prompt_action TEXT NULL CHECK (
+      review_prompt_action IS NULL
+      OR review_prompt_action IN ('dismissed', 'requested_review')
+    ),
+    review_prompt_app_version TEXT NULL
 );
 
 -- Calendar Events Table
@@ -4681,6 +4688,15 @@ USING (
       WHERE p.id = (select auth.uid())
     )
   )
+);
+
+CREATE POLICY "Org admins can see organization invitations"
+ON public.invitations
+FOR SELECT
+USING (
+  (select auth.uid()) IS NOT NULL
+  AND organization_id IS NOT NULL
+  AND public.is_org_admin(organization_id)
 );
 
 -- RPC for invite acceptance page: fetch single invitation by token (anon can call).

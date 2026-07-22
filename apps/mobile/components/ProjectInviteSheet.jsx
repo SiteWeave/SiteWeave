@@ -15,6 +15,7 @@ import PressableWithFade from './PressableWithFade';
 import { Text } from './ui/Text';
 import { colors, spacing, touch } from '../theme';
 import { markGettingStartedInviteSent } from '../utils/onboarding';
+import { signalReviewPromptOpportunity } from '../utils/reviewPromptEvents';
 
 function parseEmails(input) {
   return Array.from(
@@ -30,6 +31,8 @@ function parseEmails(input) {
 export default function ProjectInviteSheet({
   visible,
   onClose,
+  onDismissed,
+  dismissWithoutAnimation = false,
   supabase,
   project,
   userId,
@@ -89,6 +92,17 @@ export default function ProjectInviteSheet({
     [entries],
   );
 
+  const directoryContacts = useMemo(() => {
+    const selfEmail = String(userEmail || '').trim().toLowerCase();
+    return (contacts || []).filter((c) => {
+      const email = String(c?.email || '').trim().toLowerCase();
+      if (!email) return false;
+      if (selfEmail && email === selfEmail) return false;
+      if (queuedEmails.has(email)) return false;
+      return true;
+    });
+  }, [contacts, queuedEmails, userEmail]);
+
   const addEmail = (rawEmail, role = defaultRole) => {
     const email = String(rawEmail || '').trim().toLowerCase();
     if (!email.includes('@')) return;
@@ -111,6 +125,25 @@ export default function ProjectInviteSheet({
     setEmailInput('');
   };
 
+  /** Merge typed input into the queue so Send works without tapping +. */
+  const collectEntriesForSend = useCallback(() => {
+    const pendingEmails = parseEmails(emailInput);
+    if (pendingEmails.length === 0) return entries;
+
+    const known = new Set(entries.map((entry) => entry.email));
+    const next = [...entries];
+    for (const email of pendingEmails) {
+      if (userEmail && email === userEmail.trim().toLowerCase()) {
+        setError(t('mobile.project_invite_own_email'));
+        continue;
+      }
+      if (known.has(email)) continue;
+      known.add(email);
+      next.push({ email, role: defaultRole });
+    }
+    return next;
+  }, [emailInput, entries, userEmail, defaultRole, t]);
+
   const handleSelectContact = (contact) => {
     const role = defaultProjectCrewRoleForContact({
       contactType: contact?.type,
@@ -124,7 +157,22 @@ export default function ProjectInviteSheet({
   };
 
   const handleSend = async () => {
-    if (!supabase || !projectId || !userId || entries.length === 0) return;
+    if (!supabase || !projectId || !userId) return;
+
+    const toSend = collectEntriesForSend();
+    if (toSend.length === 0) {
+      if (emailInput.trim()) {
+        setError(t('mobile.project_invite_invalid_email'));
+      }
+      return;
+    }
+
+    // Reflect flushed input in the queue UI if send fails mid-flight.
+    if (toSend.length !== entries.length) {
+      setEntries(toSend);
+      setEmailInput('');
+    }
+
     setSubmitting(true);
     setError(null);
     try {
@@ -139,7 +187,7 @@ export default function ProjectInviteSheet({
       const { data, error: fnError } = await supabase.functions.invoke('invite_or_add_member', {
         body: {
           projectId,
-          entries: entries.map(({ email, role }) => ({ email, role })),
+          entries: toSend.map(({ email, role }) => ({ email, role })),
           addedByUserId: userId,
         },
       });
@@ -152,7 +200,8 @@ export default function ProjectInviteSheet({
         throw new Error(failed[0]?.error || t('mobile.project_invite_error'));
       }
 
-      await markGettingStartedInviteSent();
+      await markGettingStartedInviteSent(userId);
+      signalReviewPromptOpportunity();
       onInvited?.();
       onClose?.();
       Alert.alert(t('common.success'), t('mobile.project_invite_success'));
@@ -168,21 +217,31 @@ export default function ProjectInviteSheet({
     }
   };
 
+  const canSend =
+    !submitting && (entries.length > 0 || parseEmails(emailInput).length > 0);
+
   return (
     <BottomSheet
       visible={visible}
       title={t('mobile.project_invite_title')}
       onClose={onClose}
+      onDismissed={onDismissed}
+      dismissWithoutAnimation={dismissWithoutAnimation}
       primaryLabel={t('mobile.project_invite_send')}
       onPrimary={handleSend}
-      primaryDisabled={submitting || entries.length === 0}
+      primaryDisabled={!canSend}
       primaryLoading={submitting}
-      snap="medium"
+      snap="content"
+      maxSnap="large"
       expandOnFocus
+      expandOnFocusSnap="large"
       stickyPrimary
+      primaryPlacement="footer"
+      closeVariant="minimal"
+      closePosition="right"
       testID="project-invite-sheet"
     >
-      <BottomSheet.Scroll>
+      <BottomSheet.Scroll contentContainerStyle={styles.scrollContent}>
         <Text variant="caption" style={styles.hint}>
           {t('mobile.project_invite_hint')}
         </Text>
@@ -213,7 +272,7 @@ export default function ProjectInviteSheet({
           <ActivityIndicator size="small" color={colors.primary} style={styles.loader} />
         ) : (
           <ContactSuggestionPicker
-            contacts={contacts.filter((c) => !queuedEmails.has(String(c.email).toLowerCase()))}
+            contacts={directoryContacts}
             selectedEmails={[]}
             onSelect={handleSelectContact}
             disabled={submitting}
@@ -265,6 +324,7 @@ export default function ProjectInviteSheet({
 }
 
 const styles = StyleSheet.create({
+  scrollContent: { paddingBottom: spacing.sm },
   hint: { color: colors.textMuted, marginBottom: spacing.lg, lineHeight: 18 },
   label: { fontWeight: '600', marginBottom: spacing.sm, color: colors.text },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },

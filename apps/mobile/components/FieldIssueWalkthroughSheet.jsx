@@ -4,8 +4,6 @@ import {
   StyleSheet,
   Alert,
   Image,
-  TextInput,
-  ScrollView,
   ActivityIndicator,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -115,13 +113,18 @@ export default function FieldIssueWalkthroughSheet({
       visible={visible}
       title={t('punchList.walkthrough_title')}
       onClose={onClose}
+      primaryLabel={saving ? '…' : t('punchList.save_and_next')}
+      onPrimary={handleSaveAndNext}
+      primaryDisabled={saving}
+      primaryLoading={saving}
+      secondaryLabel={t('common.done')}
+      onSecondary={onClose}
+      snap="medium"
+      expandOnFocus
+      stickyPrimary
       testID="field-issue-walkthrough-sheet"
     >
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
+      <BottomSheet.Scroll contentContainerStyle={styles.content}>
         <Text variant="caption" style={styles.hint}>
           {t('punchList.walkthrough_hint')}
         </Text>
@@ -158,51 +161,35 @@ export default function FieldIssueWalkthroughSheet({
             );
           })}
         </View>
-        <TextInput
+        <BottomSheet.Input
           value={location}
           onChangeText={setLocation}
           placeholder={t('punchList.location_placeholder')}
           style={styles.input}
           placeholderTextColor={colors.textSubtle}
+          returnKeyType="next"
+          testID="walkthrough-location"
         />
 
         <Text variant="caption" style={styles.fieldLabel}>
           {t('punchList.note_label')}
         </Text>
-        <TextInput
+        <BottomSheet.Input
           value={note}
           onChangeText={setNote}
           placeholder={t('punchList.note_placeholder')}
           style={[styles.input, styles.noteInput]}
           placeholderTextColor={colors.textSubtle}
           multiline
+          testID="walkthrough-note"
         />
-
-        <View style={styles.actions}>
-          <PressableWithFade
-            style={[styles.primaryBtn, saving && styles.primaryBtnDisabled]}
-            onPress={handleSaveAndNext}
-            disabled={saving}
-            testID="walkthrough-save-next"
-          >
-            {saving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.primaryBtnText}>{t('punchList.save_and_next')}</Text>
-            )}
-          </PressableWithFade>
-          <PressableWithFade style={styles.secondaryBtn} onPress={onClose}>
-            <Text style={styles.secondaryBtnText}>{t('common.done')}</Text>
-          </PressableWithFade>
-        </View>
-      </ScrollView>
+      </BottomSheet.Scroll>
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { maxHeight: 520 },
-  content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl, gap: spacing.sm },
+  content: { paddingBottom: spacing.xl, gap: spacing.sm },
   hint: { color: colors.textMuted, marginBottom: spacing.sm },
   photoBox: {
     borderRadius: 12,
@@ -246,21 +233,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   noteInput: { minHeight: 72, textAlignVertical: 'top' },
-  actions: { marginTop: spacing.lg, gap: spacing.sm },
-  primaryBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    minHeight: touch.minSize,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  primaryBtnDisabled: { opacity: 0.7 },
-  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  secondaryBtn: {
-    minHeight: touch.minSize,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryBtnText: { color: colors.textMuted, fontWeight: '600' },
 });

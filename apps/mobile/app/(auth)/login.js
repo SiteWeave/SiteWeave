@@ -1,6 +1,7 @@
-import { View, StyleSheet, TextInput, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, TextInput, Alert } from 'react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -77,7 +78,11 @@ export default function LoginScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: sheetBottomPadding(insets) }]}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        bottomOffset={24}
+      >
         <PressableWithFade onPress={() => router.back()} style={styles.back} hitSlop={touch.hitSlop}>
           <Ionicons name="chevron-back" size={28} color={colors.text} />
         </PressableWithFade>
@@ -93,6 +98,10 @@ export default function LoginScreen() {
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
+          autoComplete="email"
+          textContentType="emailAddress"
+          autoCorrect={false}
+          returnKeyType="next"
           placeholderTextColor={colors.textSubtle}
           testID="login-email"
         />
@@ -104,6 +113,8 @@ export default function LoginScreen() {
           showPassword={showPassword}
           onToggleShow={() => setShowPassword((v) => !v)}
           testID="login-password"
+          returnKeyType="done"
+          onSubmitEditing={handleLogin}
         />
 
         <Button
@@ -119,7 +130,7 @@ export default function LoginScreen() {
           onMicrosoftPress={() => handleOAuth(signInWithMicrosoft)}
           disabled={loading}
         />
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </View>
   );
 }

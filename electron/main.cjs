@@ -51,6 +51,64 @@ let mainWindow;
 let oauthServer = null;
 const OAUTH_PORT = 5000;
 
+const OAUTH_TOKEN_URLS = Object.freeze({
+  google: 'https://oauth2.googleapis.com/token',
+  microsoft: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+});
+
+/** Only https: may leave the app via shell.openExternal. */
+function isSafeExternalUrl(urlString) {
+  try {
+    const parsed = new URL(String(urlString || ''));
+    return parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function openSafeExternalUrl(urlString) {
+  if (!isSafeExternalUrl(urlString)) {
+    console.warn('Blocked unsafe external URL:', urlString);
+    return false;
+  }
+  shell.openExternal(String(urlString));
+  return true;
+}
+
+function getAllowedAppOrigins() {
+  if (VITE_DEV_SERVER_URL) {
+    try {
+      return [new URL(VITE_DEV_SERVER_URL).origin];
+    } catch {
+      return ['http://localhost:5173'];
+    }
+  }
+  return ['file://'];
+}
+
+function isAllowedInternalNavigation(urlString) {
+  try {
+    const parsed = new URL(String(urlString || ''));
+    const allowed = getAllowedAppOrigins();
+    if (parsed.protocol === 'file:') {
+      return allowed.includes('file://');
+    }
+    return allowed.includes(parsed.origin);
+  } catch {
+    return false;
+  }
+}
+
+/** Reject IPC from unexpected frames (not our renderer). */
+function isTrustedIpcSender(event) {
+  try {
+    const frameUrl = event?.senderFrame?.url || event?.sender?.getURL?.() || '';
+    return isAllowedInternalNavigation(frameUrl);
+  } catch {
+    return false;
+  }
+}
+
 // Configure auto-updater
 // Only enable auto-download in production builds (not in dev mode)
 if (!VITE_DEV_SERVER_URL && autoUpdater && typeof autoUpdater.autoDownload !== 'undefined') {
@@ -89,7 +147,11 @@ function runUpdateCheck() {
 }
 
 // Run one check after the renderer attaches update listeners (avoids missing events).
-ipcMain.on('update-listeners-ready', () => {
+ipcMain.on('update-listeners-ready', (event) => {
+  if (!isTrustedIpcSender(event)) {
+    console.warn('Ignored update-listeners-ready from untrusted sender');
+    return;
+  }
   setTimeout(runUpdateCheck, 1500);
 });
 
@@ -258,10 +320,8 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
-      // Enable webSecurity when loading from HTTP (dev server)
-      // In production with file:// protocol, webSecurity may need to be disabled
-      // but Content Security Policy in index.html provides protection
-      webSecurity: !!VITE_DEV_SERVER_URL,
+      // Always keep Chromium same-origin protections enabled (Electron security checklist).
+      webSecurity: true,
       preload: path.join(__dirname, 'preload.js')
     },
     icon: app.isPackaged 
@@ -311,29 +371,19 @@ function createWindow() {
   });
 
 
-  // Handle external links
+  // Handle external links — https only; never open arbitrary schemes.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openSafeExternalUrl(url);
     return { action: 'deny' };
   });
 
-  // Prevent navigation to external URLs
+  // Prevent navigation away from the app origin; fail closed on parse errors.
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
-    const parsedUrl = new URL(navigationUrl);
-    
-    if (VITE_DEV_SERVER_URL) {
-      // In development, allow localhost:5173
-      if (parsedUrl.origin !== 'http://localhost:5173' && parsedUrl.origin !== 'file://') {
-        event.preventDefault();
-        shell.openExternal(navigationUrl);
-      }
-    } else {
-      // In production, only allow file:// protocol
-      if (parsedUrl.origin !== 'file://') {
-        event.preventDefault();
-        shell.openExternal(navigationUrl);
-      }
+    if (isAllowedInternalNavigation(navigationUrl)) {
+      return;
     }
+    event.preventDefault();
+    openSafeExternalUrl(navigationUrl);
   });
 }
 
@@ -545,6 +595,9 @@ autoUpdater.on('download-progress', (progressObj) => {
 
 // IPC handlers
 ipcMain.handle('save-html-as-pdf', async (event, { html, defaultFilename }) => {
+  if (!isTrustedIpcSender(event)) {
+    return { success: false, error: 'Untrusted IPC sender' };
+  }
   if (!html || typeof html !== 'string') {
     return { success: false, error: 'Missing HTML content' };
   }
@@ -573,7 +626,7 @@ ipcMain.handle('save-html-as-pdf', async (event, { html, defaultFilename }) => {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false,
+      webSecurity: true,
     },
   });
 
@@ -631,11 +684,17 @@ ipcMain.handle('save-html-as-pdf', async (event, { html, defaultFilename }) => {
   }
 });
 
-ipcMain.handle('get-app-version', () => {
+ipcMain.handle('get-app-version', (event) => {
+  if (!isTrustedIpcSender(event)) {
+    throw new Error('Untrusted IPC sender');
+  }
   return app.getVersion();
 });
 
-ipcMain.handle('install-update', () => {
+ipcMain.handle('install-update', (event) => {
+  if (!isTrustedIpcSender(event)) {
+    throw new Error('Untrusted IPC sender');
+  }
   autoUpdater.quitAndInstall();
 });
 
@@ -644,7 +703,10 @@ function isRetryableUpdateError(err) {
   return /504|502|503|ETIMEDOUT|ECONNRESET|network/i.test(String(msg));
 }
 
-ipcMain.handle('check-for-updates', async () => {
+ipcMain.handle('check-for-updates', async (event) => {
+  if (!isTrustedIpcSender(event)) {
+    throw new Error('Untrusted IPC sender');
+  }
   const runCheck = async () => {
     const result = await autoUpdater.checkForUpdates();
     const info = result?.updateInfo;
@@ -682,17 +744,33 @@ ipcMain.handle('check-for-updates', async () => {
   }
 });
 
-ipcMain.handle('start-oauth-server', () => {
+ipcMain.handle('open-external', (event, url) => {
+  if (!isTrustedIpcSender(event)) {
+    throw new Error('Untrusted IPC sender');
+  }
+  return openSafeExternalUrl(url);
+});
+
+ipcMain.handle('start-oauth-server', (event) => {
+  if (!isTrustedIpcSender(event)) {
+    throw new Error('Untrusted IPC sender');
+  }
   startOAuthServer();
   return true;
 });
 
-ipcMain.handle('stop-oauth-server', () => {
+ipcMain.handle('stop-oauth-server', (event) => {
+  if (!isTrustedIpcSender(event)) {
+    throw new Error('Untrusted IPC sender');
+  }
   stopOAuthServer();
   return true;
 });
 
 ipcMain.handle('send-oauth-callback', (event, data) => {
+  if (!isTrustedIpcSender(event)) {
+    throw new Error('Untrusted IPC sender');
+  }
   console.log('Received OAuth callback from renderer:', data);
   if (mainWindow) {
     mainWindow.webContents.send('oauth-callback', data);
@@ -700,39 +778,56 @@ ipcMain.handle('send-oauth-callback', (event, data) => {
   return true;
 });
 
-// Handle OAuth token exchange from main process (to avoid CORS/origin issues)
+// Handle OAuth token exchange from main process (to avoid CORS/origin issues).
+// Token endpoint hosts are fixed; do not accept renderer-supplied token URLs.
 ipcMain.handle('exchange-oauth-token', async (event, { provider, code, clientId, redirectUri, codeVerifier, clientSecret }) => {
+  if (!isTrustedIpcSender(event)) {
+    throw new Error('Untrusted IPC sender');
+  }
+
   const https = require('https');
   const { URL, URLSearchParams } = require('url');
-  
-  const tokenUrls = {
-    google: 'https://oauth2.googleapis.com/token',
-    microsoft: 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
-  };
-  
-  const tokenUrl = tokenUrls[provider];
+
+  const tokenUrl = OAUTH_TOKEN_URLS[provider];
   if (!tokenUrl) {
     throw new Error(`Unknown OAuth provider: ${provider}`);
   }
-  
+
+  if (!code || !clientId || !redirectUri) {
+    throw new Error('Missing OAuth token exchange parameters');
+  }
+
+  // Loopback redirect only (Electron desktop OAuth).
+  let parsedRedirect;
+  try {
+    parsedRedirect = new URL(String(redirectUri));
+  } catch {
+    throw new Error('Invalid OAuth redirect URI');
+  }
+  if (
+    parsedRedirect.protocol !== 'http:' ||
+    (parsedRedirect.hostname !== '127.0.0.1' && parsedRedirect.hostname !== 'localhost') ||
+    parsedRedirect.port !== String(OAUTH_PORT)
+  ) {
+    throw new Error('OAuth redirect URI must use the local loopback callback');
+  }
+
   return new Promise((resolve, reject) => {
     const body = new URLSearchParams({
       client_id: clientId,
       code: code,
       grant_type: 'authorization_code',
-      redirect_uri: redirectUri
+      redirect_uri: redirectUri,
     });
-    
-    // Google desktop/web confidential clients require client_secret
-    if (provider === 'google' && clientSecret) {
+
+    // Public desktop clients use PKCE. Confidential Web clients also need client_secret.
+    if (codeVerifier) {
+      body.set('code_verifier', codeVerifier);
+    }
+    if (clientSecret) {
       body.set('client_secret', clientSecret);
     }
 
-    // Add code_verifier for Microsoft PKCE flow
-    if (provider === 'microsoft' && codeVerifier) {
-      body.set('code_verifier', codeVerifier);
-    }
-    
     const url = new URL(tokenUrl);
     const options = {
       hostname: url.hostname,
@@ -744,14 +839,14 @@ ipcMain.handle('exchange-oauth-token', async (event, { provider, code, clientId,
         'Content-Length': Buffer.byteLength(body.toString())
       }
     };
-    
+
     const req = https.request(options, (res) => {
       let data = '';
-      
+
       res.on('data', (chunk) => {
         data += chunk;
       });
-      
+
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           try {
@@ -765,11 +860,11 @@ ipcMain.handle('exchange-oauth-token', async (event, { provider, code, clientId,
         }
       });
     });
-    
+
     req.on('error', (error) => {
       reject(new Error(`Token exchange request failed: ${error.message}`));
     });
-    
+
     req.write(body.toString());
     req.end();
   });

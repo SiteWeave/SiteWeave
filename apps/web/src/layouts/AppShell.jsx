@@ -1,6 +1,7 @@
 import React from 'react'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { PRIMARY_NAV_ITEMS } from '../config/routes'
+import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { PRIMARY_NAV_ITEMS, ROUTE_PATHS } from '../config/routes'
 import { supabase } from '../supabaseClient'
 import { useAppContext } from '../context/AppContext'
 import { useToast } from '../context/ToastContext'
@@ -9,11 +10,36 @@ import Icon from '../components/Icon'
 import TrialCountdownBanner from '../components/TrialCountdownBanner'
 import GlobalSearch from '../components/GlobalSearch'
 
+const NAV_I18N_KEYS = {
+  Dashboard: 'dashboard',
+  Projects: 'projects',
+  Calendar: 'calendar',
+  'Trade Partners': 'trade_partners',
+  Organization: 'organization',
+  Settings: 'settings',
+}
+
+const GUEST_HIDDEN_PATHS = new Set([
+  ROUTE_PATHS.organization,
+  ROUTE_PATHS.tradePartners,
+  ROUTE_PATHS.team,
+  ROUTE_PATHS.teamDirectory,
+  ROUTE_PATHS.messages,
+])
+
 export default function AppShell({ session }) {
+  const { t } = useTranslation()
   const { state, dispatch } = useAppContext()
   const { addToast } = useToast()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchOpen, setSearchOpen] = React.useState(false)
+
+  const isGuestOnly = Boolean(state.isProjectCollaborator && !state.currentOrganization)
+  const navItems = React.useMemo(() => {
+    if (!isGuestOnly) return PRIMARY_NAV_ITEMS
+    return PRIMARY_NAV_ITEMS.filter((item) => !GUEST_HIDDEN_PATHS.has(item.to))
+  }, [isGuestOnly])
 
   React.useEffect(() => {
     const onKeyDown = (e) => {
@@ -26,10 +52,14 @@ export default function AppShell({ session }) {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  if (isGuestOnly && GUEST_HIDDEN_PATHS.has(location.pathname)) {
+    return <Navigate to={ROUTE_PATHS.home} replace />
+  }
+
   const displayName = session?.user?.user_metadata?.full_name || session?.user?.email || 'User'
   const roleLabel =
     state.userRole?.name ||
-    (state.isProjectCollaborator ? 'Guest collaborator' : 'User')
+    (state.isProjectCollaborator ? t('sidebar.project_collaborator') : 'User')
 
   const handleLogout = async () => {
     try {
@@ -95,42 +125,45 @@ export default function AppShell({ session }) {
           <div className="px-4 py-3 border-b border-slate-200">
             {state.currentOrganization ? (
               <>
-                <p className="text-[11px] uppercase tracking-wider text-slate-500">Organization</p>
+                <p className="text-[11px] uppercase tracking-wider text-slate-500">{t('sidebar.organization')}</p>
                 <p className="text-sm font-semibold text-slate-800 mt-1 truncate">
                   {state.currentOrganization.name}
                 </p>
                 <TrialCountdownBanner className="mt-2" />
               </>
-            ) : state.isProjectCollaborator ? (
+            ) : isGuestOnly ? (
               <>
-                <p className="text-[11px] uppercase tracking-wider text-slate-500">Guest access</p>
-                <p className="text-sm font-semibold text-slate-800 mt-1">Project collaborator</p>
+                <p className="text-[11px] uppercase tracking-wider text-slate-500">{t('sidebar.guest_access')}</p>
+                <p className="text-sm font-semibold text-slate-800 mt-1">{t('sidebar.project_collaborator')}</p>
                 <p className="text-xs text-slate-500 mt-1">
                   {(state.collaborationProjects?.length || 0) === 1
-                    ? '1 project accessible'
-                    : `${state.collaborationProjects?.length || 0} projects accessible`}
+                    ? t('sidebar.projects_accessible', { count: 1 })
+                    : t('sidebar.projects_accessible_plural', { count: state.collaborationProjects?.length || 0 })}
                 </p>
               </>
             ) : state.organizationLoading ? (
-              <p className="text-xs text-slate-500">Loading…</p>
+              <p className="text-xs text-slate-500">{t('sidebar.loading')}</p>
             ) : (
               <>
-                <p className="text-[11px] uppercase tracking-wider text-slate-500">Organization</p>
-                <p className="text-sm font-semibold text-slate-800 mt-1 truncate">Workspace</p>
+                <p className="text-[11px] uppercase tracking-wider text-slate-500">{t('sidebar.organization')}</p>
+                <p className="text-sm font-semibold text-slate-800 mt-1 truncate">{t('sidebar.no_organization')}</p>
               </>
             )}
           </div>
           <nav className="px-3 py-3 space-y-1 flex-1 min-h-0 overflow-y-auto overscroll-y-contain">
-            {PRIMARY_NAV_ITEMS.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                data-testid={`nav-${item.label.toLowerCase()}`}
-                className={({ isActive }) => `block px-3 py-2.5 rounded-lg text-sm font-medium ${isActive ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
-              >
-                {item.label}
-              </NavLink>
-            ))}
+            {navItems.map((item) => {
+              const i18nKey = NAV_I18N_KEYS[item.label] || item.label.toLowerCase()
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                  className={({ isActive }) => `block px-3 py-2.5 rounded-lg text-sm font-medium ${isActive ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+                >
+                  {t(`navigation.${i18nKey}`)}
+                </NavLink>
+              )
+            })}
           </nav>
 
           <div className="shrink-0 p-4 border-t border-slate-200 mt-auto">
@@ -158,15 +191,18 @@ export default function AppShell({ session }) {
         <div className="flex flex-col min-h-0 h-screen max-h-screen overflow-hidden">
           <header className="lg:hidden shrink-0 bg-white/95 border-b border-slate-200 backdrop-blur-xs px-4 py-2 space-y-2">
             <nav className="flex items-center gap-1 flex-wrap">
-              {PRIMARY_NAV_ITEMS.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) => `px-2.5 py-1.5 rounded-md text-xs font-medium ${isActive ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
-                >
-                  {item.label}
-                </NavLink>
-              ))}
+              {navItems.map((item) => {
+                const i18nKey = NAV_I18N_KEYS[item.label] || item.label.toLowerCase()
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) => `px-2.5 py-1.5 rounded-md text-xs font-medium ${isActive ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+                  >
+                    {t(`navigation.${i18nKey}`)}
+                  </NavLink>
+                )
+              })}
             </nav>
             <div className="flex items-center justify-between gap-2 pb-1">
               <div className="flex items-center gap-2 min-w-0 flex-1">

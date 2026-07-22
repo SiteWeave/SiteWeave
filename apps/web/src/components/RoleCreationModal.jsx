@@ -144,7 +144,7 @@ function RoleCreationModal({
           />
           {readOnly && !isMemberOrPm && (
             <p className="mt-2 text-sm text-gray-500">
-              Default roles are read-only on your plan. Upgrade to create or edit custom roles.
+              This role is read-only.
             </p>
           )}
           {!readOnly && isOrgAdmin && (

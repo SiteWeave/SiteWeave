@@ -3,9 +3,9 @@ import { useTranslation } from 'react-i18next';
 import Icon from '../Icon';
 
 /**
- * Add phase button for the Tasks tab toolbar.
+ * Schedule + Add phase buttons for the Tasks tab toolbar.
  */
-function PhasesToolbar({ onAddPhase, className = '' }) {
+function PhasesToolbar({ onOpenSchedule, onAddPhase, className = '' }) {
     const { t } = useTranslation();
 
     return (
@@ -13,6 +13,14 @@ function PhasesToolbar({ onAddPhase, className = '' }) {
             className={`inline-flex flex-wrap items-center gap-2 ${className}`}
             data-onboarding="phases-toolbar"
         >
+            <button
+                type="button"
+                onClick={onOpenSchedule}
+                className="inline-flex min-h-10 items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-xs hover:bg-gray-50"
+            >
+                <Icon path="M4 6h16M4 10h16M4 14h16M4 18h16" className="h-4 w-4 shrink-0" aria-hidden />
+                <span>{t('projectDetail.project_schedule')}</span>
+            </button>
             <button
                 type="button"
                 onClick={onAddPhase}

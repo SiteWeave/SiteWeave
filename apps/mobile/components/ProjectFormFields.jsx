@@ -33,49 +33,10 @@ export default function ProjectFormFields({
   disabled = false,
   compact = false,
   recentAddresses = [],
-  nameOnly = false,
-  addressOnly = false,
 }) {
   const { t } = useTranslation();
 
   const set = (key, value) => onChange({ ...values, [key]: value });
-
-  if (nameOnly) {
-    return (
-      <View style={styles.wrap}>
-        <Text variant="caption" style={styles.label}>
-          {t('mobile.project_name_label')}
-        </Text>
-        <SheetInput
-          style={styles.input}
-          value={values.name}
-          onChangeText={(v) => set('name', v)}
-          editable={!disabled}
-          placeholder={t('mobile.project_name_placeholder')}
-          placeholderTextColor={colors.textSubtle}
-          testID="project-name-input"
-        />
-      </View>
-    );
-  }
-
-  if (addressOnly) {
-    return (
-      <View style={styles.wrap}>
-        <SuggestionField
-          label={t('mobile.project_address_label')}
-          value={values.address || ''}
-          onChangeText={(v) => set('address', v)}
-          suggestions={recentAddresses}
-          suggestionLabel={t('mobile.recent_addresses')}
-          onSelectSuggestion={(item) => set('address', item.address || item.label)}
-          placeholder={t('mobile.project_address_placeholder')}
-          editable={!disabled}
-          testID="project-address-input"
-        />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.wrap}>
@@ -89,6 +50,8 @@ export default function ProjectFormFields({
         editable={!disabled}
         placeholder={t('mobile.project_name_placeholder')}
         placeholderTextColor={colors.textSubtle}
+        returnKeyType="next"
+        autoCapitalize="words"
         testID="project-name-input"
       />
 

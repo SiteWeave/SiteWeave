@@ -1,5 +1,6 @@
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { useState, useEffect } from 'react';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useAuth } from '../../../context/AuthContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -122,7 +123,11 @@ export default function InviteScreen() {
       const inviteDestination = projectId
         ? `/(tabs)/projects/${projectId}`
         : '/(tabs)/projects';
-      await routeAfterAuth(router, { inviteDestination, skipWeather: true });
+      await routeAfterAuth(router, {
+        inviteDestination,
+        skipWeather: true,
+        user: authData.user,
+      });
     } catch (err) {
       haptics.error();
       Alert.alert('Error', err.message);
@@ -175,7 +180,11 @@ export default function InviteScreen() {
       const inviteDestination = projectId
         ? `/(tabs)/projects/${projectId}`
         : '/(tabs)/projects';
-      await routeAfterAuth(router, { inviteDestination, skipWeather: true });
+      await routeAfterAuth(router, {
+        inviteDestination,
+        skipWeather: true,
+        user: authData.user,
+      });
     } catch (err) {
       haptics.error();
       Alert.alert('Error', err.message);
@@ -215,7 +224,11 @@ export default function InviteScreen() {
   }
 
   return (
-    <ScrollView style={[styles.container, { paddingTop: insets.top, paddingBottom: sheetBottomPadding(insets) }]}>
+    <KeyboardAwareScrollView
+      style={[styles.container, { paddingTop: insets.top, paddingBottom: sheetBottomPadding(insets) }]}
+      keyboardShouldPersistTaps="handled"
+      bottomOffset={24}
+    >
       <View style={styles.content}>
         <Text style={styles.title}>You're Invited!</Text>
         <Text style={styles.subtitle}>
@@ -261,6 +274,8 @@ export default function InviteScreen() {
             value={fullName}
             onChangeText={setFullName}
             autoCapitalize="words"
+            autoComplete="name"
+            textContentType="name"
             placeholderTextColor="#9CA3AF"
           />
         )}
@@ -272,6 +287,9 @@ export default function InviteScreen() {
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
+          autoComplete="email"
+          textContentType="emailAddress"
+          autoCorrect={false}
           placeholderTextColor="#9CA3AF"
           editable={!isSignUp} // Email is locked to invitation email for sign-up
         />
@@ -282,6 +300,9 @@ export default function InviteScreen() {
           value={password}
           onChangeText={setPassword}
           secureTextEntry={true}
+          autoCapitalize="none"
+          autoComplete="password"
+          textContentType="password"
           placeholderTextColor="#9CA3AF"
         />
 
@@ -295,7 +316,7 @@ export default function InviteScreen() {
           </Text>
         </TouchableOpacity>
       </View>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 

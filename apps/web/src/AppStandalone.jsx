@@ -28,6 +28,7 @@ import { parseLegacyProjectQuery } from './utils/deepLinking'
 import { useSession } from './hooks/useSession'
 import { trackRouteChange } from './utils/webTelemetry'
 import { AppProvider, useAppContext } from './context/AppContext'
+import { getPostAuthNavigatePath } from './utils/workspaceClient'
 import { ToastProvider } from './context/ToastContext'
 import SetupWizardModal from './components/SetupWizardModal'
 import WebOnboardingHost from './components/WebOnboardingHost'
@@ -216,7 +217,7 @@ export default function AppStandalone() {
             if (data.session) {
               oauthCallbackProcessed = true
               window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
-              navigate('/')
+              navigate(getPostAuthNavigatePath())
               oauthCallbackProcessing = false
               return
             }
@@ -249,7 +250,7 @@ export default function AppStandalone() {
           if (existing) {
             oauthCallbackProcessed = true
             window.history.replaceState({}, document.title, window.location.pathname)
-            navigate('/')
+            navigate(getPostAuthNavigatePath())
           }
           oauthCallbackProcessing = false
           return
@@ -258,7 +259,7 @@ export default function AppStandalone() {
         if (data.session) {
           oauthCallbackProcessed = true
           window.history.replaceState({}, document.title, window.location.pathname)
-          navigate('/')
+          navigate(getPostAuthNavigatePath())
         }
       } catch (err) {
         console.error('Error during OAuth code exchange:', err)

@@ -112,6 +112,12 @@ export {
   projectCrewRoleShortLabel,
 } from './utils/projectCrewRole.js';
 
+export {
+  getEffectiveProjectPermissions,
+  permissionsForCollaboratorAccessLevel,
+  resolveCollaboratorAccessLevel,
+} from './utils/effectiveProjectPermissions.js';
+
 export { TRADE_OPTIONS, isKnownTradeOption } from './constants/tradeOptions.js';
 
 export {
@@ -168,4 +174,14 @@ export {
   isPassiveSiteDayReady,
   fetchDailyLogsForReportPeriod,
 } from './utils/siteDayLog.js';
+
+export {
+  REVIEW_PROMPT_ELIGIBILITY_DAYS,
+  REVIEW_PROMPT_ACTIONS,
+  resolveReviewEligibleAt,
+  hasReviewPromptBeenShown,
+  isReviewPromptAudienceEligible,
+  isReviewPromptDue,
+  shouldShowReviewPrompt,
+} from './utils/reviewPrompt.js';
 

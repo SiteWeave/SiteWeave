@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { supabaseClient } from '../context/AppContext';
 import LoadingSpinner from './LoadingSpinner';
 
@@ -162,7 +162,7 @@ function InviteAcceptPage() {
       if (signUpError) {
         // If user already exists, they should sign in instead
         if (signUpError.message.includes('already registered') || signUpError.message.includes('User already registered')) {
-          setError('An account with this email already exists. Please sign in to claim this invitation.');
+          setError('already_registered');
           return;
         }
         throw signUpError;
@@ -337,7 +337,8 @@ function InviteAcceptPage() {
               .update({
                 organization_id: invitation.organization_id,
                 role_id: invitation.role_id,
-                contact_id: contactId
+                contact_id: contactId,
+                review_eligible_at: new Date().toISOString(),
               })
               .eq('id', authData.user.id);
             
@@ -361,7 +362,8 @@ function InviteAcceptPage() {
             .update({
               organization_id: invitation.organization_id,
               role_id: invitation.role_id,
-              contact_id: contactId
+              contact_id: contactId,
+              review_eligible_at: new Date().toISOString(),
             })
             .eq('id', authData.user.id);
           
@@ -469,7 +471,8 @@ function InviteAcceptPage() {
             .update({
               organization_id: invitation.organization_id,
               role_id: invitation.role_id,
-              contact_id: contactId
+              contact_id: contactId,
+              review_eligible_at: new Date().toISOString(),
             })
             .eq('id', authData.user.id);
           
@@ -700,7 +703,20 @@ function InviteAcceptPage() {
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-800">{error}</p>
+            {error === 'already_registered' ? (
+              <p className="text-sm text-red-800">
+                An account with this email already exists.{' '}
+                <Link
+                  to={`/login?invite=${encodeURIComponent(token || '')}`}
+                  className="font-semibold text-blue-700 underline hover:text-blue-800"
+                >
+                  Please sign in
+                </Link>{' '}
+                to claim this invitation.
+              </p>
+            ) : (
+              <p className="text-sm text-red-800">{error}</p>
+            )}
           </div>
         )}
 

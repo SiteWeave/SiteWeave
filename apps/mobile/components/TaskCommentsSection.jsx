@@ -1,8 +1,9 @@
-import { View, StyleSheet, TextInput, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { fetchTaskComments, createTaskComment } from '@siteweave/core-logic';
 import PressableWithFade from './PressableWithFade';
+import SheetInput from './ui/SheetInput';
 import { Text } from './ui/Text';
 import { colors, spacing, touch } from '../theme';
 
@@ -90,12 +91,15 @@ export default function TaskCommentsSection({ task, project, supabase, currentUs
           ))
         : null}
 
-      <TextInput
+      <SheetInput
         style={styles.input}
         value={body}
         onChangeText={setBody}
         placeholder={t('mobile.task_comments_placeholder')}
         placeholderTextColor={colors.textSubtle}
+        returnKeyType="send"
+        onSubmitEditing={handleAdd}
+        testID="task-comment-input"
       />
       <PressableWithFade
         style={[styles.addBtn, sending && styles.addBtnDisabled]}

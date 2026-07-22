@@ -106,7 +106,7 @@ serve(async (req) => {
 
     const { data: existingProfile } = await supabaseAdmin
       .from('profiles')
-      .select('contact_id')
+      .select('contact_id, review_eligible_at')
       .eq('id', authData.user.id)
       .maybeSingle()
 
@@ -118,7 +118,10 @@ serve(async (req) => {
         organization_id: organizationId,
         role_id: resolvedRoleId,
         contact_id: contactId || existingProfile?.contact_id || null,
-        must_change_password: true // Managed accounts must change password on first login
+        must_change_password: true, // Managed accounts must change password on first login
+        ...(!existingProfile?.review_eligible_at
+          ? { review_eligible_at: new Date().toISOString() }
+          : {}),
       }, {
         onConflict: 'id'
       })

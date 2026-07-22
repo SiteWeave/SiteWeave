@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, StyleSheet, TextInput } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { createWeatherImpact } from '@siteweave/core-logic';
 import BottomSheet from './ui/BottomSheet';
@@ -133,25 +133,28 @@ export default function WeatherShiftSheet({
         <Text variant="caption" style={styles.label}>
           {t('mobile.weather_days_affected')}
         </Text>
-        <TextInput
+        <BottomSheet.Input
           style={styles.input}
           value={daysLost}
           onChangeText={setDaysLost}
           keyboardType="number-pad"
           placeholder="1"
           placeholderTextColor={colors.textSubtle}
+          returnKeyType="next"
+          testID="weather-days-lost"
         />
 
         <Text variant="caption" style={[styles.label, { marginTop: spacing.lg }]}>
           {t('mobile.weather_note_optional')}
         </Text>
-        <TextInput
+        <BottomSheet.Input
           style={[styles.input, styles.textArea]}
           value={note}
           onChangeText={setNote}
           multiline
           placeholder={t('mobile.weather_note_placeholder')}
           placeholderTextColor={colors.textSubtle}
+          testID="weather-note"
         />
 
         {showProjectPicker ? (

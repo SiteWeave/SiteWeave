@@ -315,7 +315,11 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
-# Twilio inbound SMS (no Supabase JWT; validated via X-Twilio-Signature + TWILIO_AUTH_TOKEN)
+# Signal House inbound SMS (no Supabase JWT; optional SIGNAL_HOUSE_WEBHOOK_SECRET)
+[functions.signalhouse-sms-inbound]
+verify_jwt = false
+
+# Legacy Twilio inbound (retired — prefer signalhouse-sms-inbound)
 [functions.twilio-sms-inbound]
 verify_jwt = false
 

@@ -1,12 +1,12 @@
 # Restoring SiteWeave SMS Notifications
 
-SMS notifications are temporarily disabled via a single feature flag. **Web SMS consent links work without enabling SMS** — deploy the consent page and edge functions first, complete Twilio 10DLC registration, then flip the flags below.
+SMS notifications are temporarily disabled via a single feature flag. **Web SMS consent links work without enabling SMS** — deploy the consent page and edge functions first, complete Signal House 10DLC registration, then flip the flags below.
 
 Email notifications, push notifications, and contact phone fields (for calling) are unaffected.
 
 ## What is disabled
 
-When SMS is off, SiteWeave does **not** send Twilio text messages for:
+When SMS is off, SiteWeave does **not** send Signal House text messages for:
 
 - Task assignee pings (manual reminders)
 - SMS consent / opt-in requests ("SMS OK?")
@@ -20,12 +20,13 @@ The web/desktop UI hides SMS consent buttons and SMS-related copy. Mobile was al
 These are intentionally **not** removed so re-enabling is straightforward:
 
 - `sms_phone_consent` database table and RLS policies
-- Twilio edge function code (`twilio-sms-inbound`, `_shared/twilioSms.ts`, `_shared/smsConsent.ts`)
-- Twilio secrets in Supabase (if already configured)
+- Signal House edge function code (`signalhouse-sms-inbound`, `_shared/signalHouseSms.ts`, `_shared/smsConsent.ts`)
+- Signal House secrets in Supabase (if already configured)
 - i18n strings under `sms.*`, `tasks.sms_ok`, etc.
 - Contact phone fields on subcontractor/team cards
+- Public sample page `/sms-opt-in`
 
-The inbound webhook (`twilio-sms-inbound`) can keep running; it only records YES/STOP replies and does not send product notifications on its own.
+The inbound webhook (`signalhouse-sms-inbound`) can keep running; it only records YES/STOP replies and does not send product notifications on its own (except keyword replies).
 
 ## Web consent (works while SMS is disabled)
 
@@ -33,9 +34,10 @@ These work **before** Step 1–2 below:
 
 - PM: **Get SMS consent link** on contacts / tasks (attestation + shareable URL + QR)
 - Public page: `/sms-consent/:token` (no login)
+- Sample: `/sms-opt-in`
 - Edge functions: `create-sms-consent-link`, `sms-consent-request`, `confirm-sms-web-consent`
 
-Deploy migration `20260708180000_sms_consent_requests.sql` and the functions above. See [sms-twilio-campaign-registration.md](./sms-twilio-campaign-registration.md).
+See [sms-signalhouse-campaign-registration.md](./sms-signalhouse-campaign-registration.md) and [SMS-SIGNAL-HOUSE.md](./SMS-SIGNAL-HOUSE.md).
 
 ---
 
@@ -62,6 +64,7 @@ supabase secrets set SMS_NOTIFICATIONS_ENABLED=true
 Redeploy the functions that send SMS:
 
 ```bash
+supabase functions deploy signalhouse-sms-inbound
 supabase functions deploy dispatch-notification
 supabase functions deploy process-task-notifications
 supabase functions deploy invite_or_add_member
@@ -70,34 +73,25 @@ supabase functions deploy sms-consent-request
 supabase functions deploy confirm-sms-web-consent
 ```
 
-If you maintain a duplicate function tree under `apps/web/supabase/functions/`, deploy `invite_or_add_member` from that path as well if your pipeline uses it.
-
 ---
 
-## Step 3: Twilio prerequisites
+## Step 3: Signal House prerequisites
 
-Confirm Twilio is configured before testing. See:
+Confirm Signal House is configured before testing. See [SMS-SIGNAL-HOUSE.md](./SMS-SIGNAL-HOUSE.md).
 
-- [Email & invitation deployment guide](./email-deployment-guide.md) — **Step 1B: Set Up Twilio**
-- [SMS Twilio campaign registration](./sms-twilio-campaign-registration.md) — A2P / 10DLC for US numbers
-
-Required Supabase secrets (typical):
+Required Supabase secrets:
 
 ```bash
-supabase secrets set TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-supabase secrets set TWILIO_API_KEY=SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-supabase secrets set TWILIO_API_SECRET=your_api_secret
-supabase secrets set TWILIO_MESSAGING_SERVICE_SID=MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-# Optional fallback:
-# supabase secrets set TWILIO_FROM_NUMBER=+15551234567
+supabase secrets set SIGNAL_HOUSE_API_KEY=your_api_key
+supabase secrets set SIGNAL_HOUSE_FROM_NUMBER=+15129941576
 ```
 
-Inbound webhook (for YES / STOP consent):
+Inbound webhook (for YES / STOP / HELP):
 
-1. Deploy `twilio-sms-inbound` if not already live.
-2. In Twilio Console → Messaging → your number or Messaging Service → **Inbound webhook**, point to:
-   `https://<project-ref>.supabase.co/functions/v1/twilio-sms-inbound`
-3. Set `TWILIO_AUTH_TOKEN` in Supabase for signature verification on inbound requests.
+1. Deploy `signalhouse-sms-inbound`.
+2. In Signal House → number messaging config, point inbound webhook to:
+   `https://<project-ref>.supabase.co/functions/v1/signalhouse-sms-inbound`
+3. Optional: set `SIGNAL_HOUSE_WEBHOOK_SECRET` and pass it on the webhook URL/header.
 
 ---
 
@@ -118,21 +112,14 @@ After the client flag is `true` and clients are rebuilt:
 
 Run through these after both flags are enabled and functions are deployed:
 
-- [ ] **Web consent:** PM taps **Get SMS consent link** → assignee opens URL on phone → checks box → submits → status **SMS: Confirmed** in UI.
-- [ ] **Consent flow (text):** On a task with an assignee phone, click **SMS OK?** → assignee receives opt-in text → reply **YES \<code\>** → status shows confirmed in UI.
-- [ ] **Manual ping:** Ping assignee with confirmed consent → toast shows email and/or SMS sent; activity log records `assignee_ping_sms` when SMS succeeds.
-- [ ] **Email-only ping:** Assignee with email but no phone → ping sends email only (unchanged).
-- [ ] **Project invite:** Invite/add member with phone on contact → invite SMS sent (or opt-in sent if not yet confirmed).
-- [ ] **Scheduled reminders:** With task-start notifications enabled, cron run sends email; consented phones also receive SMS (`process-task-notifications`).
-- [ ] **Opt-out:** Assignee replies **STOP** → `sms_phone_consent.status` = `opted_out`; substantive SMS blocked; UI shows blocked state.
-- [ ] **Disabled guard removed:** With flags off, `sms_opt_in_request` returns `{ disabled: true }` and no Twilio sends occur.
+1. Create a consent link → open `/sms-consent/{token}` → confirm (optional confirm SMS if server flag on).
+2. Reply **STOP** from that phone → status opted out; ack SMS received.
+3. Reply **HELP** → help body received.
+4. Send opt-in → reply **YES** → status confirmed.
+5. Manual task ping / invite SMS only after confirmed.
 
----
-
-## Disabling again
+## Kill switch (disable again)
 
 1. Set `SMS_NOTIFICATIONS_ENABLED = false` in `packages/core-logic/src/constants/smsNotifications.js`.
-2. Unset or set `SMS_NOTIFICATIONS_ENABLED=false` in Supabase secrets (anything other than `true` disables server-side SMS).
-3. Redeploy clients and edge functions as needed.
-
-No database migrations or Twilio teardown required for a temporary pause.
+2. `supabase secrets set SMS_NOTIFICATIONS_ENABLED=false` (or unset / any value other than `true`).
+3. Redeploy UI and affected functions.

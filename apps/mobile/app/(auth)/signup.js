@@ -1,8 +1,9 @@
-import { View, StyleSheet, TextInput, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, TextInput, Alert } from 'react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useAuth } from '../../context/AuthContext';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHaptics } from '../../hooks/useHaptics';
@@ -12,14 +13,12 @@ import PasswordInput from '../../components/ui/PasswordInput';
 import PressableWithFade from '../../components/PressableWithFade';
 import AuthOAuthButtons from '../../components/AuthOAuthButtons';
 import { finalizeAuthSession } from '../../utils/completeAuthSession';
+import { setPendingSignupProfileSetup } from '../../utils/authProfile';
 import { colors, spacing, touch } from '../../theme';
 import { sheetBottomPadding } from '../../utils/layoutInsets';
 
 export default function SignupScreen() {
   const { t } = useTranslation();
-  const { fullName: fullNameParam } = useLocalSearchParams();
-  const initialName = typeof fullNameParam === 'string' ? fullNameParam : '';
-  const [fullName, setFullName] = useState(initialName);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -46,11 +45,6 @@ export default function SignupScreen() {
     });
 
   const handleSignup = async () => {
-    if (!fullName.trim()) {
-      haptics.error();
-      Alert.alert(t('common.error'), t('mobile.auth_name_required'));
-      return;
-    }
     if (!email || !password || !confirmPassword) {
       haptics.error();
       Alert.alert(t('common.error'), t('auth.enter_email_first'));
@@ -69,16 +63,27 @@ export default function SignupScreen() {
     haptics.medium();
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          data: {
-            full_name: fullName.trim(),
-          },
-        },
       });
       if (error) throw error;
+
+      // Name + photo happen on complete-profile after first signed-in session.
+      await setPendingSignupProfileSetup(true);
+
+      if (data?.session) {
+        haptics.success();
+        await finalizeAuthSession({
+          supabase,
+          loadUserOrganization,
+          router,
+          haptics,
+          fromSignup: true,
+        });
+        return;
+      }
+
       haptics.success();
       Alert.alert(t('common.success'), t('auth.account_created'));
       router.replace('/(auth)/login');
@@ -106,7 +111,11 @@ export default function SignupScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: sheetBottomPadding(insets) }]}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        bottomOffset={24}
+      >
         <PressableWithFade onPress={() => router.back()} style={styles.back} hitSlop={touch.hitSlop}>
           <Ionicons name="chevron-back" size={28} color={colors.text} />
         </PressableWithFade>
@@ -115,31 +124,6 @@ export default function SignupScreen() {
           {t('mobile.sign_up_title')}
         </Text>
 
-        <AuthOAuthButtons
-          onApplePress={() => handleOAuth(signInWithApple)}
-          onGooglePress={() => handleOAuth(signInWithGoogle)}
-          onMicrosoftPress={() => handleOAuth(signInWithMicrosoft)}
-          disabled={loading}
-          showDivider={false}
-        />
-
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text variant="caption">{t('auth.or')}</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        <TextInput
-          style={styles.input}
-          placeholder={t('mobile.auth_name_placeholder')}
-          value={fullName}
-          onChangeText={setFullName}
-          autoCapitalize="words"
-          autoComplete="name"
-          textContentType="name"
-          placeholderTextColor={colors.textSubtle}
-          testID="signup-name"
-        />
         <TextInput
           style={styles.input}
           placeholder={t('auth.email_address')}
@@ -147,7 +131,12 @@ export default function SignupScreen() {
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
+          autoComplete="email"
+          textContentType="emailAddress"
+          autoCorrect={false}
+          returnKeyType="next"
           placeholderTextColor={colors.textSubtle}
+          testID="signup-email"
         />
         <PasswordInput
           placeholder={t('auth.password')}
@@ -156,6 +145,8 @@ export default function SignupScreen() {
           showPassword={showPassword}
           onToggleShow={() => setShowPassword((v) => !v)}
           testID="signup-password"
+          returnKeyType="next"
+          autoComplete="password-new"
         />
         <PasswordInput
           placeholder={t('mobile.confirm_password')}
@@ -165,6 +156,8 @@ export default function SignupScreen() {
           onToggleShow={() => setShowPassword((v) => !v)}
           testID="signup-confirm-password"
           autoComplete="password-new"
+          returnKeyType="done"
+          onSubmitEditing={handleSignup}
         />
 
         <Button
@@ -173,7 +166,14 @@ export default function SignupScreen() {
           disabled={loading}
           testID="signup-submit"
         />
-      </ScrollView>
+
+        <AuthOAuthButtons
+          onApplePress={() => handleOAuth(signInWithApple)}
+          onGooglePress={() => handleOAuth(signInWithGoogle)}
+          onMicrosoftPress={() => handleOAuth(signInWithMicrosoft)}
+          disabled={loading}
+        />
+      </KeyboardAwareScrollView>
     </View>
   );
 }
@@ -183,8 +183,6 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.xxl, paddingTop: spacing.lg },
   back: { width: touch.minSize, height: touch.minSize, justifyContent: 'center', marginBottom: spacing.lg },
   title: { marginBottom: spacing.xl },
-  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: spacing.xxl, gap: spacing.md },
-  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
   input: {
     borderWidth: 1,
     borderColor: colors.borderStrong,

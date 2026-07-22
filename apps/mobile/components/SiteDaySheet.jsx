@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
-  TextInput,
   Alert,
   Image,
   ScrollView,
@@ -36,6 +35,7 @@ import { enqueueOfflineAction } from '../utils/offlineQueue';
 import { uploadSiteDayPhotoFromUri } from '../utils/uploadSiteDayPhoto';
 import { useVoiceDictation } from '../hooks/useVoiceDictation';
 import { recordSiteDayPost } from '../utils/siteDayStreak';
+import { signalReviewPromptOpportunity } from '../utils/reviewPromptEvents';
 import { useHaptics } from '../hooks/useHaptics';
 import { useCollapsibleList, ShowMoreToggle } from './ui/CollapsibleList';
 
@@ -324,6 +324,7 @@ export default function SiteDaySheet({
     try {
       await createStreamPost(supabase, streamPayload);
       await recordSiteDayPost(userId);
+      signalReviewPromptOpportunity();
       Alert.alert(t('common.success'), t('mobile.site_day_posted'));
       haptics.success();
       onPosted?.();
@@ -546,7 +547,7 @@ export default function SiteDaySheet({
                     </PressableWithFade>
                   ) : null}
                 </View>
-                <TextInput
+                <BottomSheet.Input
                   style={[styles.input, styles.textArea]}
                   value={sections.notes || ''}
                   onChangeText={updateNotes}
@@ -554,6 +555,7 @@ export default function SiteDaySheet({
                   editable={!loading}
                   placeholder={t('mobile.site_day_placeholder')}
                   placeholderTextColor={colors.textSubtle}
+                  testID="site-day-notes"
                 />
                 {listening ? (
                   <Text variant="caption" style={styles.listeningHint}>

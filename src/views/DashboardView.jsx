@@ -111,9 +111,14 @@ function DashboardView() {
     );
     const { canProgressReports } = useWorkspaceTier();
 
+    useEffect(() => {
+        if (!state.user?.id) return;
+        setChecklistDismissedState(getChecklistDismissed(state.user.id));
+    }, [state.user?.id]);
+
     const isGuestOnly = state.isProjectCollaborator && !state.currentOrganization;
 
-    const activationCompleted = useOfficeActivationState(
+    const { completed: activationCompleted, ready: activationReady } = useOfficeActivationState(
         supabaseClient,
         state.currentOrganization?.id,
         state.projects,
@@ -122,15 +127,36 @@ function DashboardView() {
 
     const primaryColor = useBrandingPrimaryColor(loadBrandingColor, state.currentOrganization?.id);
 
+    const isOrgAdminForChecklist =
+        state.userRole?.name === 'Org Admin' ||
+        state.userRole?.permissions?.can_manage_roles === true ||
+        (state.currentOrganization?.created_by_user_id != null &&
+            state.currentOrganization.created_by_user_id === state.user?.id);
+
     const showActivationChecklist =
+        activationReady &&
         !isGuestOnly &&
+        isOrgAdminForChecklist &&
         state.currentOrganization &&
         !checklistDismissed &&
+        !isActivationComplete(activationCompleted);
+
+    const showActivationChecklistRestore =
+        activationReady &&
+        !isGuestOnly &&
+        isOrgAdminForChecklist &&
+        state.currentOrganization &&
+        checklistDismissed &&
         !isActivationComplete(activationCompleted);
 
     const handleChecklistDismiss = () => {
         if (state.user?.id) setChecklistDismissed(state.user.id, true);
         setChecklistDismissedState(true);
+    };
+
+    const handleChecklistShow = () => {
+        if (state.user?.id) setChecklistDismissed(state.user.id, false);
+        setChecklistDismissedState(false);
     };
 
     const guardCanCreateProject = async () => {
@@ -601,13 +627,6 @@ function DashboardView() {
                                 <ViewSwitcher compact currentView={viewType} onViewChange={setViewType} />
                                 <PermissionGuard permission="can_create_projects">
                                     <button type="button"
-                                        onClick={() => tryOpenCreateProject()}
-                                        data-onboarding="new-project-btn"
-                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-primary"
-                                    >
-                                        + {t('dashboard.new_project')}
-                                    </button>
-                                    <button type="button"
                                         onClick={() => tryOpenTemplateModal()}
                                         title={t('dashboard.create_from_template_title')}
                                         data-onboarding="template-btn"
@@ -646,6 +665,15 @@ function DashboardView() {
                                         {t('dashboard.org_reports')}
                                     </button>
                                 </PermissionGuard>
+                                <PermissionGuard permission="can_create_projects">
+                                    <button type="button"
+                                        onClick={() => tryOpenCreateProject()}
+                                        data-onboarding="new-project-btn"
+                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-primary"
+                                    >
+                                        + {t('dashboard.new_project')}
+                                    </button>
+                                </PermissionGuard>
                             </div>
                         </div>
                     </header>
@@ -657,7 +685,46 @@ function DashboardView() {
                                 primaryColor={primaryColor}
                                 onDismiss={handleChecklistDismiss}
                                 onItemAction={handleChecklistAction}
+                                title={t('activation.title')}
+                                dismissLabel={t('activation.dismiss')}
+                                formatProgress={(done, total) =>
+                                    t('activation.progress', { done, total })
+                                }
+                                itemCopy={{
+                                    workspace: {
+                                        title: t('activation.workspace_title'),
+                                        hint: t('activation.workspace_hint'),
+                                    },
+                                    project: {
+                                        title: t('activation.project_title'),
+                                        hint: t('activation.project_hint'),
+                                    },
+                                    schedule: {
+                                        title: t('activation.schedule_title'),
+                                        hint: t('activation.schedule_hint'),
+                                    },
+                                    team: {
+                                        title: t('activation.team_title'),
+                                        hint: t('activation.team_hint'),
+                                    },
+                                    report: {
+                                        title: t('activation.report_title'),
+                                        hint: t('activation.report_hint'),
+                                    },
+                                }}
                             />
+                        </div>
+                    ) : showActivationChecklistRestore ? (
+                        <div className="mb-6">
+                            <button
+                                type="button"
+                                onClick={handleChecklistShow}
+                                className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-xs transition-[transform,background-color] duration-150 hover:bg-gray-50 active:scale-[0.98]"
+                                style={{ color: primaryColor, borderColor: `${primaryColor}33` }}
+                                data-testid="activation-checklist-show"
+                            >
+                                {t('activation.show')}
+                            </button>
                         </div>
                     ) : null}
                     

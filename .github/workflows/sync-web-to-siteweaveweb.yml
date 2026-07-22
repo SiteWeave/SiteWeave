@@ -13,6 +13,7 @@ on:
       - 'packages/core-logic/**'
       - 'packages/i18n/**'
       - 'packages/onboarding-ui/**'
+      - 'packages/design-tokens/**'
       - '.github/workflows/sync-web-to-siteweaveweb.yml'
   workflow_dispatch:
 
@@ -31,6 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Clone SiteWeaveWeb, rsync, patch paths, commit, push
         env:
@@ -74,6 +76,10 @@ jobs:
             --exclude 'node_modules' \
             --exclude '.git' \
             packages/onboarding-ui/ _sw_web/packages/onboarding-ui/
+          rsync -a --delete \
+            --exclude 'node_modules' \
+            --exclude '.git' \
+            packages/design-tokens/ _sw_web/packages/design-tokens/
 
           node <<'NODE'
           const fs = require('fs');
@@ -89,6 +95,9 @@ jobs:
           }
           if (pkg.dependencies?.['@siteweave/onboarding-ui']) {
             pkg.dependencies['@siteweave/onboarding-ui'] = 'file:./packages/onboarding-ui';
+          }
+          if (pkg.dependencies?.['@siteweave/design-tokens']) {
+            pkg.dependencies['@siteweave/design-tokens'] = 'file:./packages/design-tokens';
           }
           fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
@@ -106,6 +115,10 @@ jobs:
             v = v.replaceAll(
               "path.resolve(__dirname, '../../packages/onboarding-ui/src/index.js')",
               "path.resolve(__dirname, 'packages/onboarding-ui/src/index.js')"
+            );
+            v = v.replaceAll(
+              "path.resolve(__dirname, '../../packages/design-tokens/src/index.js')",
+              "path.resolve(__dirname, 'packages/design-tokens/src/index.js')"
             );
             fs.writeFileSync(vitePath, v);
           }

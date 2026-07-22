@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Animated } from 'react-native';
 
 /** Full-screen dim layer. Pass animatedOpacity (0–1) for fade-in with sheets. */
-export default function ModalScrim({ onPress, opacity = 0.4, animatedOpacity }) {
+export default function ModalScrim({ onPress, opacity = 0.4, animatedOpacity, pointerEvents = 'auto' }) {
   const maxOpacity = opacity;
 
   if (animatedOpacity) {
@@ -11,7 +11,10 @@ export default function ModalScrim({ onPress, opacity = 0.4, animatedOpacity }) 
     });
 
     return (
-      <Animated.View style={[styles.scrim, { backgroundColor }]}>
+      <Animated.View
+        pointerEvents={pointerEvents}
+        style={[styles.scrim, { backgroundColor }]}
+      >
         <Pressable
           style={StyleSheet.absoluteFill}
           onPress={onPress}
@@ -24,6 +27,7 @@ export default function ModalScrim({ onPress, opacity = 0.4, animatedOpacity }) 
 
   return (
     <Pressable
+      pointerEvents={pointerEvents}
       style={[styles.scrim, { backgroundColor: `rgba(0,0,0,${maxOpacity})` }]}
       onPress={onPress}
       accessibilityRole="button"

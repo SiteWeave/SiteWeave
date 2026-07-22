@@ -18,6 +18,9 @@ import {
     normalizeAssigneePhone,
     isSmsNotificationsEnabled,
     TASK_LIST_COLUMNS,
+    getEffectiveProjectPermissions,
+    resolveCollaboratorAccessLevel,
+    createGuestTaskShareLink,
 } from '@siteweave/core-logic';
 import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
@@ -80,14 +83,13 @@ import GanttChart from '../components/GanttChart';
 import { useStreamUnread } from '../hooks/useStreamUnread';
 import { useIssuesUnread } from '../hooks/useIssuesUnread';
 import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
-import ProjectPhotoRollPanel from '../components/ProjectPhotoRollPanel';
 import Icon from '../components/Icon';
 import { formatLocalDateOnly } from '../utils/dateHelpers';
 import { SkeletonList } from '../components/ui/Skeleton';
 import SmsConsentLinkPrompt from '../components/SmsConsentLinkPrompt';
 
 function ProjectDetailsView({ routeTab, onTabChange } = {}) {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const navigate = useNavigate();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
@@ -249,6 +251,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [photoModalTaskId, setPhotoModalTaskId] = useState(null);
     const [discussionModalTaskId, setDiscussionModalTaskId] = useState(null);
     const [showPhasesModal, setShowPhasesModal] = useState(false);
+    const [phasesModalEditing, setPhasesModalEditing] = useState(false);
     const [showAddPhaseModal, setShowAddPhaseModal] = useState(false);
     const [draggedPhaseId, setDraggedPhaseId] = useState(null);
     const [phaseDragOver, setPhaseDragOver] = useState(null);
@@ -261,8 +264,33 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const toolbarMenuRef = useRef(null);
     const dependencyPickerRef = useRef(null);
 
-    const canViewActivityHistory = state.userRole?.permissions?.can_view_activity_history === true;
-    const canEditProjects = state.userRole?.permissions?.can_edit_projects === true;
+    const collaboratorAccessLevel = useMemo(
+        () => resolveCollaboratorAccessLevel(state.collaborationProjects, project?.id),
+        [state.collaborationProjects, project?.id],
+    );
+
+    const projectPerms = useMemo(
+        () => getEffectiveProjectPermissions({
+            orgPermissions: state.userRole?.permissions || null,
+            projectOrganizationId: project?.organization_id || null,
+            homeOrganizationId: state.currentOrganization?.id || null,
+            collaboratorAccessLevel,
+        }),
+        [
+            state.userRole?.permissions,
+            project?.organization_id,
+            state.currentOrganization?.id,
+            collaboratorAccessLevel,
+        ],
+    );
+
+    const canViewActivityHistory = projectPerms.can_view_activity_history === true;
+    const canEditProjects = projectPerms.can_edit_projects === true;
+    const canManageContacts = projectPerms.can_manage_contacts === true;
+    const canCreateTasks = projectPerms.can_create_tasks === true;
+    const canCreateProjects = projectPerms.can_create_projects === true;
+    const canManageProgressReports = projectPerms.can_manage_progress_reports === true;
+    const canEditTasks = projectPerms.can_edit_tasks === true;
 
     const phaseControl = useProjectPhases(project?.id, project);
     const {
@@ -334,7 +362,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             if (!project?.id || !completedTask?.id) return;
             try {
                 const days = suggestWorkdaysGained(completedTask);
-                if (days < 1) return;
+                // Require ≥2 business days early so same-day / 1-day finishes don't spam the banner.
+                if (days < 2) return;
                 const planned = getSharedTaskEndDate(completedTask);
                 await maybeCreateEarlyCompletionAdjustment(supabaseClient, {
                     organizationId: project.organization_id,
@@ -1137,6 +1166,27 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             organizationId: project.organization_id,
             smsConsentStatus: task.assignee_sms_consent || 'none',
         });
+    };
+
+    const handleCopyGuestTaskLink = async (task) => {
+        if (!project?.id || !project?.organization_id || !task?.id) return;
+        try {
+            const { url } = await createGuestTaskShareLink(supabaseClient, {
+                projectId: project.id,
+                organizationId: project.organization_id,
+                taskIds: [task.id],
+            });
+            if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(url);
+            }
+            addToast(t('tasks.guest_link_copied', { defaultValue: 'Guest task link copied' }), 'success');
+        } catch (err) {
+            console.error('createGuestTaskShareLink failed:', err);
+            addToast(
+                err?.message || t('tasks.guest_link_failed', { defaultValue: 'Could not create guest link' }),
+                'error',
+            );
+        }
     };
 
     const handlePingAssignee = async (task) => {
@@ -2536,6 +2586,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             {t('projectDetail.edit_project')}
                         </button>
                     </PermissionGuard>
+                    {canManageContacts && (
                     <button type="button" 
                         onClick={() => setShowShare(true)}
                         className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 transition-colors"
@@ -2543,7 +2594,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                     >
                         {t('projectDetail.manage_crew')}
                     </button>
-                    <PermissionGuard permission="can_create_projects">
+                    )}
+                    {canCreateProjects && (
                         <button type="button" 
                             onClick={() => setShowSaveAsTemplateModal(true)}
                             className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
@@ -2551,8 +2603,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         >
                             {t('projectDetail.save_as_template')}
                         </button>
-                    </PermissionGuard>
-                    <PermissionGuard permission="can_manage_progress_reports">
+                    )}
+                    {canManageProgressReports && (
                         <button type="button" 
                             onClick={() => setShowProgressReportModal(true)}
                             className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg shadow-xs hover:bg-green-700 transition-colors flex items-center gap-2"
@@ -2563,19 +2615,19 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             </svg>
                             {t('projectDetail.progress_reports')}
                         </button>
-                    </PermissionGuard>
+                    )}
                 </div>
             </header>
 
-            {showShare && (
-                <ShareModal projectId={project.id} onClose={() => setShowShare(false)} />
+            {showShare && canManageContacts && (
+                <ShareModal projectId={project.id} onClose={() => setShowShare(false)} canManageCrew={canManageContacts} />
             )}
 
-            {showProgressReportModal && (
+            {showProgressReportModal && canManageProgressReports && (
                 <ProgressReportModal projectId={project.id} onClose={() => setShowProgressReportModal(false)} />
             )}
 
-            {showSaveAsTemplateModal && (
+            {showSaveAsTemplateModal && canCreateProjects && (
                 <SaveAsTemplateModal 
                     projectId={project.id} 
                     projectName={project.name} 
@@ -2643,29 +2695,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                     }}
                     onChanged={() => setProjectRefreshNonce((n) => n + 1)}
                 />
-            ) : null}
-
-            {pendingScheduleAdjustments.length > 0 && canEditProjects ? (
-                <div className="mb-4 flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-emerald-950">
-                        {t(
-                            pendingScheduleAdjustments.length === 1
-                                ? 'scheduleAdjustments.banner_one'
-                                : 'scheduleAdjustments.banner_other',
-                            { count: pendingScheduleAdjustments.length },
-                        )}
-                    </p>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setSelectedScheduleAdjustment(pendingScheduleAdjustments[0]);
-                            setShowScheduleGainModal(true);
-                        }}
-                        className="shrink-0 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
-                    >
-                        {t('scheduleAdjustments.review_cta')}
-                    </button>
-                </div>
             ) : null}
 
             {pendingUnappliedWeatherImpacts.length > 0 && canEditProjects ? (
@@ -2755,32 +2784,19 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                 {t('activityHistory.tabLabel')}
                             </button>
                             )}
-                            <button
-                                type="button"
-                                onClick={() => selectTab('photos')}
-                                className={`py-2 px-1 text-sm font-medium border-b-2 transition-colors ${
-                                    activeTab === 'photos'
-                                        ? 'border-blue-500 text-blue-600'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                            >
-                                {t('mobile.project_photos_tab')}
-                            </button>
                         </nav>
+                        {canEditProjects ? (
                         <ProjectSmartNotificationsCard
                             variant="inline"
                             project={project}
                             organization={state.currentOrganization}
                             canEdit={canEditProjects}
-                            onConfigure={
-                                canEditProjects
-                                    ? ({ activate } = {}) => {
-                                          setSmartNotifActivateOnOpen(Boolean(activate));
-                                          setShowSmartNotificationsModal(true);
-                                      }
-                                    : undefined
-                            }
+                            onConfigure={({ activate } = {}) => {
+                                setSmartNotifActivateOnOpen(Boolean(activate));
+                                setShowSmartNotificationsModal(true);
+                            }}
                         />
+                        ) : null}
                     </div>
 
                     {/* Tab Content */}
@@ -2977,7 +2993,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                 {phasesLoading && allTasks.length === 0 ? (
                                     <SkeletonList count={3} rowClassName="h-12" className="py-4 space-y-3" />
                                 ) : null}
-                                {!phasesLoading && projectPhases.length === 0 && (
+                                {!phasesLoading && projectPhases.length === 0 && canEditProjects && (
                                     <PhasesEmptyState
                                         taskCount={allTasks.length}
                                         onAddPhase={() => setShowAddPhaseModal(true)}
@@ -2985,6 +3001,9 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                         isMutating={phasesMutating}
                                     />
                                 )}
+                                {!phasesLoading && projectPhases.length === 0 && !canEditProjects && allTasks.length === 0 ? (
+                                    <p className="py-6 text-center text-sm text-gray-500">{t('projectDetail.no_phases_yet', { defaultValue: 'No phases yet.' })}</p>
+                                ) : null}
                                 {!phasesLoading && projectPhases.length > 0 && (
                                     <>
                                         <PhasesHintBanner />
@@ -3078,6 +3097,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                                     allTasks={allTasks}
                                                                                     onOpenDependencyDrawer={setDependencyDrawerTaskId}
                                                                                     onPingAssignee={handlePingAssignee}
+                                                                                    onCopyGuestLink={handleCopyGuestTaskLink}
                                                                                     onRequestAssigneeSmsConsent={
                                                                                         isSmsNotificationsEnabled()
                                                                                             ? handleRequestAssigneeSmsConsent
@@ -3153,15 +3173,16 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                             allTasks={allTasks}
                                                                             onOpenDependencyDrawer={setDependencyDrawerTaskId}
                                                                             onPingAssignee={handlePingAssignee}
+                                                                            onCopyGuestLink={handleCopyGuestTaskLink}
                                                                             onRequestAssigneeSmsConsent={
                                                                                 isSmsNotificationsEnabled()
                                                                                     ? handleRequestAssigneeSmsConsent
                                                                                     : undefined
                                                                             }
                                                                             onShareSmsConsentLink={handleShareSmsConsentLink}
-                                                                            pingingTaskId={pingingTaskId}
-                                                                            project={project}
-                                                                        />
+                                                                                    pingingTaskId={pingingTaskId}
+                                                                                    project={project}
+                                                                                />
                                                                     ),
                                                                 )}
                                                             </ul>
@@ -3184,6 +3205,29 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                     <p className="text-center text-sm text-gray-500 py-8">
                                         {t('projectDetail.no_tasks_description')}
                                     </p>
+                                ) : null}
+
+                                {pendingScheduleAdjustments.length > 0 && canEditProjects ? (
+                                    <div className="mt-4 flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <p className="text-sm text-emerald-950">
+                                            {t(
+                                                pendingScheduleAdjustments.length === 1
+                                                    ? 'scheduleAdjustments.banner_one'
+                                                    : 'scheduleAdjustments.banner_other',
+                                                { count: pendingScheduleAdjustments.length },
+                                            )}
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedScheduleAdjustment(pendingScheduleAdjustments[0]);
+                                                setShowScheduleGainModal(true);
+                                            }}
+                                            className="shrink-0 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
+                                        >
+                                            {t('scheduleAdjustments.review_cta')}
+                                        </button>
+                                    </div>
                                 ) : null}
                             </div>
                         )}
@@ -3217,12 +3261,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                         <ProjectSidebarPhases phases={projectPhases} locale={i18n.language} />
                                     </div>
                                 </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'photos' && project && (
-                            <div className="p-4 lg:p-6 bg-white rounded-xl shadow-xs border border-gray-200">
-                                <ProjectPhotoRollPanel projectId={project.id} t={t} />
                             </div>
                         )}
 
@@ -3486,7 +3524,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         userId: state.user?.id,
                         userContactId: state.userContactId,
                         userRoleName: state.userRole?.name,
-                        canEditTasks: state.userRole?.permissions?.can_edit_tasks === true,
+                        canEditTasks,
                         task: photoModalTask,
                     })}
                     photoActionBusy={photoActionTaskIds[photoModalTask.id] === true}
@@ -3507,9 +3545,15 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                     role="dialog"
                     aria-modal="true"
                     aria-labelledby="phases-modal-title"
-                    onClick={() => setShowPhasesModal(false)}
+                    onClick={() => {
+                        setShowPhasesModal(false);
+                        setPhasesModalEditing(false);
+                    }}
                     onKeyDown={(e) => {
-                        if (e.key === 'Escape') setShowPhasesModal(false);
+                        if (e.key === 'Escape') {
+                            setShowPhasesModal(false);
+                            setPhasesModalEditing(false);
+                        }
                     }}
                 >
                     <div
@@ -3517,7 +3561,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 bg-white">
-                            <div>
+                            <div className="min-w-0">
                                 <h2 id="phases-modal-title" className="text-lg font-bold text-gray-900">
                                     {t('projectDetail.project_schedule')}
                                 </h2>
@@ -3525,12 +3569,34 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                     {t('projectDetail.project_schedule_subtitle')}
                                 </p>
                             </div>
+                            {canEditProjects ? (
+                                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAddPhaseModal(true)}
+                                        className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
+                                    >
+                                        + {t('build_path.add_phase')}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPhasesModalEditing((v) => !v)}
+                                        className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
+                                    >
+                                        {phasesModalEditing ? t('common.done') : t('common.edit')}
+                                    </button>
+                                </div>
+                            ) : null}
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 min-h-[min(480px,50vh)] max-h-[calc(90vh-8rem)]">
                             <BuildPath
                                 project={project}
                                 phaseControl={phaseControl}
                                 embedded
+                                hideEmbeddedToolbar
+                                isEditing={phasesModalEditing}
+                                onEditingChange={setPhasesModalEditing}
+                                onAddPhase={() => setShowAddPhaseModal(true)}
                                 onPhasesChange={() => phaseControl.refresh()}
                             />
                         </div>
@@ -3538,7 +3604,10 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             <button
                                 type="button"
                                 className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full hover:bg-blue-700"
-                                onClick={() => setShowPhasesModal(false)}
+                                onClick={() => {
+                                    setShowPhasesModal(false);
+                                    setPhasesModalEditing(false);
+                                }}
                             >
                                 {t('projectDetail.schedule_done')}
                             </button>

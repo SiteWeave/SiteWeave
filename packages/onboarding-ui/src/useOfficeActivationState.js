@@ -3,6 +3,9 @@ import { computeActivationState } from './activationChecklist';
 
 /**
  * Loads real activation metrics for the office checklist.
+ * @returns {{ completed: object, ready: boolean }}
+ * `ready` is false until the first metrics fetch for the current org finishes,
+ * so callers can avoid flashing the checklist with incomplete defaults.
  */
 export function useOfficeActivationState(supabase, organizationId, projects = [], userId) {
   const [metrics, setMetrics] = useState({
@@ -11,6 +14,7 @@ export function useOfficeActivationState(supabase, organizationId, projects = []
     teamInviteSent: false,
     reportCount: 0,
   });
+  const [ready, setReady] = useState(false);
 
   const projectIds = useMemo(
     () => (projects || []).map((p) => p.id).filter(Boolean),
@@ -22,7 +26,10 @@ export function useOfficeActivationState(supabase, organizationId, projects = []
   }, [projects?.length]);
 
   useEffect(() => {
-    if (!supabase || !organizationId) return undefined;
+    if (!supabase || !organizationId) {
+      setReady(false);
+      return undefined;
+    }
 
     let cancelled = false;
 
@@ -62,6 +69,8 @@ export function useOfficeActivationState(supabase, organizationId, projects = []
         });
       } catch (error) {
         console.warn('useOfficeActivationState:', error);
+      } finally {
+        if (!cancelled) setReady(true);
       }
     })();
 
@@ -70,7 +79,7 @@ export function useOfficeActivationState(supabase, organizationId, projects = []
     };
   }, [supabase, organizationId, projectIds.join(','), userId, projects?.length]);
 
-  return useMemo(
+  const completed = useMemo(
     () =>
       computeActivationState({
         projectCount: metrics.projectCount,
@@ -80,6 +89,8 @@ export function useOfficeActivationState(supabase, organizationId, projects = []
       }),
     [metrics],
   );
+
+  return useMemo(() => ({ completed, ready }), [completed, ready]);
 }
 
 export function markTeamInviteSent(userId) {

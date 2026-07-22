@@ -14,6 +14,7 @@ import Avatar from '../../components/ui/Avatar';
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useSyncStatus } from '../../context/SyncStatusContext';
+import { presentSyncResultAlert } from '../../utils/presentSyncResultAlert';
 import { useAppUpdate } from '../../context/AppUpdateContext';
 import i18n from '../../i18n';
 import { useHaptics } from '../../hooks/useHaptics';
@@ -28,7 +29,7 @@ export default function MoreScreen() {
   const router = useRouter();
   const { t, i18n: i18nFromHook } = useTranslation();
   const { user, activeOrganization, profileAvatarUrl } = useAuth();
-  const { isOnline, queueSize, isSyncing, flushQueue } = useSyncStatus();
+  const { isOnline, queueSize, isSyncing, flushQueue, clearQueue, formatSyncErrorSummary } = useSyncStatus();
   const { nativeVersion, otaStatusLabelKey } = useAppUpdate();
   const { isPlatformDeveloper } = usePlatformDeveloper();
   const { primaryColor } = useBranding();
@@ -55,6 +56,20 @@ export default function MoreScreen() {
     await i18n.changeLanguage(lng);
   };
 
+  const handleSyncPress = async () => {
+    if (isSyncing) return;
+    haptics.light();
+    const sizeBefore = queueSize;
+    const result = await flushQueue();
+    presentSyncResultAlert({
+      result,
+      t,
+      queueSize: result?.remaining ?? sizeBefore,
+      formatSyncErrorSummary,
+      clearQueue,
+    });
+  };
+
   return (
     <View style={[styles.screen, { paddingTop: contentTopInset(insets) }]}>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: scrollBottomPadding(insets, spacing.xxl) }]}>
@@ -79,7 +94,7 @@ export default function MoreScreen() {
         <Card style={styles.card}>
             <PressableWithFade
               style={styles.row}
-              onPress={flushQueue}
+              onPress={handleSyncPress}
               disabled={isSyncing}
               testID="more-sync-status"
             >

@@ -3,19 +3,25 @@ import { useNavigate } from 'react-router-dom'
 import LoginForm from '../components/LoginForm'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { useSession } from '../hooks/useSession'
+import { getPostAuthNavigatePath } from '../utils/workspaceClient'
 
 /**
- * Same screen as desktop: shared LoginForm. Redirects home if already signed in (e.g. after OAuth).
+ * Same screen as desktop: shared LoginForm. Redirects home if already signed in (e.g. after OAuth),
+ * or back to a pending project invite when one is stored.
  */
 export default function LoginView() {
   const navigate = useNavigate()
   const { session, loading } = useSession()
 
+  const goAfterAuth = React.useCallback(() => {
+    navigate(getPostAuthNavigatePath(), { replace: true })
+  }, [navigate])
+
   React.useEffect(() => {
     if (!loading && session) {
-      navigate('/', { replace: true })
+      goAfterAuth()
     }
-  }, [loading, session, navigate])
+  }, [loading, session, goAfterAuth])
 
   if (loading || session) {
     return (
@@ -28,7 +34,7 @@ export default function LoginView() {
   return (
     <LoginForm
       mode="signIn"
-      onAuthSuccess={() => navigate('/', { replace: true })}
+      onAuthSuccess={goAfterAuth}
     />
   )
 }

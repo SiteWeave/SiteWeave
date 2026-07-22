@@ -36,12 +36,21 @@ async function assignProfileOrganization(userId, organizationId, roleId, contact
 
     if (error) {
         console.warn('update-profile-organization failed, trying direct update:', error);
+        const { data: existingProfile } = await supabaseClient
+            .from('profiles')
+            .select('review_eligible_at')
+            .eq('id', userId)
+            .maybeSingle();
+
         const { error: directError } = await supabaseClient
             .from('profiles')
             .update({
                 organization_id: organizationId,
                 role_id: roleId,
                 ...(contactId ? { contact_id: contactId } : {}),
+                ...(!existingProfile?.review_eligible_at
+                    ? { review_eligible_at: new Date().toISOString() }
+                    : {}),
             })
             .eq('id', userId);
 

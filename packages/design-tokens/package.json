@@ -1,0 +1,14 @@
+{
+  "name": "@siteweave/design-tokens",
+  "version": "1.0.0",
+  "description": "Shared semantic design tokens for SiteWeave web and mobile",
+  "main": "src/index.js",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.js",
+    "./css": "./src/web.css",
+    "./web.css": "./src/web.css",
+    "./mobile": "./src/mobile.js"
+  }
+}

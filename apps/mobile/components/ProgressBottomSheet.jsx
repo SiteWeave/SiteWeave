@@ -38,10 +38,20 @@ export default function ProgressBottomSheet({
       onPrimary={handleSave}
       primaryDisabled={saving}
       primaryLoading={saving}
+      // Content-sized sheet — medium snap left a large empty gap under Mark complete.
+      snap="content"
+      maxSnap="medium"
+      allowExpand={false}
+      expandOnFocus={false}
       stickyPrimary
+      primaryPlacement="footer"
+      closeVariant="minimal"
+      closePosition="right"
       testID="progress-sheet"
     >
-      <ProgressEditor value={percent} onChange={setPercent} compact />
+      <BottomSheet.Scroll bottomOffset={24} contentContainerStyle={{ paddingBottom: 8 }}>
+        <ProgressEditor value={percent} onChange={setPercent} compact />
+      </BottomSheet.Scroll>
     </BottomSheet>
   );
 }

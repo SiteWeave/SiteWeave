@@ -177,7 +177,8 @@ export default function MessagesView({ embedded = false, onOpenDirectory = null 
 
       if (file) {
         setIsUploading(true)
-        const filePath = `messages/${activeChannel.id}/${Date.now()}_${file.name}`
+        const safeName = String(file.name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_')
+        const filePath = `messages/${activeChannel.id}/${Date.now()}_${safeName}`
         await uploadFile(supabaseClient, 'message_files', filePath, file)
         payload.file_url = supabaseClient.storage.from('message_files').getPublicUrl(filePath).data.publicUrl
         payload.file_name = file.name

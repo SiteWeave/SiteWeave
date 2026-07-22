@@ -4,32 +4,42 @@ import { Text } from './Text';
 import { colors, radius, spacing, touch } from '../../theme';
 import { useBranding } from '../../context/BrandingContext';
 
+/**
+ * SiteWeave mobile Button — states: default, pressed (via PressableWithFade),
+ * disabled, loading. Variants: primary | secondary | ghost | danger.
+ */
 export default function Button({
   label,
   onPress,
   variant = 'primary',
   disabled = false,
+  loading = false,
   testID,
   style,
   textStyle,
+  accessibilityLabel,
 }) {
   const { primaryColor } = useBranding();
   const isPrimary = variant === 'primary';
   const isSecondary = variant === 'secondary';
+  const isDanger = variant === 'danger';
+  const isDisabled = disabled || loading;
 
   return (
     <PressableWithFade
       onPress={onPress}
-      disabled={disabled}
+      disabled={isDisabled}
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel || label}
+      accessibilityState={{ disabled: isDisabled, busy: Boolean(loading) }}
       style={[
         styles.base,
         isPrimary && { backgroundColor: primaryColor },
         isSecondary && styles.secondary,
         variant === 'ghost' && styles.ghost,
-        disabled && styles.disabled,
+        isDanger && styles.danger,
+        isDisabled && styles.disabled,
         style,
       ]}
     >
@@ -39,10 +49,11 @@ export default function Button({
           isPrimary && styles.labelPrimary,
           isSecondary && styles.labelSecondary,
           variant === 'ghost' && styles.labelGhost,
+          isDanger && styles.labelDanger,
           textStyle,
         ]}
       >
-        {label}
+        {loading ? '…' : label}
       </Text>
     </PressableWithFade>
   );
@@ -51,6 +62,7 @@ export default function Button({
 const styles = StyleSheet.create({
   base: {
     minHeight: touch.sheetButtonHeight,
+    minWidth: touch.minSize,
     borderRadius: radius.button,
     alignItems: 'center',
     justifyContent: 'center',
@@ -59,9 +71,11 @@ const styles = StyleSheet.create({
   },
   secondary: { backgroundColor: colors.secondaryButton },
   ghost: { backgroundColor: 'transparent' },
+  danger: { backgroundColor: colors.statusStuck },
   disabled: { opacity: 0.5 },
   label: { fontSize: 17, fontWeight: '700' },
   labelPrimary: { color: colors.white },
   labelSecondary: { color: colors.primary },
   labelGhost: { color: colors.primary },
+  labelDanger: { color: colors.white },
 });

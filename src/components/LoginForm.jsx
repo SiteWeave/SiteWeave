@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import LoadingSpinner from './LoadingSpinner';
 import { FieldError, fieldInputClassName } from './FormAlert';
 import { ROUTE_PATHS } from '../config/routes';
 import {
@@ -425,7 +424,15 @@ function LoginForm({ mode = 'signIn', onAuthSuccess }) {
             className="w-full py-2.5 px-4 rounded-md text-sm font-semibold text-white bg-gray-800 hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed btn-smooth"
             data-testid="login-submit"
           >
-            {isLoading ? <LoadingSpinner size="sm" text="" /> : isSignUp ? t('auth.create_account') : t('auth.log_in')}
+            {isLoading ? (
+              <span className="inline-flex h-5 items-center justify-center">
+                <span
+                  className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                  role="status"
+                  aria-label="Loading"
+                />
+              </span>
+            ) : isSignUp ? t('auth.create_account') : t('auth.log_in')}
           </button>
 
           {!isSignUp && (

@@ -7,7 +7,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
-import { sendTwilioSms } from '../_shared/twilioSms.ts'
+import { sendSms } from '../_shared/signalHouseSms.ts'
 import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
 import { withTransactionalSmsFooter } from '../_shared/smsCompliance.ts'
 import { isSmsNotificationsEnabled } from '../_shared/smsNotifications.ts'
@@ -486,7 +486,7 @@ serve(async (req) => {
           }
           continue
         }
-        const smsResult = await sendTwilioSms({
+        const smsResult = await sendSms({
           to: sms.phone,
           body: withTransactionalSmsFooter(sms.message),
         })

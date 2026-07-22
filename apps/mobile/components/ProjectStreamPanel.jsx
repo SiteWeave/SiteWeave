@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import {
   fetchStreamPosts,
   createStreamPost,
@@ -347,35 +348,37 @@ export default function ProjectStreamPanel({
   }
 
   return (
-    <FlatList
-      style={styles.container}
-      data={filteredPosts}
-      keyExtractor={(item) => String(item.id)}
-      renderItem={renderPost}
-      ListHeaderComponent={composerHeader}
-      ListEmptyComponent={
-        debouncedSearch ? (
-          <PanelEmptyState
-            icon="search-outline"
-            title={t('mobile.stream_no_search_results')}
-            testID="stream-search-empty"
-          />
-        ) : (
-          <PanelEmptyState
-            icon="chatbubbles-outline"
-            title={t('mobile.stream_empty')}
-            hint={t('mobile.stream_empty_hint')}
-            ctaLabel={canPost ? t('mobile.stream_empty_cta') : undefined}
-            onCta={canPost ? () => composerRef.current?.focus?.() : undefined}
-            testID="stream-empty-post"
-          />
-        )
-      }
-      contentContainerStyle={[styles.listContent, { paddingBottom: contentPaddingBottom }]}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-    />
+    <KeyboardAvoidingView style={styles.container} behavior="padding">
+      <FlatList
+        style={styles.container}
+        data={filteredPosts}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={renderPost}
+        ListHeaderComponent={composerHeader}
+        ListEmptyComponent={
+          debouncedSearch ? (
+            <PanelEmptyState
+              icon="search-outline"
+              title={t('mobile.stream_no_search_results')}
+              testID="stream-search-empty"
+            />
+          ) : (
+            <PanelEmptyState
+              icon="chatbubbles-outline"
+              title={t('mobile.stream_empty')}
+              hint={t('mobile.stream_empty_hint')}
+              ctaLabel={canPost ? t('mobile.stream_empty_cta') : undefined}
+              onCta={canPost ? () => composerRef.current?.focus?.() : undefined}
+              testID="stream-empty-post"
+            />
+          )
+        }
+        contentContainerStyle={[styles.listContent, { paddingBottom: contentPaddingBottom }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      />
+    </KeyboardAvoidingView>
   );
 }
 

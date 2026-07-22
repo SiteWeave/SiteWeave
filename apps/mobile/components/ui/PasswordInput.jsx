@@ -1,5 +1,6 @@
-import { View, TextInput, StyleSheet, Pressable } from 'react-native';
+import { View, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import SheetInput from './SheetInput';
 import { colors, spacing, touch } from '../../theme';
 
 /**
@@ -14,10 +15,13 @@ export default function PasswordInput({
   onToggleShow,
   testID,
   autoComplete = 'password',
+  returnKeyType,
+  onSubmitEditing,
+  blurOnSubmit,
 }) {
   return (
     <View style={styles.wrap}>
-      <TextInput
+      <SheetInput
         key={showPassword ? `${testID}-visible` : `${testID}-secure`}
         style={styles.input}
         placeholder={placeholder}
@@ -30,6 +34,9 @@ export default function PasswordInput({
         textContentType={showPassword ? 'none' : 'password'}
         placeholderTextColor={colors.textSubtle}
         testID={testID}
+        returnKeyType={returnKeyType}
+        onSubmitEditing={onSubmitEditing}
+        blurOnSubmit={blurOnSubmit}
       />
       <Pressable
         style={styles.eye}

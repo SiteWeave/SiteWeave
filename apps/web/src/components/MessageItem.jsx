@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
 import Avatar from './Avatar';
 import { fetchThreadReplies, getThreadReplyCount, fetchMessageWithUserInfo } from '@siteweave/core-logic';
+import { isSafeHttpsUrl, safeOpenUrl } from '../utils/safeOpenUrl';
 
 function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar = true, showTimestamp = false, isLastInChannel = false, onReply, onThreadExpand, onReport, onBlock, currentUserId }) {
     const { i18n } = useTranslation();
@@ -220,16 +221,16 @@ function MessageItem({ message, onEdit, onDelete, isGrouped = false, showAvatar 
                                 </p>
                             )}
                             
-                            {messageWithUser.type === 'image' && messageWithUser.file_url && (
+                            {messageWithUser.type === 'image' && isSafeHttpsUrl(messageWithUser.file_url) && (
                                 <img 
                                     src={messageWithUser.file_url} 
                                     alt={messageWithUser.file_name || 'Attached image'} 
                                     className="mt-2 rounded-lg max-w-full cursor-pointer" 
-                                    onClick={() => window.open(messageWithUser.file_url, '_blank')} 
+                                    onClick={() => safeOpenUrl(messageWithUser.file_url)} 
                                 />
                             )}
                             
-                            {messageWithUser.type === 'file' && messageWithUser.file_url && (
+                            {messageWithUser.type === 'file' && isSafeHttpsUrl(messageWithUser.file_url) && (
                                 <a href={messageWithUser.file_url} target="_blank" rel="noopener noreferrer" 
                                    className={`flex items-center gap-2 mt-2 p-2 rounded-md ${isCurrentUser ? 'bg-blue-700 hover:bg-blue-800' : 'bg-gray-200 hover:bg-gray-300'}`}>
                                     <Icon path="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" className="w-5 h-5 flex-shrink-0" />

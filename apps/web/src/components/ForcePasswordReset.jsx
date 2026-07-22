@@ -12,12 +12,13 @@ import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
  * Cannot be bypassed - user must set a new password to continue
  */
 function ForcePasswordReset({ show, onComplete }) {
-  const { state } = useAppContext();
+  const { state, dispatch } = useAppContext();
   const { addToast } = useToast();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -26,6 +27,19 @@ function ForcePasswordReset({ show, onComplete }) {
   useEffect(() => {
     // Don't auto-fill, but we can show a hint if needed
   }, []);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await supabaseClient.auth.signOut();
+    } catch (err) {
+      console.warn('Sign out during force password reset:', err);
+    } finally {
+      dispatch({ type: 'SET_USER', payload: null });
+      setSigningOut(false);
+      window.location.assign('/login');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -229,6 +243,14 @@ function ForcePasswordReset({ show, onComplete }) {
             ) : (
               'Set Private PIN'
             )}
+          </button>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={isLoading || signingOut}
+            className="w-full mt-3 px-6 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg disabled:opacity-50 transition-colors"
+          >
+            {signingOut ? 'Signing out…' : 'Sign out'}
           </button>
         </form>
       </div>

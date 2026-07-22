@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
@@ -10,11 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const appVersion = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')).version
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => {
-  // Load env file - Vite automatically loads .env files
-  // Using '' as prefix loads ALL env vars, then we can access VITE_ prefixed ones
-  const env = loadEnv(mode, process.cwd(), '')
-  
+export default defineConfig(() => {
   return {
     root: process.cwd(),
     define: {
@@ -25,6 +21,8 @@ export default defineConfig(({ mode }) => {
         '@siteweave/core-logic': path.resolve(__dirname, './packages/core-logic/src/index.js'),
         '@siteweave/i18n': path.resolve(__dirname, './packages/i18n/index.js'),
         '@siteweave/onboarding-ui': path.resolve(__dirname, './packages/onboarding-ui/src/index.js'),
+        '@siteweave/design-tokens/mobile': path.resolve(__dirname, './packages/design-tokens/src/mobile.js'),
+        '@siteweave/design-tokens': path.resolve(__dirname, './packages/design-tokens/src/index.js'),
         'frappe-gantt/dist/frappe-gantt.css': path.resolve(__dirname, './node_modules/frappe-gantt/dist/frappe-gantt.css')
       }
     },

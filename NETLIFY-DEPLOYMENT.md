@@ -10,7 +10,7 @@
 2. Navigate to **Site settings** → **Environment variables**
 3. Add these variables:
    - `VITE_SUPABASE_URL` = `https://tchqmlyiwsqxwopvyxjx.supabase.co`
-   - `VITE_SUPABASE_ANON_KEY` = `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRjaHFtbHlpd3NxeHdvcHZ5eGp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg1MTAzMTcsImV4cCI6MjA3NDA4NjMxN30.8m33JQWP0JjeYIPETjeCcCq29gv2ROxl9hd2G5ugzX4`
+   - `VITE_SUPABASE_ANON_KEY` = `YOUR_SUPABASE_ANON_KEY`
 
 ### 2. Netlify Build Settings
 

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildOptInConfirmedSmsBody } from './smsCompliance.ts'
-import { sendTwilioSms } from './twilioSms.ts'
+import { sendSms } from './signalHouseSms.ts'
 import { isSmsNotificationsEnabled } from './smsNotifications.ts'
 
 export const SMS_CONSENT_LINK_TTL_MS = 14 * 24 * 60 * 60 * 1000
@@ -153,7 +153,7 @@ export async function confirmWebSmsConsent(
 
   if (isSmsNotificationsEnabled()) {
     const body = buildOptInConfirmedSmsBody()
-    const smsResult = await sendTwilioSms({ to: row.phone_e164, body })
+    const smsResult = await sendSms({ to: row.phone_e164, body })
     if (!smsResult.success) {
       console.warn('confirmWebSmsConsent confirmation SMS failed:', smsResult.error)
     }

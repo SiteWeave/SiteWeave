@@ -31,58 +31,42 @@ You can modify the edge functions to use:
 - Mailgun
 - Postmark
 
-## Step 1B: Set Up Twilio (SMS Assignment Notifications)
+## Step 1B: Set Up Signal House (SMS Assignment Notifications)
 
-Twilio is used for SMS notifications when contacts are assigned to projects and a valid phone is on file.
+Signal House is used for SMS notifications when contacts are assigned to projects and a valid phone is on file (after opt-in). Full guide: **[SMS-SIGNAL-HOUSE.md](./SMS-SIGNAL-HOUSE.md)**.
 
-1. In Twilio Console, create or select a Messaging Service (recommended).
-2. Create an API Key + Secret for server-to-server access.
-3. Rotate any previously exposed credentials before going live.
-4. Add these Supabase Edge Function secrets:
+1. In Signal House, create an API key (Developer Tools → API Keys) and assign a sender number to an approved campaign.
+2. Add these Supabase Edge Function secrets:
 
 ```bash
-supabase secrets set TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-supabase secrets set TWILIO_API_KEY=SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-supabase secrets set TWILIO_API_SECRET=your_api_secret
-supabase secrets set TWILIO_MESSAGING_SERVICE_SID=MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-Optional fallback if you are not using a Messaging Service:
-
-```bash
-supabase secrets set TWILIO_FROM_NUMBER=+15551234567
+supabase secrets set SIGNAL_HOUSE_API_KEY=your_api_key
+supabase secrets set SIGNAL_HOUSE_FROM_NUMBER=+15129941576
 ```
 
 Notes:
-- Keep Twilio values in Supabase secrets only (never in client-side env vars).
-- Phone numbers are normalized to E.164 before sending SMS.
+- Keep Signal House values in Supabase secrets only (never in client-side env vars).
+- Phone numbers are normalized to E.164 in the app; digits-only for the Signal House API.
 - SMS failures do not block the main project assignment flow.
 
-### SMS double opt-in (reply YES) and inbound webhook
+### SMS double opt-in (web form or reply YES) and inbound webhook
 
-Substantive SMS (task reminders, invites, assignment texts) is only sent after the assignee’s number is **`confirmed`** in `sms_phone_consent`. The first outbound attempt sends a short opt-in message; the assignee must reply **`YES`** (optionally with the 6-character code). **`STOP`** opts the number out globally until you change the product to support re-opt-in.
+Substantive SMS (task reminders, invites, assignment texts) is only sent after the assignee’s number is **`confirmed`** in `sms_phone_consent`. Opt-in is via the **web consent form** or reply **`YES`** (optionally with the 6-character code). **`STOP`** opts the number out globally.
 
-1. **Edge Function URL (Twilio Messaging / number inbound webhook)**  
-   Point Twilio **when a message comes in** to:
+1. **Edge Function URL (Signal House number inbound webhook)**  
+   Point messaging inbound webhook to:
 
-   `https://<project-ref>.supabase.co/functions/v1/twilio-sms-inbound`
+   `https://<project-ref>.supabase.co/functions/v1/signalhouse-sms-inbound`
 
-   Deploy: `supabase functions deploy twilio-sms-inbound`
+   Deploy: `supabase functions deploy signalhouse-sms-inbound`
 
-2. **Supabase secrets**
+2. **Optional webhook secret**
 
 ```bash
-# Primary Account Auth Token (used to verify X-Twilio-Signature on inbound — not the API Key Secret)
-supabase secrets set TWILIO_AUTH_TOKEN=your_account_auth_token
-
-# If Supabase shows a different host than Twilio used when signing (e.g. proxies), set the public URL Twilio POSTs to:
-supabase secrets set TWILIO_WEBHOOK_PUBLIC_URL=https://<project-ref>.supabase.co/functions/v1/twilio-sms-inbound
+supabase secrets set SIGNAL_HOUSE_WEBHOOK_SECRET=long_random_string
 ```
 
-Outbound SMS continues to use `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY`, `TWILIO_API_SECRET`, and `TWILIO_MESSAGING_SERVICE_SID` (or `TWILIO_FROM_NUMBER`) as above.
-
-3. **Twilio / carrier compliance**  
-   Opt-in SMS includes welcome text, as-needed frequency, Msg&data rates, HELP/STOP, and Terms/Privacy links. Substantive SMS is gated on `sms_phone_consent.status = confirmed` after inbound **YES**. See **[sms-twilio-campaign-registration.md](../../docs/sms-twilio-campaign-registration.md)** for copy-paste registration text and screenshot proof checklist.
+3. **Carrier compliance**  
+   See **[sms-signalhouse-campaign-registration.md](./sms-signalhouse-campaign-registration.md)** and sample opt-in at https://app.siteweave.org/sms-opt-in.
 
 ## Step 2: Deploy Edge Functions
 
@@ -176,7 +160,7 @@ Run the database migration to add email fields and invitations table:
 
 ```bash
 # Option 1: Run the SQL directly in Supabase Dashboard
-# Copy the contents of ../../../schema.sql and run in SQL Editor
+# Copy the contents of schema.sql and run in SQL Editor
 
 # Option 2: Use Supabase CLI migration
 supabase db push

@@ -32,14 +32,15 @@ class ElectronOAuth {
 
     console.log('Using redirect URI:', redirectUri);
 
-    // For Microsoft in Electron (public client), use PKCE
+    // For Electron public clients (Google + Microsoft), use PKCE
     let pkceConfig = { ...config };
-    if (provider === 'microsoft' && this.isElectron) {
+    if (this.isElectron && (provider === 'microsoft' || provider === 'google')) {
       const codeVerifier = this.generateCodeVerifier();
       const codeChallenge = await this.generateCodeChallenge(codeVerifier);
+      this.pkceCodeVerifier = codeVerifier;
+      // Keep legacy alias used by Microsoft token exchange paths
       this.msCodeVerifier = codeVerifier;
-      console.log('Generated PKCE code_verifier for Microsoft (length:', codeVerifier.length, ')');
-      console.log('Code challenge generated');
+      console.log(`Generated PKCE code_verifier for ${provider} (length:`, codeVerifier.length, ')');
       pkceConfig = { ...pkceConfig, codeChallenge };
     } else if (provider === 'microsoft' && !this.isElectron) {
       console.log('Microsoft OAuth in web mode - will use client_secret');
@@ -126,8 +127,8 @@ class ElectronOAuth {
     url.searchParams.set('redirect_uri', redirectUri);
     url.searchParams.set('scope', scopes[provider]);
 
-    // Microsoft: include PKCE in Electron/public client flow
-    if (provider === 'microsoft' && config.codeChallenge) {
+    // Electron public clients: include PKCE challenge for Google and Microsoft
+    if (this.isElectron && config.codeChallenge && (provider === 'microsoft' || provider === 'google')) {
       url.searchParams.set('code_challenge', config.codeChallenge);
       url.searchParams.set('code_challenge_method', 'S256');
     }
@@ -224,8 +225,7 @@ class ElectronOAuth {
     console.log('Provider:', provider);
     console.log('isElectron:', this.isElectron);
     console.log('Redirect URI:', redirectUri);
-    console.log('msCodeVerifier exists:', !!this.msCodeVerifier);
-    console.log('msCodeVerifier length:', this.msCodeVerifier?.length);
+    console.log('pkceCodeVerifier exists:', !!(this.pkceCodeVerifier || this.msCodeVerifier));
 
     const body = new URLSearchParams({
       client_id: config.clientId,
@@ -234,69 +234,45 @@ class ElectronOAuth {
       redirect_uri: redirectUri
     });
 
-    // Only include client_secret for confidential clients (web/backend). Public clients (Electron) must not send it.
-    if (!(provider === 'microsoft' && this.isElectron) && config.clientSecret) {
+    const codeVerifier = this.pkceCodeVerifier || this.msCodeVerifier;
+
+    // Electron uses PKCE. If a confidential Web client ID is configured, also send client_secret
+    // (Google returns "client_secret is missing" for Web clients without it).
+    if (config.clientSecret) {
       body.set('client_secret', config.clientSecret);
-      console.log('Including client_secret (web flow)');
+      console.log('Including client_secret (confidential client)');
     }
 
-    // Microsoft public client requires PKCE code_verifier
-    // CRITICAL: For Electron, we MUST include code_verifier, otherwise Microsoft treats it as cross-origin
-    if (provider === 'microsoft' && this.isElectron) {
-      if (this.msCodeVerifier) {
-        body.set('code_verifier', this.msCodeVerifier);
-        console.log('Including code_verifier (PKCE flow)');
-      } else {
-        console.error('ERROR: Microsoft Electron flow requires code_verifier but it is missing!');
-        throw new Error('PKCE code_verifier is required for Microsoft OAuth in Electron but was not found. This usually means the authorization flow did not complete properly.');
+    if (this.isElectron && (provider === 'google' || provider === 'microsoft')) {
+      if (!codeVerifier) {
+        throw new Error(`PKCE code_verifier is required for ${provider} OAuth in Electron but was not found.`);
       }
-      // For Native apps with PKCE, do NOT include scope in token exchange
-      // The scope is already bound to the authorization code
-    } else if (provider === 'microsoft' && !this.isElectron) {
-      // Web flow: include scope if provided
-      if (config.scope) {
-        body.set('scope', config.scope);
-      }
+      body.set('code_verifier', codeVerifier);
+      console.log('Including code_verifier (PKCE flow)');
+    } else if (provider === 'microsoft' && !this.isElectron && config.scope) {
+      body.set('scope', config.scope);
     }
 
     console.log('Token exchange body keys:', Array.from(body.keys()));
 
-    // Google in Electron: use main process to avoid CORS and include client_secret securely
-    if (provider === 'google' && this.isElectron && window.electronAPI?.exchangeOAuthToken) {
-      console.log('Attempting Google token exchange via main process...');
+    // Prefer main-process exchange in Electron to avoid CORS / origin issues
+    if (this.isElectron && window.electronAPI?.exchangeOAuthToken) {
+      console.log(`Attempting ${provider} token exchange via main process...`);
       try {
         const json = await window.electronAPI.exchangeOAuthToken({
-          provider: 'google',
+          provider,
           code,
           clientId: config.clientId,
-          clientSecret: config.clientSecret,
           redirectUri,
+          codeVerifier,
+          ...(config.clientSecret ? { clientSecret: config.clientSecret } : {}),
         });
-        console.log('Google token exchange successful via main process');
-        return json;
-      } catch (mainProcessError) {
-        console.warn('Google token exchange via main process failed, falling back to renderer:', mainProcessError);
-      }
-    }
-
-    // For Microsoft in Electron, try using main process to avoid CORS/origin issues
-    if (provider === 'microsoft' && this.isElectron && window.electronAPI?.exchangeOAuthToken) {
-      console.log('Attempting token exchange via main process (to avoid CORS issues)...');
-      try {
-        const json = await window.electronAPI.exchangeOAuthToken({
-          provider: 'microsoft',
-          code: code,
-          clientId: config.clientId,
-          redirectUri: redirectUri,
-          codeVerifier: this.msCodeVerifier
-        });
-        // Clear one-time verifier after successful exchange
+        this.pkceCodeVerifier = null;
         this.msCodeVerifier = null;
-        console.log('Token exchange successful via main process');
+        console.log(`${provider} token exchange successful via main process`);
         return json;
       } catch (mainProcessError) {
-        console.warn('Token exchange via main process failed, falling back to renderer:', mainProcessError);
-        // Fall through to renderer process attempt
+        console.warn(`${provider} token exchange via main process failed, falling back to renderer:`, mainProcessError);
       }
     }
 
@@ -316,10 +292,8 @@ class ElectronOAuth {
     }
 
     const json = await response.json();
-    // Clear one-time verifier after successful exchange
-    if (provider === 'microsoft') {
-      this.msCodeVerifier = null;
-    }
+    this.pkceCodeVerifier = null;
+    this.msCodeVerifier = null;
     return json;
   }
 }

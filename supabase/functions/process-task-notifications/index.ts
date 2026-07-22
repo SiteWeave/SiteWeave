@@ -3,7 +3,7 @@ import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
 import { createServiceClient, requireCronOrServiceRole } from '../_shared/auth.ts'
 import { buildMinimalDigestEmail, formatDigestDueDate } from '../_shared/notificationEmailTemplates.ts'
 import { sendTransactionalEmail } from '../_shared/transactionalEmailLayout.ts'
-import { sendTwilioSms } from '../_shared/twilioSms.ts'
+import { sendSms } from '../_shared/signalHouseSms.ts'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { createGuestShare } from '../_shared/guestShare.ts'
 import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
@@ -23,7 +23,8 @@ function normalizeLeadDays(values: unknown, fallback = [14, 7]): number[] {
   if (!Array.isArray(values)) return fallback
   const parsed = values
     .map((v) => Number(v))
-    .filter((n) => Number.isFinite(n) && n >= 0 && n <= 365)
+    // Day-of-start (0) is noisy for "schedule ahead" reminders — require at least 1 day lead.
+    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 365)
     .map((n) => Math.trunc(n))
   const unique = Array.from(new Set(parsed))
   return unique.length > 0 ? unique.sort((a, b) => b - a) : fallback
@@ -101,7 +102,7 @@ serve(async (req) => {
         project_id,
         organization_id,
         contacts(name, email, phone),
-        projects(
+        projects!fk_tasks_project_id(
           name,
           address,
           task_notifications_use_org_defaults,
@@ -231,15 +232,20 @@ serve(async (req) => {
 
     for (const [, bucket] of groupedNotifications) {
       const batchSize = bucket.tasks.length
+      const taskName = bucket.tasks[0]?.text || 'Task'
       const dueLabel = bucket.daysUntilStart === 0
         ? 'Today'
         : `In ${bucket.daysUntilStart} day${bucket.daysUntilStart === 1 ? '' : 's'}`
+      const startPhrase = bucket.daysUntilStart === 0
+        ? 'Starts today'
+        : `Starts in ${bucket.daysUntilStart} day${bucket.daysUntilStart === 1 ? '' : 's'}`
       const heading = batchSize > 1
-        ? `${bucket.projectName}: tasks assigned to you`
-        : `Task reminder for ${bucket.projectName}`
+        ? `Task reminders · ${bucket.projectName}`
+        : `Task reminder for ${taskName}`
+      // Single-task: timing only — task name is already in the heading; project name is often a QA label.
       const subheading = batchSize > 1
-        ? `${batchSize} items need attention`
-        : bucket.tasks[0]?.text || 'Task reminder'
+        ? `${batchSize} items · ${startPhrase.toLowerCase()}`
+        : startPhrase
       const summaryLabel = bucket.daysUntilStart === 0 ? 'Due now' : 'Due soon'
       const projectAddress = (bucket.tasks[0]?.projects as { address?: string } | undefined)?.address || null
       const calendarTimeZone =
@@ -328,15 +334,15 @@ serve(async (req) => {
               ? `${batchSize} tasks for ${bucket.projectName} start ${dueLabel.toLowerCase()}. Open: ${guestUrl}`
               : `${bucket.tasks[0]?.text || 'Task'} in ${bucket.projectName} starts ${dueLabel.toLowerCase()}. Open: ${guestUrl}`,
           )
-          const smsResult = await sendTwilioSms({
+          const smsResult = await sendSms({
             to: bucket.recipientPhone,
             body: smsBody,
           })
           if (!smsResult.success) {
             status = status === 'failed' ? 'failed' : 'sent'
             errorMessage = errorMessage
-              ? `${errorMessage}; SMS: ${smsResult.error || 'twilio_failed'}`
-              : `SMS: ${smsResult.error || 'twilio_failed'}`
+              ? `${errorMessage}; SMS: ${smsResult.error || 'sms_failed'}`
+              : `SMS: ${smsResult.error || 'sms_failed'}`
           } else {
             smsDelivered = true
           }

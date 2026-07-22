@@ -28,25 +28,35 @@ export default function ProjectTeamModal({
   const [loading, setLoading] = useState(false);
   const [teamSheetOpen, setTeamSheetOpen] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [inviteDismissFast, setInviteDismissFast] = useState(false);
   const pendingInviteRef = useRef(false);
+  const returnToTeamRef = useRef(false);
+  const openedInviteDirectRef = useRef(false);
 
   useEffect(() => {
     if (!visible) {
       setTeamSheetOpen(false);
       setShowInvite(false);
+      setInviteDismissFast(false);
       pendingInviteRef.current = false;
+      returnToTeamRef.current = false;
+      openedInviteDirectRef.current = false;
       return;
     }
 
     if (openInviteOnMount && canInvite) {
+      openedInviteDirectRef.current = true;
+      returnToTeamRef.current = false;
       setTeamSheetOpen(false);
       setShowInvite(true);
       return;
     }
 
+    openedInviteDirectRef.current = false;
     setTeamSheetOpen(true);
     setShowInvite(false);
     pendingInviteRef.current = false;
+    returnToTeamRef.current = false;
   }, [visible, openInviteOnMount, canInvite]);
 
   useEffect(() => {
@@ -132,6 +142,8 @@ export default function ProjectTeamModal({
 
   const handleOpenInvite = () => {
     pendingInviteRef.current = true;
+    returnToTeamRef.current = true;
+    openedInviteDirectRef.current = false;
     setTeamSheetOpen(false);
   };
 
@@ -144,15 +156,28 @@ export default function ProjectTeamModal({
 
   const handleTeamClose = () => {
     pendingInviteRef.current = false;
+    returnToTeamRef.current = false;
     setTeamSheetOpen(false);
     onClose?.();
   };
 
   const handleInviteClose = () => {
+    // Unmount invite Modal first; decide next screen in onDismissed so the closing
+    // scrim cannot sit on top of project details (or a newly opened team sheet).
+    setInviteDismissFast(true);
     setShowInvite(false);
-    if (visible) {
+  };
+
+  const handleInviteDismissed = () => {
+    setInviteDismissFast(false);
+    if (returnToTeamRef.current) {
+      returnToTeamRef.current = false;
       setTeamSheetOpen(true);
+      return;
     }
+    // Invite was opened directly (e.g. getting-started) — leave project details usable.
+    openedInviteDirectRef.current = false;
+    onClose?.();
   };
 
   return (
@@ -214,6 +239,8 @@ export default function ProjectTeamModal({
       <ProjectInviteSheet
         visible={showInvite}
         onClose={handleInviteClose}
+        onDismissed={handleInviteDismissed}
+        dismissWithoutAnimation={inviteDismissFast}
         supabase={supabase}
         project={project}
         userId={user?.id}
@@ -277,28 +304,19 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   actionButton: {
-    padding: spacing.sm,
-    minWidth: touch.minSize,
-    minHeight: touch.minSize,
-    justifyContent: 'center',
+    width: touch.minSize,
+    height: touch.minSize,
+    borderRadius: touch.minSize / 2,
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyContainer: {
-    padding: spacing.xxl,
+    paddingVertical: spacing.xxl,
     alignItems: 'center',
-    gap: spacing.md,
   },
   emptyText: {
     color: colors.textMuted,
     textAlign: 'center',
   },
-  inviteEmptyBtn: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: 12,
-    backgroundColor: colors.primaryLight,
-    minHeight: touch.minRowHeight,
-    justifyContent: 'center',
-  },
-  inviteEmptyBtnText: { color: colors.primary, fontWeight: '700' },
 });

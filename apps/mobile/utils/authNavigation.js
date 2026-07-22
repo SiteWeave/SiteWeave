@@ -32,7 +32,10 @@ export async function routeAfterAuth(router, { inviteDestination, skipWeather, f
   }
 
   const pending = await getPendingInviteOnboarding();
-  const next = await getNextOnboardingRoute({ skipWeather: pending.skipWeather });
+  const next = await getNextOnboardingRoute({
+    userId: user?.id,
+    skipWeather: pending.skipWeather,
+  });
 
   if (next) {
     router.replace(next);

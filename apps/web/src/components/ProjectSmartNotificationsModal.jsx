@@ -8,7 +8,7 @@ function parseLeadDays(raw) {
   const values = String(raw || '')
     .split(',')
     .map((part) => parseInt(part.trim(), 10))
-    .filter((num) => Number.isFinite(num) && num >= 0 && num <= 365);
+    .filter((num) => Number.isFinite(num) && num >= 1 && num <= 365);
   const deduped = Array.from(new Set(values));
   return deduped.length > 0 ? deduped.sort((a, b) => b - a) : [14, 7];
 }

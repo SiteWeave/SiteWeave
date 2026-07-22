@@ -613,8 +613,8 @@ ipcMain.handle('exchange-oauth-token', async (event, { provider, code, clientId,
       body.set('client_secret', clientSecret);
     }
 
-    // Add code_verifier for Microsoft PKCE flow
-    if (provider === 'microsoft' && codeVerifier) {
+    // PKCE code_verifier for public / Electron clients (Google + Microsoft)
+    if (codeVerifier) {
       body.set('code_verifier', codeVerifier);
     }
     

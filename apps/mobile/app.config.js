@@ -3,9 +3,9 @@ module.exports = function(env) {
     expo: {
       name: "SiteWeave",
       slug: "siteweave-mobile",
-      version: "1.0.6",
+      version: "1.0.7",
       main: "./main.js",
-      runtimeVersion: "1.0.6",
+      runtimeVersion: "1.0.7",
       updates: {
         url: "https://u.expo.dev/0e8aedb2-5084-4046-a750-5032e61afd9a",
         checkAutomatically: "ON_LOAD",
@@ -37,6 +37,7 @@ module.exports = function(env) {
           backgroundColor: "#000000"
         },
         edgeToEdgeEnabled: false,
+        softwareKeyboardLayoutMode: "resize",
         package: "com.siteweave.mobile",
         permissions: ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
       },

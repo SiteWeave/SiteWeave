@@ -71,14 +71,65 @@ export function collectProgressReportPhotoGroups(reportData: Record<string, unkn
   return groups
 }
 
+const IMAGE_FETCH_TIMEOUT_MS = 15_000
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+/** Exact hostname from SUPABASE_URL — only this host may be fetched for report images. */
+function getAllowedImageFetchHostname(): string | null {
+  const base = String(Deno.env.get('SUPABASE_URL') || '').trim()
+  if (!base) return null
+  try {
+    const u = new URL(base)
+    if (u.protocol !== 'https:') return null
+    return u.hostname.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+function isAllowedImageFetchUrl(urlString: string): boolean {
+  const allowedHost = getAllowedImageFetchHostname()
+  if (!allowedHost) return false
+  try {
+    const u = new URL(urlString)
+    return u.protocol === 'https:' && u.hostname.toLowerCase() === allowedHost
+  } catch {
+    return false
+  }
+}
+
+/** HTTPS + exact project host, no redirects, with timeout. */
+async function fetchAllowedImageResponse(url: string): Promise<Response | null> {
+  if (!isAllowedImageFetchUrl(url)) {
+    console.warn('progressReportPdf: blocked image fetch to non-allowlisted host')
+    return null
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS)
+  try {
+    const res = await fetch(url, { redirect: 'manual', signal: controller.signal })
+    if (res.status >= 300 && res.status < 400) {
+      console.warn('progressReportPdf: blocked redirected image fetch', res.status)
+      return null
+    }
+    if (!res.ok) return null
+    return res
+  } catch (err) {
+    console.error('progressReportPdf: image fetch failed', err)
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function fetchUrlAsDataUri(url: string): Promise<string | null> {
   try {
-    const res = await fetch(url)
-    if (!res.ok) return null
+    const res = await fetchAllowedImageResponse(url)
+    if (!res) return null
     const contentType = (res.headers.get('content-type') || 'image/jpeg').split(';')[0].trim() || 'image/jpeg'
     if (!contentType.startsWith('image/')) return null
     const bytes = new Uint8Array(await res.arrayBuffer())
-    if (bytes.length === 0 || bytes.length > 8 * 1024 * 1024) return null
+    if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) return null
     let binary = ''
     const chunk = 0x8000
     for (let i = 0; i < bytes.length; i += chunk) {
@@ -251,11 +302,11 @@ export async function isValidSignedProgressReportExportRequest(
 
 export async function fetchImageBytesForPdf(url: string): Promise<{ bytes: Uint8Array; kind: 'jpg' | 'png' } | null> {
   try {
-    const res = await fetch(url)
-    if (!res.ok) return null
+    const res = await fetchAllowedImageResponse(url)
+    if (!res) return null
     const contentType = (res.headers.get('content-type') || '').toLowerCase()
     const bytes = new Uint8Array(await res.arrayBuffer())
-    if (bytes.length === 0 || bytes.length > 8 * 1024 * 1024) return null
+    if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) return null
 
     if (contentType.includes('png') || looksLikePng(bytes)) {
       return { bytes, kind: 'png' }

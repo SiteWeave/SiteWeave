@@ -7,16 +7,18 @@ Publish these to **https://www.siteweave.org/legal/** so they match links in the
 | `privacy-policy.md` | https://www.siteweave.org/legal/privacy-policy |
 | `terms-of-service.md` | https://www.siteweave.org/legal/terms-of-service |
 
-## Twilio registration
+## Signal House / 10DLC registration
 
-Copy-paste script (no screenshots required): **`twilio-opt-in-script.txt`**
+- Ops + secrets: [`../SMS-SIGNAL-HOUSE.md`](../SMS-SIGNAL-HOUSE.md)
+- Campaign paste guide: [`../sms-signalhouse-campaign-registration.md`](../sms-signalhouse-campaign-registration.md)
+- Product sample opt-in: https://app.siteweave.org/sms-opt-in
 
-Use the two legal URLs above as **Opt-in policy proof** (one `https://` URL per line).
+Legacy Twilio paste scripts (`twilio-*.txt`) are archived; do not use for new submissions.
 
 ## After publishing
 
-1. Confirm pages load without login.
-2. Submit Twilio campaign using `twilio-opt-in-script.txt`.
+1. Confirm privacy/terms pages load without login.
+2. Confirm SMS sections name **Signal House** and consent links use **app.siteweave.org**.
 3. Optional: bump `TOS_VERSION` in `apps/mobile/constants/legal.js` if you want in-app re-acceptance of updated Terms.
 
 ## Code references

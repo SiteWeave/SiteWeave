@@ -19,7 +19,7 @@ import {
 import { FieldError, fieldInputClassName } from './FormAlert';
 import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
-function ShareModal({ projectId, onClose }) {
+function ShareModal({ projectId, onClose, canManageCrew = true }) {
   const { t } = useTranslation();
   const { state, dispatch } = useAppContext();
   const { addToast } = useToast();
@@ -37,6 +37,8 @@ function ShareModal({ projectId, onClose }) {
   const [updatingRoleMemberId, setUpdatingRoleMemberId] = useState(null);
   const [showGuestLimitUpgrade, setShowGuestLimitUpgrade] = useState(false);
   const [orgRolesByEmail, setOrgRolesByEmail] = useState({});
+
+  const allowManage = canManageCrew === true;
 
   const [dbProjectMembers, setDbProjectMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
@@ -186,6 +188,7 @@ function ShareModal({ projectId, onClose }) {
   };
 
   const addContact = async (contact) => {
+    if (!allowManage) return;
     if (!contact.email) return;
     if (isBlockedProjectInviteEmail(contact.email, blockedInviteEmails)) {
       const isSelf = contact.email.trim().toLowerCase() === userEmail;
@@ -241,6 +244,7 @@ function ShareModal({ projectId, onClose }) {
   };
 
   const handleRemoveMember = async (member) => {
+    if (!allowManage) return;
     if (!projectId || !member?.id || removingMemberId) return;
     if (member.id === ownerContactId) {
       setError(t('share.cannot_invite_owner'));
@@ -275,6 +279,7 @@ function ShareModal({ projectId, onClose }) {
   };
 
   const handleUpdateMemberRole = async (member, newRole) => {
+    if (!allowManage) return;
     if (!projectId || !member?.id || updatingRoleMemberId) return;
     const currentRole = member.project_contacts?.find(
       (pc) => String(pc.project_id) === String(projectId),
@@ -366,6 +371,7 @@ function ShareModal({ projectId, onClose }) {
 
   const onSubmit = async (e) => {
     e.preventDefault();
+    if (!allowManage) return;
     setSubmitting(true);
     setError(null);
     setResults(null);
@@ -443,7 +449,7 @@ function ShareModal({ projectId, onClose }) {
               <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-8 text-center">
                 <p className="text-sm font-semibold text-slate-800">{t('share.crew_empty_title')}</p>
                 <p className="mt-2 text-sm leading-relaxed text-slate-600">{t('share.crew_empty_body')}</p>
-                {availableContacts.length > 0 && (
+                {allowManage && availableContacts.length > 0 && (
                   <button
                     type="button"
                     onClick={scrollToDirectory}
@@ -490,7 +496,7 @@ function ShareModal({ projectId, onClose }) {
                         <span className="rounded-full border border-blue-200 bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
                           Owner
                         </span>
-                      ) : (
+                      ) : allowManage ? (
                         <div className="w-full sm:w-auto sm:min-w-[11rem]">
                           <ProjectCrewRoleSelect
                             id={`crew-role-${member.id}`}
@@ -502,9 +508,13 @@ function ShareModal({ projectId, onClose }) {
                             disabled={updatingRoleMemberId === member.id}
                           />
                         </div>
+                      ) : (
+                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-medium text-slate-700">
+                          {currentRole}
+                        </span>
                       )}
 
-                      {!isOwner && (
+                      {!isOwner && allowManage && (
                         <button
                           type="button"
                           onClick={() => handleRemoveMember(member)}
@@ -521,7 +531,7 @@ function ShareModal({ projectId, onClose }) {
             )}
           </div>
 
-          {availableContacts.length > 0 && (
+          {allowManage && availableContacts.length > 0 && (
             <div ref={directorySectionRef} className="mb-6">
               <div className="mb-2 flex items-center justify-between">
                 <div>
@@ -579,6 +589,7 @@ function ShareModal({ projectId, onClose }) {
             </div>
           )}
 
+          {allowManage && (
           <div className="mb-4">
             <label className="mb-1 block text-sm font-semibold text-slate-800">
               {t('share.invite_guest_section')}
@@ -698,6 +709,19 @@ function ShareModal({ projectId, onClose }) {
               {submitting ? 'Adding…' : t('share.add_count_to_crew', { count: entries.length })}
             </button>
           </div>
+          )}
+
+          {!allowManage && (
+            <div className="mt-6 flex justify-end border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Close
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </ModalOverlay>

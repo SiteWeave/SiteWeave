@@ -88,7 +88,7 @@ export async function maybeCreateEarlyCompletionAdjustment(supabase, args) {
   } = args || {};
 
   const days = Math.max(0, Math.trunc(Number(workdaysGained) || 0));
-  if (!organizationId || !projectId || !task?.id || days < 1) return null;
+  if (!organizationId || !projectId || !task?.id || days < 2) return null;
 
   const { data: existing, error: existingError } = await supabase
     .from('schedule_adjustments')

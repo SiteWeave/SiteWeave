@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildMinimalDigestEmail } from '../_shared/notificationEmailTemplates.ts'
 import { sendTransactionalEmail } from '../_shared/transactionalEmailLayout.ts'
-import { sendTwilioSms } from '../_shared/twilioSms.ts'
+import { sendSms } from '../_shared/signalHouseSms.ts'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { createGuestShare } from '../_shared/guestShare.ts'
 import { gateOrSendOptInForSubstantiveSms, sendOptInIfEligible } from '../_shared/smsConsent.ts'
@@ -458,7 +458,7 @@ serve(async (req) => {
           const smsBody = withTransactionalSmsFooter(
             `${senderName || 'A teammate'} sent a reminder: ${taskText || 'Task'} in ${projectName || 'your project'}. Open: ${guestUrl}`,
           )
-          const smsResult = await sendTwilioSms({ to: smsPhone, body: smsBody })
+          const smsResult = await sendSms({ to: smsPhone, body: smsBody })
           if (!smsResult.success) {
             errorMessage = errorMessage
               ? `${errorMessage}; SMS: ${smsResult.error || 'twilio_failed'}`

@@ -30,6 +30,7 @@ config.resolver.nodeModulesPaths = [mobileNodeModules];
 config.resolver.extraNodeModules = {
   '@siteweave/core-logic': path.resolve(packagesRoot, 'core-logic'),
   '@siteweave/i18n': path.resolve(packagesRoot, 'i18n'),
+  '@siteweave/design-tokens': path.resolve(packagesRoot, 'design-tokens'),
 };
 
 // Custom resolver to force React modules to always resolve from mobile app
@@ -66,6 +67,20 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     return {
       type: 'sourceFile',
       filePath: path.resolve(packagesRoot, 'i18n', 'index.js'),
+    };
+  }
+
+  if (moduleName === '@siteweave/design-tokens') {
+    return {
+      type: 'sourceFile',
+      filePath: path.resolve(packagesRoot, 'design-tokens', 'src', 'index.js'),
+    };
+  }
+
+  if (moduleName === '@siteweave/design-tokens/mobile') {
+    return {
+      type: 'sourceFile',
+      filePath: path.resolve(packagesRoot, 'design-tokens', 'src', 'mobile.js'),
     };
   }
   

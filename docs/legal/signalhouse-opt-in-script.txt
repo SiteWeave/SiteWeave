@@ -1,0 +1,44 @@
+Signal House campaign registration — opt-in description (paste if needed)
+
+Opt-in type: Via website (primary); Via text (alternate)
+
+Replace [YOUR_SIGNAL_HOUSE_NUMBER] with your SiteWeave sender number.
+
+---
+
+SiteWeave provides transactional SMS for construction project teams. We do not send promotional blast campaigns.
+
+HOW RECIPIENTS OPT IN (PRIMARY — WEB FORM)
+1. A project administrator adds the assignee's mobile number in SiteWeave and taps "Get SMS consent link."
+2. The administrator shares the link or QR code with the assignee on site (no SiteWeave app required).
+3. The assignee opens https://app.siteweave.org/sms-consent/{token} on their phone browser.
+4. The page shows: organization name, program description, message types, frequency, Msg&data rates, HELP/STOP instructions, links to Terms and Privacy, the assignee's masked phone number (read-only), and a required checkbox: "I agree to receive project-related SMS from {Org} via SiteWeave."
+5. The assignee submits the form. Consent is stored (sms_phone_consent, consent_method=web_form). Substantive SMS is blocked until confirmed.
+
+Sample / registration proof page (no personal token):
+https://app.siteweave.org/sms-opt-in
+
+Signal House intake (if used for brand website):
+https://site-weave.signalhouse.io/intake/L000070G
+
+HOW RECIPIENTS OPT IN (ALTERNATE — REPLY YES)
+1. A project administrator taps "SMS OK?" on a task or triggers an opt-in text.
+2. SiteWeave sends one automated opt-in text from [YOUR_SIGNAL_HOUSE_NUMBER].
+3. The recipient replies YES (optionally with a 6-character code) to confirm.
+4. Until YES is received, no substantive project SMS is sent.
+
+OPT-IN MESSAGE (text path only — first outbound text)
+"{Organization name} via (SiteWeave): Welcome! Reply YES {code} to confirm receiving project task SMS alerts. Msg&data rates may apply. HELP/STOP anytime. Terms/Privacy: www.siteweave.org/legal"
+
+CONFIRMATION MESSAGE (after web form or YES)
+"You're confirmed for SiteWeave project SMS. You'll receive task and project messages as needed. Msg&data rates may apply. Reply STOP to opt out."
+
+MESSAGE FREQUENCY
+As needed for assigned project work (task due reminders, assignment pings, invites)—not on a fixed marketing schedule; typically low volume per recipient.
+
+HELP / STOP
+HELP → program info + Terms/Privacy. STOP / STOPALL / UNSUBSCRIBE → global opt-out for that number.
+
+LEGAL
+Privacy Policy: https://www.siteweave.org/legal/privacy-policy
+Terms of Service: https://www.siteweave.org/legal/terms-of-service

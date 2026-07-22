@@ -1,6 +1,7 @@
-import { View, StyleSheet, TextInput, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { View, StyleSheet, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -80,7 +81,7 @@ export default function NoOrganizationScreen() {
   if (isGuestWaiting) {
     return (
       <View style={[styles.container, { paddingTop: insets.top, paddingBottom: sheetBottomPadding(insets) }]}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <KeyboardAwareScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" bottomOffset={24}>
           <View style={styles.iconContainer}>
             <Ionicons name="mail-outline" size={64} color={colors.primary} />
           </View>
@@ -96,6 +97,8 @@ export default function NoOrganizationScreen() {
             onChangeText={setInviteUrl}
             autoCapitalize="none"
             autoCorrect={false}
+            keyboardType="url"
+            textContentType="URL"
             placeholderTextColor={colors.textSubtle}
           />
           <TextInput
@@ -130,7 +133,7 @@ export default function NoOrganizationScreen() {
               <Text style={styles.pmLink}>{t('mobile.guest_i_am_pm')}</Text>
             )}
           </PressableWithFade>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </View>
     );
   }

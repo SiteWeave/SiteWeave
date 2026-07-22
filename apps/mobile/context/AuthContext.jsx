@@ -369,7 +369,7 @@ export function AuthProvider({ children }) {
 
     const registerToken = async () => {
       try {
-        const onboardingDone = await hasCompletedNotificationsOnboarding();
+        const onboardingDone = await hasCompletedNotificationsOnboarding(user.id);
         if (!onboardingDone) return;
         await registerPushTokenIfPermitted(supabase, user.id);
       } catch (error) {

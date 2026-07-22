@@ -160,16 +160,17 @@ export default function TaskDetailSheet({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      title={isCreate ? t('mobile.tasks_create_title') : undefined}
-      hideHeader={!isCreate}
-      onPrimary={isCreate ? handleSave : undefined}
-      primaryLabel={isCreate ? t('common.create') : undefined}
-      primaryDisabled={isCreate ? saveDisabled : false}
-      primaryLoading={isCreate ? loading : false}
+      title={isCreate ? t('mobile.tasks_create_title') : t('mobile.task_edit_title', { defaultValue: 'Edit task' })}
+      hideHeader={false}
+      onPrimary={handleSave}
+      primaryLabel={isCreate ? t('common.create') : t('common.save')}
+      primaryDisabled={saveDisabled}
+      primaryLoading={loading}
       snap={isCreate ? 'medium' : 'medium'}
       maxSnap="large"
-      expandOnFocus={isCreate}
-      stickyPrimary={isCreate}
+      expandOnFocus
+      stickyPrimary
+      primaryPlacement="footer"
       closeVariant="minimal"
       closePosition="right"
       testID={isCreate ? 'task-create-sheet' : 'task-detail-sheet'}
@@ -203,19 +204,6 @@ export default function TaskDetailSheet({
             scrollEnabled={false}
             testID="task-detail-title"
           />
-          <PressableWithFade
-            onPress={handleSave}
-            disabled={saveDisabled}
-            style={[styles.saveBtn, saveDisabled && styles.saveDisabled]}
-            hitSlop={touch.hitSlop}
-            testID="task-detail-sheet-save"
-            accessibilityRole="button"
-            accessibilityLabel={t('common.save')}
-          >
-            <Text style={[styles.saveText, saveDisabled && styles.saveTextDisabled]}>
-              {loading ? '…' : t('common.save')}
-            </Text>
-          </PressableWithFade>
         </View>
         )}
 
@@ -326,6 +314,7 @@ export default function TaskDetailSheet({
           }}
           placeholder={t('mobile.task_date_range_placeholder')}
           disabled={loading}
+          active={visible}
           testID="task-date-range"
         />
 

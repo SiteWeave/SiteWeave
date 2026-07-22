@@ -32,12 +32,21 @@ async function assignProfileOrganization(supabase, userId, organizationId, roleI
   });
 
   if (error) {
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('review_eligible_at')
+      .eq('id', userId)
+      .maybeSingle();
+
     const { error: directError } = await supabase
       .from('profiles')
       .update({
         organization_id: organizationId,
         role_id: roleId,
         ...(contactId ? { contact_id: contactId } : {}),
+        ...(!existingProfile?.review_eligible_at
+          ? { review_eligible_at: new Date().toISOString() }
+          : {}),
       })
       .eq('id', userId);
 

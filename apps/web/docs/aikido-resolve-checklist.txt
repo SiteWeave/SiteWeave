@@ -1,0 +1,20 @@
+# Aikido: mark these SiteWeaveWeb findings resolved after sync commit 31a5013
+#
+# Fixed in repo (should clear on re-scan):
+# - i18next AIKIDO-2024-10543 / AIKIDO-2026-387296 (now ^26.3.6)
+# - i18next-browser-languagedetector AIKIDO-2025-10250 (now ^8.2.1)
+# - softprops/action-gh-release unpinned (@ SHA pin)
+# - workflow contents: write at top level (now read + job write)
+# - persist-credentials on checkout (now false)
+# - anon key in SETUP-NEW-REPO.md / NETLIFY-DEPLOYMENT.md (placeholders)
+# - FileItem / MessageItem window.open (safeOpenUrl https-only)
+# - MessagesView storage path (sanitized file name)
+# - progressReportPdf SSRF (allowlisted fetch in synced shared module)
+#
+# Mark as false positive / accepted (no code change needed):
+# - Docs Bearer YOUR_ACCESS_TOKEN / YOUR_SERVICE_ROLE_KEY / YOUR_ANON_KEY placeholders
+# - Historical AppContext.jsx anon key (removed from HEAD; history only)
+# - calendarIntegration.js innerHTML HTML-to-text on detached node
+# - CREATE-ORGANIZATION-TOOL.html btn.innerHTML = originalText
+# - Storage path findings on constructed paths (branding/profile/task/fileService/purge-project)
+# - CREATE-ORGANIZATION-TOOL.html resultDiv.innerHTML (admin-only local tool; not Netlify dist)

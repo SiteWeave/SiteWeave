@@ -1,8 +1,9 @@
-import { View, TextInput, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Text } from './Text';
+import SheetInput from './SheetInput';
 import { colors, spacing, touch } from '../../theme';
 import { useBranding } from '../../context/BrandingContext';
 import PressableWithFade from '../PressableWithFade';
@@ -97,7 +98,7 @@ export default function ProgressEditor({
         <PressableWithFade style={styles.stepBtn} onPress={() => step(-1)}>
           <Text style={styles.stepLabel}>−</Text>
         </PressableWithFade>
-        <TextInput
+        <SheetInput
           style={styles.input}
           value={inputText}
           onChangeText={setInputText}
@@ -105,6 +106,7 @@ export default function ProgressEditor({
           keyboardType="number-pad"
           maxLength={3}
           selectTextOnFocus
+          testID="progress-percent-input"
         />
         <PressableWithFade style={styles.stepBtn} onPress={() => step(1)}>
           <Text style={styles.stepLabel}>+</Text>
@@ -128,7 +130,7 @@ export default function ProgressEditor({
 
 const styles = StyleSheet.create({
   wrap: { paddingVertical: spacing.md },
-  wrapCompact: { paddingVertical: spacing.sm },
+  wrapCompact: { paddingTop: spacing.xs, paddingBottom: 0 },
   wrapDetail: { paddingVertical: spacing.xs },
   detailRow: {
     flexDirection: 'row',
@@ -204,8 +206,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   completeRowCompact: {
-    marginTop: spacing.md,
-    minHeight: touch.minSize,
+    marginTop: spacing.sm,
+    marginBottom: 0,
+    minHeight: touch.minSize - 8,
+    paddingVertical: spacing.xs,
   },
   completeRowDetail: {
     marginTop: spacing.sm,

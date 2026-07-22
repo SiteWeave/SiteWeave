@@ -18,9 +18,10 @@ import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
 import { isCustomRolesLockedError } from '@siteweave/core-logic';
 import { FieldError } from '../components/FormAlert';
+import { getOrganizationInvitations, cancelInvitation, resendInvitation } from '../utils/invitationService';
 
 function TeamView() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { state } = useAppContext();
   const { addToast } = useToast();
   const { canCustomRoles } = useWorkspaceTier();
@@ -36,15 +37,58 @@ function TeamView() {
   const [roleModalReadOnly, setRoleModalReadOnly] = useState(false);
   const [roleSaveError, setRoleSaveError] = useState(null);
   const [teamDirectoryRefreshKey, setTeamDirectoryRefreshKey] = useState(0);
+  const [pendingInvitations, setPendingInvitations] = useState([]);
+  const [loadingInvites, setLoadingInvites] = useState(false);
+  const [inviteActionId, setInviteActionId] = useState(null);
 
   const canManageRoles = state.userRole?.permissions?.can_manage_roles === true;
+  const canManageUsers = state.userRole?.permissions?.can_manage_users === true;
+  const isOrgAdmin =
+    canManageRoles || state.userRole?.name === 'Org Admin';
+  const canSeePendingInvites = isOrgAdmin || canManageUsers;
 
   // Load roles and calculate member counts
   useEffect(() => {
-    if (state.currentOrganization?.id) {
+    if (state.currentOrganization?.id && isOrgAdmin) {
       loadRolesAndCounts();
+    } else {
+      setLoadingRoles(false);
+      setRoles([]);
     }
-  }, [state.currentOrganization?.id]);
+  }, [state.currentOrganization?.id, isOrgAdmin]);
+
+  useEffect(() => {
+    if (state.currentOrganization?.id && canSeePendingInvites) {
+      loadPendingInvites();
+    } else {
+      setPendingInvitations([]);
+    }
+  }, [state.currentOrganization?.id, canSeePendingInvites, teamDirectoryRefreshKey]);
+
+  const loadPendingInvites = async () => {
+    if (!state.currentOrganization?.id) return;
+    setLoadingInvites(true);
+    try {
+      const result = await getOrganizationInvitations(state.currentOrganization.id);
+      if (!result.success) {
+        setPendingInvitations([]);
+        return;
+      }
+      const now = Date.now();
+      setPendingInvitations(
+        (result.invitations || []).filter(
+          (inv) =>
+            inv.status === 'pending' &&
+            (!inv.expires_at || new Date(inv.expires_at).getTime() > now),
+        ),
+      );
+    } catch (err) {
+      console.error('Error loading pending invitations:', err);
+      setPendingInvitations([]);
+    } finally {
+      setLoadingInvites(false);
+    }
+  };
 
   const loadRolesAndCounts = async () => {
     if (!state.currentOrganization?.id) return;
@@ -180,7 +224,8 @@ function TeamView() {
         </PermissionGuard>
       </div>
 
-      {/* Roles & Permissions — all members can view; changes require manage + custom tier */}
+      {/* Roles & Permissions — Org Admin only */}
+      {isOrgAdmin && (
       <div className="mb-4 pb-4 border-b border-gray-200">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -244,15 +289,99 @@ function TeamView() {
           </div>
         )}
       </div>
+      )}
 
       <div className="mb-4">
         <h2 className="text-2xl font-bold text-gray-900">{t('team.internal_contacts_title')}</h2>
         <p className="mt-1 text-sm text-gray-500">{t('team.internal_contacts_subtitle')}</p>
       </div>
 
+      {canSeePendingInvites && (loadingInvites || pendingInvitations.length > 0) && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-amber-900">
+              {t('team.pending_invites_title', {
+                defaultValue: 'Pending invitations',
+                count: pendingInvitations.length,
+              })}
+            </h3>
+            {!loadingInvites && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                {pendingInvitations.length}
+              </span>
+            )}
+          </div>
+          {loadingInvites ? (
+            <LoadingSpinner />
+          ) : (
+            <ul className="space-y-2">
+              {pendingInvitations.map((inv) => (
+                <li
+                  key={inv.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-100 bg-white px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-900">{inv.email}</p>
+                    <p className="text-xs text-slate-500">
+                      {inv.created_at
+                        ? new Date(inv.created_at).toLocaleDateString(i18n.language, {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })
+                        : null}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={inviteActionId === inv.id}
+                      onClick={async () => {
+                        setInviteActionId(inv.id);
+                        const result = await resendInvitation(inv.id);
+                        if (result.success) {
+                          addToast(t('team.invite_resent', { defaultValue: 'Invitation resent' }), 'success');
+                        } else {
+                          addToast(result.error || t('team.invite_resend_failed', { defaultValue: 'Failed to resend' }), 'error');
+                        }
+                        setInviteActionId(null);
+                      }}
+                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                    >
+                      {t('team.resend', { defaultValue: 'Resend' })}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={inviteActionId === inv.id}
+                      onClick={async () => {
+                        setInviteActionId(inv.id);
+                        const result = await cancelInvitation(inv.id);
+                        if (result.success) {
+                          addToast(t('team.invite_cancelled', { defaultValue: 'Invitation cancelled' }), 'success');
+                          loadPendingInvites();
+                        } else {
+                          addToast(result.error || t('team.invite_cancel_failed', { defaultValue: 'Failed to cancel' }), 'error');
+                        }
+                        setInviteActionId(null);
+                      }}
+                      className="text-xs font-semibold text-red-600 hover:text-red-700 disabled:opacity-50"
+                    >
+                      {t('team.cancel_invite', { defaultValue: 'Cancel' })}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       <TeamDirectory
         refreshKey={teamDirectoryRefreshKey}
-        onStaffChanged={() => loadRolesAndCounts()}
+        onStaffChanged={() => {
+          loadRolesAndCounts();
+          loadPendingInvites();
+        }}
       />
 
       <DirectoryManagementModal
@@ -260,6 +389,7 @@ function TeamView() {
         onClose={() => setShowDirectoryModal(false)}
         onMembersChanged={() => {
           loadRolesAndCounts();
+          loadPendingInvites();
           setTeamDirectoryRefreshKey((k) => k + 1);
         }}
       />

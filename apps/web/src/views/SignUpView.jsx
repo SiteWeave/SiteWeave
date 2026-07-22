@@ -3,16 +3,21 @@ import { useNavigate } from 'react-router-dom'
 import LoginForm from '../components/LoginForm'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { useSession } from '../hooks/useSession'
+import { getPostAuthNavigatePath } from '../utils/workspaceClient'
 
 export default function SignUpView() {
   const navigate = useNavigate()
   const { session, loading } = useSession()
 
+  const goAfterAuth = React.useCallback(() => {
+    navigate(getPostAuthNavigatePath(), { replace: true })
+  }, [navigate])
+
   React.useEffect(() => {
     if (!loading && session) {
-      navigate('/', { replace: true })
+      goAfterAuth()
     }
-  }, [loading, session, navigate])
+  }, [loading, session, goAfterAuth])
 
   if (loading || session) {
     return (
@@ -25,7 +30,7 @@ export default function SignUpView() {
   return (
     <LoginForm
       mode="signUp"
-      onAuthSuccess={() => navigate('/', { replace: true })}
+      onAuthSuccess={goAfterAuth}
     />
   )
 }

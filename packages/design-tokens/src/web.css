@@ -1,0 +1,58 @@
+/**
+ * Maps @siteweave/design-tokens into CSS variables for Tailwind.
+ * Import after @import "tailwindcss".
+ */
+
+:root {
+  --sw-color-accent: #3b82f6;
+  --sw-color-accent-dark: #2563eb;
+  --sw-color-accent-soft: #eff6ff;
+  --sw-color-accent-soft-border: #dbeafe;
+  --sw-color-secondary: #10b981;
+  --sw-color-background: #f8fafc;
+  --sw-color-background-muted: #f1f5f9;
+  --sw-color-surface: #ffffff;
+  --sw-color-surface-muted: #f3f4f6;
+  --sw-color-text: #0f172a;
+  --sw-color-text-secondary: #334155;
+  --sw-color-text-muted: #64748b;
+  --sw-color-text-subtle: #94a3b8;
+  --sw-color-border: #e2e8f0;
+  --sw-color-border-strong: #cbd5e1;
+  --sw-color-error: #ef4444;
+  --sw-color-success: #00c875;
+  --sw-color-warning: #fdab3d;
+  --sw-color-danger: #e2445c;
+  --sw-color-status-done: #00c875;
+  --sw-color-status-working: #fdab3d;
+  --sw-color-status-stuck: #e2445c;
+  --sw-color-status-todo: #c4c4c4;
+
+  --sw-radius-sm: 8px;
+  --sw-radius-md: 12px;
+  --sw-radius-lg: 14px;
+  --sw-radius-xl: 16px;
+  --sw-radius-button: 12px;
+  --sw-radius-card: 14px;
+
+  --sw-motion-fast: 150ms;
+  --sw-motion-normal: 220ms;
+  --sw-motion-slow: 300ms;
+  --sw-easing-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --sw-press-scale: 0.96;
+
+  --sw-z-dropdown: 40;
+  --sw-z-sticky: 45;
+  --sw-z-modal-backdrop: 50;
+  --sw-z-modal: 55;
+  --sw-z-toast: 60;
+  --sw-z-tooltip: 70;
+
+  --accent: var(--sw-color-accent);
+  --accent-foreground: #ffffff;
+}
+
+[data-brand-primary] {
+  --sw-color-accent: var(--brand-primary, var(--sw-color-accent));
+  --accent: var(--sw-color-accent);
+}

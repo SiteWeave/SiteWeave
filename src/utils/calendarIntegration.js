@@ -68,21 +68,33 @@ export const handleGoogleCalendarCallback = async (code) => {
 
 export const startGoogleCalendarOAuth = async () => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    const isElectron = !!window.electronAPI?.isElectron;
+    // Prefer PKCE for Electron Desktop clients. Also pass secret when present so
+    // confidential Web client IDs still work (Google requires client_secret for those).
     const clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
     
-    if (!clientId || !clientSecret) {
-        throw new Error('Google OAuth credentials not configured');
+    if (!clientId || (!isElectron && !clientSecret)) {
+        throw new Error(
+            isElectron
+                ? 'Google OAuth client ID not configured'
+                : 'Google OAuth credentials not configured (set VITE_GOOGLE_CLIENT_ID and VITE_GOOGLE_CLIENT_SECRET)'
+        );
+    }
+    if (isElectron && !clientSecret) {
+        console.warn(
+            'VITE_GOOGLE_CLIENT_SECRET is unset. If Google returns "client_secret is missing", use a Desktop OAuth client or set the Web client secret.',
+        );
     }
 
     try {
         const result = await electronOAuth.startOAuthFlow('google', {
             clientId: clientId,
-            clientSecret: clientSecret
+            ...(clientSecret ? { clientSecret } : {}),
         });
 
         const tokenData = await electronOAuth.exchangeCodeForToken('google', result.code, {
             clientId: clientId,
-            clientSecret: clientSecret
+            ...(clientSecret ? { clientSecret } : {}),
         });
         
         // Store token for future sync operations
@@ -174,27 +186,37 @@ export const startOutlookCalendarOAuth = async () => {
 // Google Calendar API Integration
 const exchangeGoogleToken = async (code) => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    const isElectron = !!window.electronAPI?.isElectron;
     const clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
-    const redirectUri = window.electronAPI?.isElectron 
+    const redirectUri = isElectron 
         ? 'http://127.0.0.1:5000/google-callback'
         : window.location.origin + '/calendar';
+
+    const params = {
+        client_id: clientId,
+        code: code,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri,
+    };
+    if (clientSecret) {
+        params.client_secret = clientSecret;
+    }
 
     const response = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({
-            client_id: clientId,
-            client_secret: clientSecret,
-            code: code,
-            grant_type: 'authorization_code',
-            redirect_uri: redirectUri,
-        }),
+        body: new URLSearchParams(params),
     });
 
     if (!response.ok) {
-        throw new Error('Failed to exchange Google token');
+        const detail = await response.text().catch(() => '');
+        throw new Error(
+            detail
+                ? `Failed to exchange Google token: ${detail}`
+                : 'Failed to exchange Google token',
+        );
     }
 
     return await response.json();

@@ -26,6 +26,8 @@ export default defineConfig({
       '@siteweave/core-logic': path.resolve(__dirname, '../../packages/core-logic/src/index.js'),
       '@siteweave/i18n': path.resolve(__dirname, '../../packages/i18n/index.js'),
       '@siteweave/onboarding-ui': path.resolve(__dirname, '../../packages/onboarding-ui/src/index.js'),
+      '@siteweave/design-tokens/mobile': path.resolve(__dirname, '../../packages/design-tokens/src/mobile.js'),
+      '@siteweave/design-tokens': path.resolve(__dirname, '../../packages/design-tokens/src/index.js'),
       'frappe-gantt/dist/frappe-gantt.css': path.resolve(__dirname, './node_modules/frappe-gantt/dist/frappe-gantt.css')
     }
   },

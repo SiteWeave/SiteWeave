@@ -33,11 +33,16 @@ export default function ActivationChecklist({
   title = 'Get your office set up',
   dismissLabel = 'Hide',
   progressLabel,
+  formatProgress,
+  itemCopy,
   className = '',
 }) {
   const { done, total } = useMemo(() => getActivationProgress(completed), [completed]);
 
-  const defaultProgressLabel = `${done} of ${total} complete`;
+  const defaultProgressLabel = formatProgress
+    ? formatProgress(done, total)
+    : `${done} of ${total} complete`;
+  const copyMap = itemCopy || ITEM_COPY;
 
   return (
     <div className={`rounded-2xl border border-gray-200 bg-white p-5 shadow-xs ${className}`} data-testid="activation-checklist">
@@ -67,7 +72,7 @@ export default function ActivationChecklist({
       <ul className="space-y-2">
         {ACTIVATION_ITEMS.map((item) => {
           const isDone = Boolean(completed[item.id]);
-          const copy = ITEM_COPY[item.id] || { title: item.id, hint: '' };
+          const copy = copyMap[item.id] || ITEM_COPY[item.id] || { title: item.id, hint: '' };
           const actionable = !isDone && !item.alwaysDone && onItemAction;
 
           return (

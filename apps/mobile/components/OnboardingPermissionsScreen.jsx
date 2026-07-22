@@ -75,9 +75,9 @@ export default function OnboardingPermissionsScreen() {
   }, []);
 
   const finish = async () => {
-    await markNotificationsDone();
+    await markNotificationsDone(user?.id);
     if (!skipWeather) {
-      await markLocationDone();
+      await markLocationDone(user?.id);
     }
     const pending = await getPendingInviteOnboarding();
     const destination = pending.inviteDestination ?? '/(tabs)';

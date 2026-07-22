@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { createProject, canCreateProject, fetchUserProjectsWithProgress } from '@siteweave/core-logic';
@@ -11,7 +11,6 @@ import { colors, spacing } from '../theme';
 import { ensureOrganizationForWrites } from '../utils/organizationContext';
 import { filterByOrganizationId } from '../utils/orgScope';
 import {
-  getProjectsCreatedCount,
   incrementProjectsCreatedCount,
   getRecentProjectAddresses,
   getLastUpdatedProject,
@@ -40,24 +39,17 @@ export default function CreateProjectSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [showMoreDetails, setShowMoreDetails] = useState(false);
-  const [wizardStep, setWizardStep] = useState(1);
-  const [isFirstProject, setIsFirstProject] = useState(false);
   const [recentProjects, setRecentProjects] = useState([]);
 
   const loadContext = useCallback(async () => {
     if (!supabase || !userId) return;
     try {
-      const [createdCount, data] = await Promise.all([
-        getProjectsCreatedCount(),
-        fetchUserProjectsWithProgress(supabase, userId, { limit: 50 }),
-      ]);
+      const data = await fetchUserProjectsWithProgress(supabase, userId, { limit: 50 });
       const scoped = activeOrganization?.id
         ? filterByOrganizationId(data || [], activeOrganization.id)
         : data || [];
       setRecentProjects(scoped);
-      setIsFirstProject(createdCount === 0 && scoped.length === 0);
     } catch {
-      setIsFirstProject(false);
       setRecentProjects([]);
     }
   }, [supabase, userId, activeOrganization?.id]);
@@ -67,7 +59,6 @@ export default function CreateProjectSheet({
     setValues(EMPTY_FORM);
     setError(null);
     setShowMoreDetails(false);
-    setWizardStep(1);
     loadContext();
   }, [visible, loadContext]);
 
@@ -83,7 +74,6 @@ export default function CreateProjectSheet({
     if (duplicate) {
       setValues(duplicate);
       setShowMoreDetails(false);
-      setWizardStep(2);
     }
   };
 
@@ -125,31 +115,9 @@ export default function CreateProjectSheet({
     }
   };
 
-  const handlePrimary = () => {
-    if (isFirstProject && wizardStep === 1) {
-      if (!values.name?.trim()) {
-        setError(t('mobile.project_name_required'));
-        return;
-      }
-      setError(null);
-      setWizardStep(2);
-      return;
-    }
-    handleSave();
-  };
+  const primaryDisabled = saving || !values.name?.trim();
 
-  const primaryDisabled =
-    saving ||
-    (isFirstProject && wizardStep === 1 ? !values.name?.trim() : !values.name?.trim());
-
-  const primaryLabel =
-    isFirstProject && wizardStep === 1
-      ? t('common.next')
-      : t('mobile.create_project_save');
-
-  const showDuplicateShortcut = !isFirstProject && lastProject;
-
-  const duplicateFooter = showDuplicateShortcut ? (
+  const duplicateFooter = lastProject ? (
     <PressableWithFade
       style={styles.duplicateBtn}
       onPress={handleDuplicateLast}
@@ -168,10 +136,8 @@ export default function CreateProjectSheet({
       visible={visible}
       title={t('mobile.create_project_title')}
       onClose={onClose}
-      primaryLabel={primaryLabel}
-      onPrimary={handlePrimary}
-      onSecondary={isFirstProject && wizardStep === 2 ? () => setWizardStep(1) : undefined}
-      secondaryLabel={isFirstProject && wizardStep === 2 ? t('common.back') : undefined}
+      primaryLabel={t('mobile.create_project_save')}
+      onPrimary={handleSave}
       primaryDisabled={primaryDisabled}
       primaryLoading={saving}
       primaryPlacement="footer"
@@ -190,49 +156,30 @@ export default function CreateProjectSheet({
       testID="create-project-sheet"
     >
       <BottomSheet.Scroll>
-        {isFirstProject && wizardStep === 1 ? (
-          <ProjectFormFields
-            values={values}
-            onChange={setValues}
-            disabled={saving}
-            nameOnly
+        <ProjectFormFields
+          values={values}
+          onChange={setValues}
+          disabled={saving}
+          compact={!showMoreDetails}
+          recentAddresses={recentAddresses}
+        />
+        <PressableWithFade
+          style={styles.moreToggle}
+          onPress={() => setShowMoreDetails((v) => !v)}
+          disabled={saving}
+          testID="create-project-more-details"
+        >
+          <Text variant="bodyMedium" style={styles.moreToggleText}>
+            {showMoreDetails
+              ? t('mobile.create_project_less_details')
+              : t('mobile.create_project_more_details')}
+          </Text>
+          <Ionicons
+            name={showMoreDetails ? 'chevron-up' : 'chevron-down'}
+            size={18}
+            color={colors.primary}
           />
-        ) : isFirstProject && wizardStep === 2 ? (
-          <ProjectFormFields
-            values={values}
-            onChange={setValues}
-            disabled={saving}
-            addressOnly
-            recentAddresses={recentAddresses}
-          />
-        ) : (
-          <>
-            <ProjectFormFields
-              values={values}
-              onChange={setValues}
-              disabled={saving}
-              compact={!showMoreDetails}
-              recentAddresses={recentAddresses}
-            />
-            <PressableWithFade
-              style={styles.moreToggle}
-              onPress={() => setShowMoreDetails((v) => !v)}
-              disabled={saving}
-              testID="create-project-more-details"
-            >
-              <Text variant="bodyMedium" style={styles.moreToggleText}>
-                {showMoreDetails
-                  ? t('mobile.create_project_less_details')
-                  : t('mobile.create_project_more_details')}
-              </Text>
-              <Ionicons
-                name={showMoreDetails ? 'chevron-up' : 'chevron-down'}
-                size={18}
-                color={colors.primary}
-              />
-            </PressableWithFade>
-          </>
-        )}
+        </PressableWithFade>
 
         {error ? (
           <Text variant="caption" style={styles.error}>
@@ -245,11 +192,6 @@ export default function CreateProjectSheet({
 }
 
 const styles = StyleSheet.create({
-  stepIndicator: {
-    color: colors.textSubtle,
-    marginBottom: spacing.md,
-    textAlign: 'center',
-  },
   duplicateBtn: {
     flexDirection: 'row',
     alignItems: 'center',

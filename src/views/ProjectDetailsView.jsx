@@ -18,13 +18,16 @@ import {
     normalizeAssigneePhone,
     isSmsNotificationsEnabled,
     TASK_LIST_COLUMNS,
+    getEffectiveProjectPermissions,
+    resolveCollaboratorAccessLevel,
+    createGuestTaskShareLink,
 } from '@siteweave/core-logic';
 import TaskItem from '../components/TaskItem';
 import TaskModal from '../components/TaskModal';
 import TaskPhotosModal from '../components/TaskPhotosModal';
 import TaskDiscussionModal from '../components/TaskDiscussionModal';
 import PhaseTaskSection from '../components/PhaseTaskSection';
-import { PhaseModal } from '../components/BuildPath';
+import BuildPath, { PhaseModal } from '../components/BuildPath';
 import PhasesToolbar from '../components/phases/PhasesToolbar';
 import PhasesSummaryStrip from '../components/phases/PhasesSummaryStrip';
 import PhasesEmptyState from '../components/phases/PhasesEmptyState';
@@ -51,6 +54,7 @@ import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import WeatherImpactModal from '../components/WeatherImpactModal';
 import WeatherDelayMarker from '../components/WeatherDelayMarker';
 import ScheduleGainReviewModal from '../components/ScheduleGainReviewModal';
+import { applyScheduleToWeatherImpact } from '../utils/weatherScheduleApply';
 import PermissionGuard from '../components/PermissionGuard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TaskBulkActions from '../components/TaskBulkActions';
@@ -220,6 +224,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [showWeatherImpactModal, setShowWeatherImpactModal] = useState(false);
     const [selectedWeatherImpact, setSelectedWeatherImpact] = useState(null);
+    const [applyingWeatherImpactId, setApplyingWeatherImpactId] = useState(null);
     const [projectRefreshNonce, setProjectRefreshNonce] = useState(0);
     const [weatherImpacts, setWeatherImpacts] = useState([]);
     const [scheduleAdjustments, setScheduleAdjustments] = useState([]);
@@ -241,6 +246,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [projectDependencyMode, setProjectDependencyMode] = useState('auto');
     const [photoModalTaskId, setPhotoModalTaskId] = useState(null);
     const [discussionModalTaskId, setDiscussionModalTaskId] = useState(null);
+    const [showPhasesModal, setShowPhasesModal] = useState(false);
+    const [phasesModalEditing, setPhasesModalEditing] = useState(false);
     const [showAddPhaseModal, setShowAddPhaseModal] = useState(false);
     const [draggedPhaseId, setDraggedPhaseId] = useState(null);
     const [phaseDragOver, setPhaseDragOver] = useState(null);
@@ -253,8 +260,33 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const toolbarMenuRef = useRef(null);
     const dependencyPickerRef = useRef(null);
 
-    const canViewActivityHistory = state.userRole?.permissions?.can_view_activity_history === true;
-    const canEditProjects = state.userRole?.permissions?.can_edit_projects === true;
+    const collaboratorAccessLevel = useMemo(
+        () => resolveCollaboratorAccessLevel(state.collaborationProjects, project?.id),
+        [state.collaborationProjects, project?.id],
+    );
+
+    const projectPerms = useMemo(
+        () => getEffectiveProjectPermissions({
+            orgPermissions: state.userRole?.permissions || null,
+            projectOrganizationId: project?.organization_id || null,
+            homeOrganizationId: state.currentOrganization?.id || null,
+            collaboratorAccessLevel,
+        }),
+        [
+            state.userRole?.permissions,
+            project?.organization_id,
+            state.currentOrganization?.id,
+            collaboratorAccessLevel,
+        ],
+    );
+
+    const canViewActivityHistory = projectPerms.can_view_activity_history === true;
+    const canEditProjects = projectPerms.can_edit_projects === true;
+    const canManageContacts = projectPerms.can_manage_contacts === true;
+    const canCreateTasks = projectPerms.can_create_tasks === true;
+    const canCreateProjects = projectPerms.can_create_projects === true;
+    const canManageProgressReports = projectPerms.can_manage_progress_reports === true;
+    const canEditTasks = projectPerms.can_edit_tasks === true;
     const { canPing, canProgressReports } = useWorkspaceTier();
     const [upgradeFeature, setUpgradeFeature] = useState(null);
 
@@ -312,6 +344,11 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         })();
         return () => ac.abort();
     }, [state.selectedProjectId, state.currentOrganization?.id, projectRefreshNonce]);
+
+    const pendingUnappliedWeatherImpacts = useMemo(
+        () => (weatherImpacts || []).filter((impact) => impact.schedule_shift_applied !== true),
+        [weatherImpacts],
+    );
 
     const pendingScheduleAdjustments = useMemo(
         () => (scheduleAdjustments || []).filter((row) => row.status === 'pending'),
@@ -908,6 +945,70 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         [photoModalTaskId, allTasks]
     );
 
+    const handleApplyWeatherSchedule = useCallback(
+        async (impact) => {
+            if (!project || !impact || impact.schedule_shift_applied === true || !canEditProjects) {
+                return;
+            }
+
+            const daysLost = Number(impact.days_lost || 1);
+            if (!window.confirm(t('weather.apply_schedule_confirm', { count: daysLost }))) {
+                return;
+            }
+
+            setApplyingWeatherImpactId(impact.id);
+            try {
+                const result = await applyScheduleToWeatherImpact({
+                    supabase: supabaseClient,
+                    impact,
+                    project,
+                    allTasks,
+                    projectPhases,
+                    taskDependencies,
+                    projectDependencyMode,
+                    user: state.user,
+                    orgId: project.organization_id,
+                    dispatch,
+                });
+
+                if (result.alreadyApplied) {
+                    addToast(t('weather.schedule_updated'), 'info');
+                } else if (result.taskCount > 0 || result.phaseCount > 0) {
+                    addToast(
+                        t('weather.schedule_applied', { count: result.taskCount + result.phaseCount }),
+                        'success',
+                    );
+                } else {
+                    addToast(t('weather.no_scheduled_items'), 'warning');
+                }
+                setProjectRefreshNonce((n) => n + 1);
+            } catch (err) {
+                console.error(err);
+                if (err.message === 'WEATHER_DATES_REQUIRED') {
+                    addToast(t('weather.dates_required'), 'warning');
+                } else if (err.message === 'WEATHER_NO_SCHEDULED_ITEMS') {
+                    addToast(t('weather.no_scheduled_items'), 'warning');
+                } else {
+                    addToast(err.message || t('weather.save_failed'), 'error');
+                }
+            } finally {
+                setApplyingWeatherImpactId(null);
+            }
+        },
+        [
+            project,
+            allTasks,
+            projectPhases,
+            taskDependencies,
+            projectDependencyMode,
+            state.user,
+            dispatch,
+            addToast,
+            t,
+            canEditProjects,
+        ],
+    );
+
     const openTaskModalForPhase = useCallback((phaseId = '') => {
         setTaskModalDefaultPhaseId(phaseId || '');
         setShowTaskModal(true);
@@ -1067,6 +1168,27 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             organizationId: project.organization_id,
             smsConsentStatus: task.assignee_sms_consent || 'none',
         });
+    };
+
+    const handleCopyGuestTaskLink = async (task) => {
+        if (!project?.id || !project?.organization_id || !task?.id) return;
+        try {
+            const { url } = await createGuestTaskShareLink(supabaseClient, {
+                projectId: project.id,
+                organizationId: project.organization_id,
+                taskIds: [task.id],
+            });
+            if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(url);
+            }
+            addToast(t('tasks.guest_link_copied', { defaultValue: 'Guest task link copied' }), 'success');
+        } catch (err) {
+            console.error('createGuestTaskShareLink failed:', err);
+            addToast(
+                err?.message || t('tasks.guest_link_failed', { defaultValue: 'Could not create guest link' }),
+                'error',
+            );
+        }
     };
 
     const handlePingAssignee = async (task) => {
@@ -2470,6 +2592,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             {t('projectDetail.edit_project')}
                         </button>
                     </PermissionGuard>
+                    {canManageContacts && (
                     <button type="button" 
                         onClick={() => setShowShare(true)}
                         className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 transition-colors"
@@ -2477,7 +2600,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                     >
                         {t('projectDetail.manage_crew')}
                     </button>
-                    <PermissionGuard permission="can_create_projects">
+                    )}
+                    {canCreateProjects && (
                         <button type="button" 
                             onClick={() => setShowSaveAsTemplateModal(true)}
                             className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
@@ -2485,8 +2609,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         >
                             {t('projectDetail.save_as_template')}
                         </button>
-                    </PermissionGuard>
-                    <PermissionGuard permission="can_manage_progress_reports">
+                    )}
+                    {canManageProgressReports && (
                         <button type="button" 
                             onClick={() => {
                                 if (!canProgressReports) {
@@ -2508,15 +2632,15 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             </svg>
                             {t('projectDetail.progress_reports')}
                         </button>
-                    </PermissionGuard>
+                    )}
                 </div>
             </header>
 
-            {showShare && (
-                <ShareModal projectId={project.id} onClose={() => setShowShare(false)} />
+            {showShare && canManageContacts && (
+                <ShareModal projectId={project.id} onClose={() => setShowShare(false)} canManageCrew={canManageContacts} />
             )}
 
-            {showProgressReportModal && (
+            {showProgressReportModal && canManageProgressReports && (
                 <ProgressReportModal projectId={project.id} onClose={() => setShowProgressReportModal(false)} />
             )}
 
@@ -2526,7 +2650,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 feature={upgradeFeature || 'exports'}
             />
 
-            {showSaveAsTemplateModal && (
+            {showSaveAsTemplateModal && canCreateProjects && (
                 <SaveAsTemplateModal 
                     projectId={project.id} 
                     projectName={project.name} 
@@ -2615,6 +2739,29 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         className="shrink-0 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
                     >
                         {t('scheduleAdjustments.review_cta')}
+                    </button>
+                </div>
+            ) : null}
+
+            {pendingUnappliedWeatherImpacts.length > 0 && canEditProjects ? (
+                <div className="mb-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-amber-950">
+                        {t(
+                            pendingUnappliedWeatherImpacts.length === 1
+                                ? 'weather.pending_weather_banner_one'
+                                : 'weather.pending_weather_banner_other',
+                            { count: pendingUnappliedWeatherImpacts.length },
+                        )}
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setSelectedWeatherImpact(pendingUnappliedWeatherImpacts[0]);
+                            setShowWeatherImpactModal(true);
+                        }}
+                        className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-900 hover:bg-amber-100"
+                    >
+                        {t('weather.review_weather_delays')}
                     </button>
                 </div>
             ) : null}
@@ -2870,6 +3017,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                         </PermissionGuard>
                                         <PermissionGuard permission="can_edit_projects">
                                             <PhasesToolbar
+                                                onOpenSchedule={() => setShowPhasesModal(true)}
                                                 onAddPhase={() => setShowAddPhaseModal(true)}
                                             />
                                         </PermissionGuard>
@@ -2967,18 +3115,30 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                     <ul className="bg-white">
                                                                         {rows.map((row) =>
                                                                             row.kind === 'weather' ? (
-                                                                                <WeatherDelayMarker
-                                                                                    key={`weather-${row.impact.id}-${phase.id}`}
-                                                                                    impact={row.impact}
-                                                                                    onClick={() => {
-                                                                                        const targetImpact =
-                                                                                            row.impact?.is_grouped && Array.isArray(row.impact?.source_impacts)
-                                                                                                ? row.impact.source_impacts[0]
-                                                                                                : row.impact;
-                                                                                        setSelectedWeatherImpact(targetImpact);
-                                                                                        setShowWeatherImpactModal(true);
-                                                                                    }}
-                                                                                />
+                                                                                (() => {
+                                                                                    const targetImpact =
+                                                                                        row.impact?.is_grouped &&
+                                                                                        Array.isArray(row.impact?.source_impacts)
+                                                                                            ? row.impact.source_impacts[0]
+                                                                                            : row.impact;
+                                                                                    return (
+                                                                                        <WeatherDelayMarker
+                                                                                            key={`weather-${row.impact.id}-${phase.id}`}
+                                                                                            impact={row.impact}
+                                                                                            canApplySchedule={canEditProjects}
+                                                                                            applyingSchedule={
+                                                                                                applyingWeatherImpactId === targetImpact?.id
+                                                                                            }
+                                                                                            onApplySchedule={() =>
+                                                                                                handleApplyWeatherSchedule(targetImpact)
+                                                                                            }
+                                                                                            onClick={() => {
+                                                                                                setSelectedWeatherImpact(targetImpact);
+                                                                                                setShowWeatherImpactModal(true);
+                                                                                            }}
+                                                                                        />
+                                                                                    );
+                                                                                })()
                                                                             ) : (
                                                                                 <TaskItem
                                                                                     key={row.task.id}
@@ -2998,6 +3158,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                                     onOpenDependencyDrawer={setDependencyDrawerTaskId}
                                                                                     onPingAssignee={handlePingAssignee}
                                                                                     pingLocked={!canPing}
+                                                                                    onCopyGuestLink={handleCopyGuestTaskLink}
                                                                                     onRequestAssigneeSmsConsent={
                                                                                         isSmsNotificationsEnabled()
                                                                                             ? handleRequestAssigneeSmsConsent
@@ -3031,18 +3192,30 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                     weatherImpacts,
                                                                 ).map((row) =>
                                                                     row.kind === 'weather' ? (
-                                                                        <WeatherDelayMarker
-                                                                            key={`weather-${row.impact.id}-unassigned`}
-                                                                            impact={row.impact}
-                                                                            onClick={() => {
-                                                                                const targetImpact =
-                                                                                    row.impact?.is_grouped && Array.isArray(row.impact?.source_impacts)
-                                                                                        ? row.impact.source_impacts[0]
-                                                                                        : row.impact;
-                                                                                setSelectedWeatherImpact(targetImpact);
-                                                                                setShowWeatherImpactModal(true);
-                                                                            }}
-                                                                        />
+                                                                        (() => {
+                                                                            const targetImpact =
+                                                                                row.impact?.is_grouped &&
+                                                                                Array.isArray(row.impact?.source_impacts)
+                                                                                    ? row.impact.source_impacts[0]
+                                                                                    : row.impact;
+                                                                            return (
+                                                                                <WeatherDelayMarker
+                                                                                    key={`weather-${row.impact.id}-unassigned`}
+                                                                                    impact={row.impact}
+                                                                                    canApplySchedule={canEditProjects}
+                                                                                    applyingSchedule={
+                                                                                        applyingWeatherImpactId === targetImpact?.id
+                                                                                    }
+                                                                                    onApplySchedule={() =>
+                                                                                        handleApplyWeatherSchedule(targetImpact)
+                                                                                    }
+                                                                                    onClick={() => {
+                                                                                        setSelectedWeatherImpact(targetImpact);
+                                                                                        setShowWeatherImpactModal(true);
+                                                                                    }}
+                                                                                />
+                                                                            );
+                                                                        })()
                                                                     ) : (
                                                                         <TaskItem
                                                                             key={row.task.id}
@@ -3062,6 +3235,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                             onOpenDependencyDrawer={setDependencyDrawerTaskId}
                                                                             onPingAssignee={handlePingAssignee}
                                                                             pingLocked={!canPing}
+                                                                            onCopyGuestLink={handleCopyGuestTaskLink}
                                                                             onRequestAssigneeSmsConsent={
                                                                                 isSmsNotificationsEnabled()
                                                                                     ? handleRequestAssigneeSmsConsent
@@ -3368,6 +3542,83 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 />
             )}
 
+            {showPhasesModal && project && (
+                <div
+                    className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-8 p-4 bg-black/40 backdrop-blur-[1px]"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="phases-modal-title"
+                    onClick={() => {
+                        setShowPhasesModal(false);
+                        setPhasesModalEditing(false);
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                            setShowPhasesModal(false);
+                            setPhasesModalEditing(false);
+                        }
+                    }}
+                >
+                    <div
+                        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[min(90dvh,90vh)] flex flex-col overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 bg-white">
+                            <div className="min-w-0">
+                                <h2 id="phases-modal-title" className="text-lg font-bold text-gray-900">
+                                    {t('projectDetail.project_schedule')}
+                                </h2>
+                                <p className="text-sm text-gray-500 mt-0.5">
+                                    {t('projectDetail.project_schedule_subtitle')}
+                                </p>
+                            </div>
+                            {canEditProjects ? (
+                                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAddPhaseModal(true)}
+                                        className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
+                                    >
+                                        + {t('build_path.add_phase')}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPhasesModalEditing((v) => !v)}
+                                        className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
+                                    >
+                                        {phasesModalEditing ? t('common.done') : t('common.edit')}
+                                    </button>
+                                </div>
+                            ) : null}
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 min-h-[min(480px,50vh)] max-h-[calc(90vh-8rem)]">
+                            <BuildPath
+                                project={project}
+                                phaseControl={phaseControl}
+                                embedded
+                                hideEmbeddedToolbar
+                                isEditing={phasesModalEditing}
+                                onEditingChange={setPhasesModalEditing}
+                                onAddPhase={() => setShowAddPhaseModal(true)}
+                                onPhasesChange={() => phaseControl.refresh()}
+                            />
+                        </div>
+                        <div className="sticky bottom-0 border-t border-gray-200 bg-white px-5 py-4 flex justify-end">
+                            <button
+                                type="button"
+                                className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full hover:bg-blue-700"
+                                onClick={() => {
+                                    setShowPhasesModal(false);
+                                    setPhasesModalEditing(false);
+                                }}
+                            >
+                                {t('projectDetail.schedule_done')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {discussionModalTaskId && project && (
                 <TaskDiscussionModal
                     task={allTasks.find((t) => t.id === discussionModalTaskId)}
@@ -3389,7 +3640,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         userId: state.user?.id,
                         userContactId: state.userContactId,
                         userRoleName: state.userRole?.name,
-                        canEditTasks: state.userRole?.permissions?.can_edit_tasks === true,
+                        canEditTasks,
                         task: photoModalTask,
                     })}
                     photoActionBusy={photoActionTaskIds[photoModalTask.id] === true}

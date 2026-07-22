@@ -171,6 +171,7 @@ function SettingsView() {
     }
     dispatch({ type: 'SET_USER', payload: null });
     addToast(t('toast.signed_out_successfully'), 'success');
+    navigate('/login', { replace: true });
   };
 
   const confirmDeleteAccount = async () => {

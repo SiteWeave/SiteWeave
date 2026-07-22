@@ -82,15 +82,28 @@ export async function runInviteBootstrap(supabase) {
 
   inviteBootstrapInFlight = (async () => {
     try {
-      const pending = await consumePendingProjectInviteToken();
+      const redeemedProjectIds = [];
+      const pending = await peekPendingProjectInviteToken();
+      let pendingRedeem = null;
       if (pending) {
-        await redeemProjectInvite(supabase, { token: pending });
+        pendingRedeem = await redeemProjectInvite(supabase, { token: pending });
+        if (pendingRedeem?.success) {
+          await consumePendingProjectInviteToken();
+          if (pendingRedeem.projectId) {
+            redeemedProjectIds.push(pendingRedeem.projectId);
+          }
+        }
       }
       const result = await autoRedeemProjectInvites(supabase);
       if (result?.success !== false) {
         inviteBootstrapDoneForUser = user.id;
       }
-      return result;
+      const autoIds = Array.isArray(result?.redeemedProjectIds) ? result.redeemedProjectIds : [];
+      return {
+        ...(result || { success: true }),
+        pendingRedeem,
+        redeemedProjectIds: [...new Set([...redeemedProjectIds, ...autoIds])],
+      };
     } finally {
       inviteBootstrapInFlight = null;
     }

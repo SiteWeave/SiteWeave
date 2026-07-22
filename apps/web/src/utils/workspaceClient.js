@@ -10,10 +10,41 @@ export function storePendingProjectInviteToken(token) {
   }
 }
 
+export function peekPendingProjectInviteToken() {
+  try {
+    return sessionStorage.getItem(PENDING_PROJECT_INVITE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function consumePendingProjectInviteToken() {
-  const token = sessionStorage.getItem(PENDING_PROJECT_INVITE_KEY);
-  if (token) sessionStorage.removeItem(PENDING_PROJECT_INVITE_KEY);
+  const token = peekPendingProjectInviteToken();
+  if (token) {
+    try {
+      sessionStorage.removeItem(PENDING_PROJECT_INVITE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
   return token;
+}
+
+/** After login/signup/OAuth, return to pending project invite when present. */
+export function getPostAuthNavigatePath(search = typeof window !== 'undefined' ? window.location.search : '') {
+  let params;
+  try {
+    params = new URLSearchParams(search || '');
+  } catch {
+    params = new URLSearchParams();
+  }
+  const tokenFromQuery = params.get('inviteToken') || params.get('token');
+  const pending = tokenFromQuery || peekPendingProjectInviteToken();
+  if (pending) {
+    storePendingProjectInviteToken(pending);
+    return `/project-invite/${encodeURIComponent(pending)}`;
+  }
+  return '/';
 }
 
 /** Clear invite bootstrap caches (e.g. on sign-out). */
@@ -85,15 +116,28 @@ export async function runInviteBootstrap(supabase) {
 
   inviteBootstrapInFlight = (async () => {
     try {
-      const pending = consumePendingProjectInviteToken();
+      const redeemedProjectIds = [];
+      const pending = peekPendingProjectInviteToken();
+      let pendingRedeem = null;
       if (pending) {
-        await redeemProjectInvite(supabase, { token: pending });
+        pendingRedeem = await redeemProjectInvite(supabase, { token: pending });
+        if (pendingRedeem?.success) {
+          consumePendingProjectInviteToken();
+          if (pendingRedeem.projectId) {
+            redeemedProjectIds.push(pendingRedeem.projectId);
+          }
+        }
       }
       const result = await autoRedeemProjectInvites(supabase);
       if (result?.success !== false) {
         inviteBootstrapDoneForUser = user.id;
       }
-      return result;
+      const autoIds = Array.isArray(result?.redeemedProjectIds) ? result.redeemedProjectIds : [];
+      return {
+        ...(result || { success: true }),
+        pendingRedeem,
+        redeemedProjectIds: [...new Set([...redeemedProjectIds, ...autoIds])],
+      };
     } finally {
       inviteBootstrapInFlight = null;
     }

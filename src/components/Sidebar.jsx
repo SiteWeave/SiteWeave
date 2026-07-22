@@ -43,6 +43,9 @@ function Sidebar() {
     };
 
     const handleLogout = async () => {
+        const goToLogin = () => {
+            navigate('/login', { replace: true });
+        };
         try {
             // Check if there's a valid session first
             const { data: { session } } = await supabaseClient.auth.getSession();
@@ -52,6 +55,7 @@ function Sidebar() {
                 console.log('No active session, clearing local state');
                 dispatch({ type: 'SET_USER', payload: null });
                 addToast(t('toast.signed_out_successfully'), 'success');
+                goToLogin();
                 return;
             }
             
@@ -75,11 +79,13 @@ function Sidebar() {
             } else {
                 addToast(t('toast.signed_out_successfully'), 'success');
             }
+            goToLogin();
         } catch (err) {
             // Handle any errors gracefully - always clear local state
             console.log('Sign out error caught, clearing local state:', err);
             dispatch({ type: 'SET_USER', payload: null });
             addToast(t('toast.signed_out_successfully'), 'success');
+            goToLogin();
         }
     };
 

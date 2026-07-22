@@ -6,6 +6,7 @@ import LoadingSpinner from './LoadingSpinner';
 import { ROUTE_PATHS } from '../config/routes';
 import {
   consumePendingProjectInviteToken,
+  peekPendingProjectInviteToken,
   redeemProjectInvite,
   storePendingProjectInviteToken,
 } from '../utils/workspaceClient';
@@ -34,7 +35,7 @@ export default function ProjectInviteAcceptPage() {
     }
 
     const run = async () => {
-      const inviteToken = token || consumePendingProjectInviteToken();
+      const inviteToken = token || peekPendingProjectInviteToken();
       if (!inviteToken) {
         setStatus('error');
         setMessage('Invalid or missing invite link.');
@@ -43,6 +44,7 @@ export default function ProjectInviteAcceptPage() {
 
       const result = await redeemProjectInvite(supabaseClient, { token: inviteToken });
       if (result?.success) {
+        consumePendingProjectInviteToken();
         setProjectName(result.projectName || 'the project');
         setStatus('success');
         setTimeout(() => {
@@ -61,12 +63,16 @@ export default function ProjectInviteAcceptPage() {
     run();
   }, [session, sessionLoading, token, navigate]);
 
+  const inviteAuthQuery = token
+    ? `redirect=project-invite&inviteToken=${encodeURIComponent(token)}`
+    : 'redirect=project-invite';
+
   const goToLogin = () => {
-    navigate(`${ROUTE_PATHS.login}?redirect=project-invite`);
+    navigate(`${ROUTE_PATHS.login}?${inviteAuthQuery}`);
   };
 
   const goToSignUp = () => {
-    navigate(`${ROUTE_PATHS.signup}?intent=guest`);
+    navigate(`${ROUTE_PATHS.signup}?intent=guest&${inviteAuthQuery}`);
   };
 
   return (

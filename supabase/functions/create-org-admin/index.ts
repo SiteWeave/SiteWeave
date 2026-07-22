@@ -122,13 +122,15 @@ serve(async (req) => {
     console.log(`Contact created: ${contact?.id || 'skipped'}`)
 
     // 5. Create profile and link to organization with "Org Admin" role
+    const reviewEligibleAt = new Date().toISOString()
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .upsert({
         id: authData.user.id,
         organization_id: org.id,
         role_id: adminRole.id,
-        contact_id: contact?.id || null
+        contact_id: contact?.id || null,
+        review_eligible_at: reviewEligibleAt,
       }, {
         onConflict: 'id'
       })

@@ -194,8 +194,20 @@ function appReducer(state, action) {
       saveStateToStorage(newState);
       return newState;
     }
-    case 'DELETE_PROJECT': 
-      newState = { ...state, projects: state.projects.filter(p => p.id !== action.payload) };
+    case 'DELETE_PROJECT':
+      newState = {
+        ...state,
+        projects: state.projects.filter((p) => p.id !== action.payload),
+        selectedProjectId:
+          String(state.selectedProjectId) === String(action.payload)
+            ? null
+            : state.selectedProjectId,
+        tasks: state.tasks.filter((task) => String(task.project_id) !== String(action.payload)),
+        files: state.files.filter((file) => String(file.project_id) !== String(action.payload)),
+        calendarEvents: state.calendarEvents.filter(
+          (event) => String(event.project_id) !== String(action.payload),
+        ),
+      };
       saveStateToStorage(newState);
       return newState;
     case 'ADD_TASK': {
@@ -664,6 +676,7 @@ export const AppProvider = ({ children }) => {
         const startTime = performance.now();
 
         // Start projects fetch immediately so the UI can render while profile/org work continues.
+        let projectsAfterInvite = null;
         const projectsFetchPromise = (async () => {
           try {
             const { data: projects, error: projectsError } = await supabaseClient
@@ -922,7 +935,21 @@ export const AppProvider = ({ children }) => {
                 role: 'Team',
               }, { onConflict: 'id' });
             }
-            await workspaceClient.runInviteBootstrap(supabaseClient);
+            const inviteResult = await workspaceClient.runInviteBootstrap(supabaseClient);
+            if (inviteResult?.redeemedProjectIds?.length || inviteResult?.pendingRedeem?.success) {
+              try {
+                const { data: refreshedProjects, error: refreshErr } = await supabaseClient
+                  .from('projects')
+                  .select(PROJECT_LIST_COLUMNS)
+                  .is('trashed_at', null)
+                  .order('updated_at', { ascending: false });
+                if (!refreshErr && refreshedProjects) {
+                  projectsAfterInvite = refreshedProjects;
+                }
+              } catch (refreshErr) {
+                console.warn('Projects refresh after invite bootstrap:', refreshErr);
+              }
+            }
           } catch (bootstrapErr) {
             console.warn('Account bootstrap (invites/provision):', bootstrapErr);
           }
@@ -1019,7 +1046,6 @@ export const AppProvider = ({ children }) => {
             dispatch({ type: 'SET_USER_ROLE', payload: profileWithOrg.roles });
             // Clear any organization errors if org is found
             dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: null });
-            dispatch({ type: 'SET_COLLABORATOR_STATUS', payload: { isCollaborator: false, projects: [] } });
           } else {
             // No organization found - check for project collaborations
             dispatch({ type: 'SET_ORGANIZATION_LOADING', payload: true });
@@ -1029,7 +1055,9 @@ export const AppProvider = ({ children }) => {
               
               if (collaborations && collaborations.length > 0) {
                 // User is a collaborator - allow access
-                const collaborationProjects = collaborations.map(c => c.projects).filter(Boolean);
+                const collaborationProjects = collaborations
+                  .map((c) => (c.projects ? { ...c.projects, access_level: c.access_level } : null))
+                  .filter(Boolean);
                 dispatch({ 
                   type: 'SET_COLLABORATOR_STATUS', 
                   payload: { 
@@ -1069,13 +1097,37 @@ export const AppProvider = ({ children }) => {
                 }
                 dispatch({ type: 'SET_COLLABORATOR_STATUS', payload: { isCollaborator: false, projects: [] } });
               }
-            } catch (error) {
-              console.error('Error checking for project collaborations:', error);
-              // On error, still set organization error
-              dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: 'No organization found. Please contact your administrator.' });
+            } catch (collabErr) {
+              console.error('Error checking collaborations:', collabErr);
+              dispatch({ type: 'SET_ORGANIZATION_ERROR', payload: 'guest_waiting' });
               dispatch({ type: 'SET_COLLABORATOR_STATUS', payload: { isCollaborator: false, projects: [] } });
-            } finally {
-              dispatch({ type: 'SET_ORGANIZATION_LOADING', payload: false });
+            }
+            dispatch({ type: 'SET_ORGANIZATION_LOADING', payload: false });
+          }
+
+          // Always load collaboration projects (cross-org guest access) when user has a home org
+          if (organization && state.user?.id) {
+            try {
+              const { getUserCollaborationProjects } = await import('../utils/projectCollaborationService');
+              const collaborations = await getUserCollaborationProjects(supabaseClient, state.user.id);
+              const collaborationProjects = (collaborations || [])
+                .map((c) => (c.projects ? { ...c.projects, access_level: c.access_level } : null))
+                .filter(Boolean);
+              if (collaborationProjects.length > 0) {
+                dispatch({
+                  type: 'SET_COLLABORATOR_STATUS',
+                  payload: {
+                    // Guest-only shell uses isCollaborator && !org; keep false when user has a home org
+                    isCollaborator: false,
+                    projects: collaborationProjects,
+                  },
+                });
+              } else {
+                dispatch({ type: 'SET_COLLABORATOR_STATUS', payload: { isCollaborator: false, projects: [] } });
+              }
+            } catch (crossCollabErr) {
+              console.warn('Could not load cross-org collaborations:', crossCollabErr);
+              dispatch({ type: 'SET_COLLABORATOR_STATUS', payload: { isCollaborator: false, projects: [] } });
             }
           }
           
@@ -1109,7 +1161,7 @@ export const AppProvider = ({ children }) => {
           }
 
           // === PHASE 1: Critical Data (Projects) - unblock UI as soon as list is ready ===
-          let finalProjects = await projectsFetchPromise;
+          let finalProjects = projectsAfterInvite ?? (await projectsFetchPromise);
           dispatch({ type: 'SET_DATA', payload: {
             projects: finalProjects,
             activeView: currentActiveViewRef.current || state.activeView,
@@ -1222,9 +1274,6 @@ export const AppProvider = ({ children }) => {
             }
             if (event.action === 'trashed' || event.action === 'purged') {
               dispatch({ type: 'DELETE_PROJECT', payload: event.project_id || event.metadata?.project_id });
-              if (appStateRefForLazy.current?.selectedProjectId === (event.project_id || event.metadata?.project_id)) {
-                dispatch({ type: 'SET_PROJECT', payload: null });
-              }
               return;
             }
             if (event.action === 'restored' && event.project_id) {

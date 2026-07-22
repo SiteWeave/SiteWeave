@@ -73,10 +73,13 @@ function buildPunchListHtml(opts: {
             <div style="font-weight:600;color:#111827;">${escapeHtml(String(issue.title || ''))}</div>
             ${issue.description ? `<div style="margin-top:4px;color:#6b7280;font-size:13px;">${escapeHtml(String(issue.description))}</div>` : ''}
           </td>
-          <td style="padding:12px;border-bottom:1px solid #e5e7eb;vertical-align:top;width:90px;">
-            <span style="display:inline-block;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700;background:${closed ? '#f3f4f6' : '#dbeafe'};color:${closed ? '#6b7280' : '#1d4ed8'};">
-              ${closed ? 'Closed' : 'Open'}
-            </span>
+          <td style="padding:12px;border-bottom:1px solid #e5e7eb;vertical-align:middle;width:100px;">
+            <!-- Nested table badge: print/PDF engines mis-center text inside inline-block pills -->
+            <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0;">
+              <tr>
+                <td style="padding:4px 10px;border-radius:6px;background:${closed ? '#f3f4f6' : '#dbeafe'};color:${closed ? '#4b5563' : '#1d4ed8'};font-size:11px;font-weight:700;line-height:1.2;text-align:center;white-space:nowrap;mso-line-height-rule:exactly;">${closed ? 'Closed' : 'Open'}</td>
+              </tr>
+            </table>
           </td>
           <td style="padding:12px;border-bottom:1px solid #e5e7eb;vertical-align:top;width:180px;">
             <div style="display:flex;gap:8px;">

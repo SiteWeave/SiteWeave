@@ -62,6 +62,12 @@ serve(async (req) => {
 
     const resolvedRoleId = await resolveMemberRoleId(supabaseAdmin, organizationId, roleId)
 
+    const { data: existingProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('review_eligible_at')
+      .eq('id', userId)
+      .maybeSingle()
+
     const updateData: Record<string, unknown> = {
       organization_id: organizationId,
       role_id: resolvedRoleId,
@@ -69,6 +75,11 @@ serve(async (req) => {
     
     if (contactId) {
       updateData.contact_id = contactId
+    }
+
+    // Start the 7-day review clock on first org join only.
+    if (!existingProfile?.review_eligible_at) {
+      updateData.review_eligible_at = new Date().toISOString()
     }
 
     const { error: updateError } = await supabaseAdmin

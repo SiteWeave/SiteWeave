@@ -11,6 +11,7 @@ import PressableWithFade from '../PressableWithFade';
 import { Text } from './Text';
 import { colors, spacing } from '../../theme';
 import { useBranding } from '../../context/BrandingContext';
+import { useAuth } from '../../context/AuthContext';
 import { hasCompletedLocationOnboarding } from '../../utils/onboarding';
 import {
   getConditionFromCode,
@@ -42,6 +43,7 @@ async function resolveLocationLabel(latitude, longitude) {
 export default function WeatherCard({ onPress, onLogWeather, testID = 'weather-card' }) {
   const { t } = useTranslation();
   const { primaryColor } = useBranding();
+  const { user } = useAuth();
   const [weather, setWeather] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -55,7 +57,7 @@ export default function WeatherCard({ onPress, onLogWeather, testID = 'weather-c
       setPermissionDenied(false);
       setOnboardingPending(false);
 
-      const onboardingDone = await hasCompletedLocationOnboarding();
+      const onboardingDone = await hasCompletedLocationOnboarding(user?.id);
       if (!onboardingDone) {
         setOnboardingPending(true);
         setLoading(false);
@@ -113,7 +115,7 @@ export default function WeatherCard({ onPress, onLogWeather, testID = 'weather-c
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, user?.id]);
 
   useEffect(() => {
     loadWeather();

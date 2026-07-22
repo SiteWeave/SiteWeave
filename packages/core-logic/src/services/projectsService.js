@@ -7,7 +7,10 @@ import {
   computeWeightedProjectProgressPercent,
   groupPhasesByProjectId,
 } from '../utils/projectProgressRollup.js';
-import { buildPhasesWithDerivedProgress } from '../utils/projectPhasesUtils.js';
+import {
+  buildPhasesWithDerivedProgress,
+  calculatePhaseProgressFromTasks,
+} from '../utils/projectPhasesUtils.js';
 
 function groupTasksByProjectId(tasks) {
   const map = {};
@@ -157,7 +160,7 @@ export async function fetchUserProjectsWithProgress(supabase, userId, options = 
     const phases = phasesByProject[project.id] || [];
     const tasks = tasksByProject[project.id] || [];
     if (phases.length === 0) {
-      return { ...project, progress: 0 };
+      return { ...project, progress: calculatePhaseProgressFromTasks(tasks) };
     }
     const phasesWithProgress = buildPhasesWithDerivedProgress(phases, tasks);
     const progress = computeWeightedProjectProgressPercent(phasesWithProgress, project?.due_date);

@@ -2,12 +2,13 @@ import i18n from '../i18n/config';
 import {
     computeWeightedProjectProgressPercent,
     groupPhasesByProjectId,
+    calculatePhaseProgressFromTasks,
     formatDateForDisplay,
 } from '@siteweave/core-logic';
 
 export const calculateProjectProgress = async (projectId, supabaseClient) => {
     try {
-        const [{ data: phases, error }, { data: project }] = await Promise.all([
+        const [{ data: phases, error }, { data: project }, { data: tasks }] = await Promise.all([
             supabaseClient
                 .from('project_phases')
                 .select('progress, start_date, end_date, order')
@@ -18,9 +19,16 @@ export const calculateProjectProgress = async (projectId, supabaseClient) => {
                 .select('due_date')
                 .eq('id', projectId)
                 .maybeSingle(),
+            supabaseClient
+                .from('tasks')
+                .select('completed, percent_complete')
+                .eq('project_id', projectId),
         ]);
 
-        if (error || !phases || phases.length === 0) return 0;
+        if (error) return 0;
+        if (!phases || phases.length === 0) {
+            return calculatePhaseProgressFromTasks(tasks || []);
+        }
         return computeWeightedProjectProgressPercent(phases, project?.due_date);
     } catch (error) {
         console.error('Error calculating project progress:', error);
@@ -34,21 +42,37 @@ export const calculateProjectsProgressMap = async (projects, supabaseClient) => 
         if (projectList.length === 0) return {};
 
         const projectIds = projectList.map((project) => project.id);
-        const { data: allPhases, error } = await supabaseClient
-            .from('project_phases')
-            .select('project_id, progress, start_date, end_date, order')
-            .in('project_id', projectIds)
-            .order('order');
+        const [{ data: allPhases, error }, { data: allTasks, error: tasksError }] = await Promise.all([
+            supabaseClient
+                .from('project_phases')
+                .select('project_id, progress, start_date, end_date, order')
+                .in('project_id', projectIds)
+                .order('order'),
+            supabaseClient
+                .from('tasks')
+                .select('project_id, completed, percent_complete')
+                .in('project_id', projectIds),
+        ]);
 
         if (error) throw error;
+        if (tasksError) throw tasksError;
 
         const phasesByProject = groupPhasesByProjectId(allPhases || []);
+        const tasksByProject = {};
+        for (const task of allTasks || []) {
+            const pid = task.project_id;
+            if (!pid) continue;
+            if (!tasksByProject[pid]) tasksByProject[pid] = [];
+            tasksByProject[pid].push(task);
+        }
+
         return projectList.reduce((acc, project) => {
             const phases = phasesByProject[project.id] || [];
+            const tasks = tasksByProject[project.id] || [];
             acc[project.id] = {
                 progress: phases.length > 0
                     ? computeWeightedProjectProgressPercent(phases, project?.due_date)
-                    : 0,
+                    : calculatePhaseProgressFromTasks(tasks),
                 phaseCount: phases.length,
                 completeCount: phases.filter((p) => p.progress === 100).length,
             };

@@ -105,6 +105,7 @@ export default function ChangePasswordSheet({ visible, onClose }) {
           onToggleShow={() => setShowPassword((v) => !v)}
           testID="change-password-new"
           autoComplete="password-new"
+          returnKeyType="next"
         />
 
         <Text variant="caption" style={styles.label}>
@@ -118,6 +119,8 @@ export default function ChangePasswordSheet({ visible, onClose }) {
           onToggleShow={() => setShowPassword((v) => !v)}
           testID="change-password-confirm"
           autoComplete="password-new"
+          returnKeyType="done"
+          onSubmitEditing={canSubmit && !submitting ? handleSubmit : undefined}
         />
       </BottomSheet.Scroll>
     </BottomSheet>

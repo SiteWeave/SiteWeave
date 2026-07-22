@@ -131,13 +131,13 @@ try {
       }
     },
 
-    // External links
+    // External links — validated https-only in the main process.
     openExternal: (url) => {
       try {
-        // This will be handled by the main process automatically
-        window.open(url, '_blank');
+        return ipcRenderer.invoke('open-external', url);
       } catch (error) {
         console.error('Error opening external link:', error);
+        return Promise.resolve(false);
       }
     },
 
@@ -197,7 +197,7 @@ try {
     checkForUpdates: () => Promise.resolve(),
     startOAuthServer: () => Promise.resolve(),
     stopOAuthServer: () => Promise.resolve(),
-    openExternal: (url) => window.open(url, '_blank'),
+    openExternal: (url) => ipcRenderer.invoke('open-external', url).catch(() => false),
     saveHtmlAsPdf: () => Promise.resolve({ unsupported: true }),
     sendOAuthCallback: () => Promise.resolve(),
     exchangeOAuthToken: () => Promise.reject(new Error('exchangeOAuthToken not available in fallback'))

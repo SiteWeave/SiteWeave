@@ -152,7 +152,7 @@ We grant you a limited, non-exclusive, non-transferable license to use the Servi
 
 ## 7. THIRD-PARTY SERVICES
 
-The Service integrates with third-party services (Supabase, Google, Microsoft, Resend, Twilio, and others). Your use of these services is subject to their respective terms and privacy policies. We are not responsible for third-party services.
+The Service integrates with third-party services (Supabase, Google, Microsoft, Resend, Signal House, and others). Your use of these services is subject to their respective terms and privacy policies. We are not responsible for third-party services.
 
 ---
 
@@ -345,13 +345,13 @@ By using the Service, you acknowledge that you have read, understood, and agree 
 
 ### 18.1 Program Description
 
-SiteWeave may send **transactional** text messages about project work to mobile numbers associated with contacts or assignees. Messages are sent from a SiteWeave toll-free or other approved number through our SMS provider (Twilio) and are intended for operational notifications, not advertising.
+SiteWeave may send **transactional** text messages about project work to mobile numbers associated with contacts or assignees. Messages are sent from a SiteWeave toll-free or other approved number through our SMS provider (Signal House) and are intended for operational notifications, not advertising.
 
 ### 18.2 Consent
 
 Before substantive messages are sent, the recipient must affirmatively opt in using one of these methods:
 
-**Via website (primary):** A project administrator shares a link such as `https://www.siteweave.org/sms-consent/{token}`. The recipient opens it on a mobile browser, reviews disclosures (message types, frequency, Msg&data rates, HELP/STOP, Terms/Privacy), confirms the phone number shown, checks an agreement box, and submits.
+**Via website (primary):** A project administrator shares a link such as `https://app.siteweave.org/sms-consent/{token}`. The recipient opens it on a mobile browser, reviews disclosures (message types, frequency, Msg&data rates, HELP/STOP, Terms/Privacy), confirms the phone number shown, checks an agreement box, and submits.
 
 **Via text (alternate):** The recipient receives an opt-in text that includes:
 

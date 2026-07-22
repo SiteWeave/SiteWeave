@@ -17,6 +17,7 @@ import {
   maybeCreateEarlyCompletionAdjustment,
   suggestWorkdaysGained,
   getTaskEndDate,
+  CACHE_TTL,
 } from '@siteweave/core-logic';
 import TaskCard from '../../../components/TaskCard';
 import TaskDetailSheet from '../../../components/TaskDetailSheet';
@@ -43,8 +44,10 @@ import FieldIssuesPanel from '../../../components/FieldIssuesPanel';
 import { useWorkspaceTier } from '../../../hooks/useWorkspaceTier';
 import ProjectSearchSheet from '../../../components/ProjectSearchSheet';
 import { markGettingStartedProjectOpened, markGettingStartedTaskCreated, markGettingStartedTaskUpdated } from '../../../utils/onboarding';
+import { signalReviewPromptOpportunity } from '../../../utils/reviewPromptEvents';
 import { SkeletonCard, SkeletonList } from '../../../components/ui/Skeleton';
 import { useSyncStatus } from '../../../context/SyncStatusContext';
+import { getCached, setCached } from '../../../utils/persistentCache';
 
 function resolveScopeOrganizationId({ activeOrganization, project, collaborationProjects, projectId }) {
   if (project?.organization_id) return project.organization_id;
@@ -116,9 +119,9 @@ export default function ProjectDetailScreen() {
 
   useEffect(() => {
     if (projectId && project) {
-      markGettingStartedProjectOpened().catch(() => {});
+      markGettingStartedProjectOpened(user?.id).catch(() => {});
     }
-  }, [projectId, project?.id]);
+  }, [projectId, project?.id, user?.id]);
 
   useEffect(() => {
     if (projectId && project && openInvite && isManagerView && canEditProjects) {
@@ -238,8 +241,56 @@ export default function ProjectDetailScreen() {
       return;
     }
 
+    const detailCacheKey = user?.id ? `projectDetail:${projectId}` : null;
+    const projectsListCacheKey = user?.id
+      ? `projects:${activeOrganization?.id || 'guest'}`
+      : null;
+
     try {
       setLoading(true);
+
+      // Offline / soft-fail: hydrate from last successful detail snapshot or projects list.
+      if (!isOnline && user?.id) {
+        const cachedDetail = detailCacheKey ? await getCached(user.id, detailCacheKey) : null;
+        if (cachedDetail?.project) {
+          setProject(cachedDetail.project);
+          setTasks(cachedDetail.tasks || []);
+          setPhases(cachedDetail.phases || []);
+          setScopeOrganizationId(
+            cachedDetail.scopeOrganizationId ||
+              resolveScopeOrganizationId({
+                activeOrganization,
+                project: cachedDetail.project,
+                collaborationProjects,
+                projectId,
+              }),
+          );
+          setLoading(false);
+          return;
+        }
+        const list = projectsListCacheKey ? await getCached(user.id, projectsListCacheKey) : null;
+        const listProject = Array.isArray(list)
+          ? list.find((p) => p?.id === projectId)
+          : null;
+        const collabProject = (collaborationProjects || []).find((p) => p?.id === projectId);
+        const fallbackProject = listProject || collabProject || null;
+        if (fallbackProject) {
+          setProject(fallbackProject);
+          setTasks([]);
+          setPhases([]);
+          setScopeOrganizationId(
+            resolveScopeOrganizationId({
+              activeOrganization,
+              project: fallbackProject,
+              collaborationProjects,
+              projectId,
+            }),
+          );
+          setLoading(false);
+          return;
+        }
+      }
+
       const projectData = await fetchProject(supabase, projectId).catch((err) => {
         console.error('Error fetching project:', err);
         return null;
@@ -253,6 +304,41 @@ export default function ProjectDetailScreen() {
       });
 
       if (!projectData || !orgId) {
+        // Last chance: cached snapshot even if we thought we were online.
+        if (user?.id && detailCacheKey) {
+          const cachedDetail = await getCached(user.id, detailCacheKey);
+          if (cachedDetail?.project) {
+            setProject(cachedDetail.project);
+            setTasks(cachedDetail.tasks || []);
+            setPhases(cachedDetail.phases || []);
+            setScopeOrganizationId(cachedDetail.scopeOrganizationId || orgId);
+            setLoading(false);
+            return;
+          }
+        }
+        if (user?.id && projectsListCacheKey) {
+          const list = await getCached(user.id, projectsListCacheKey);
+          const listProject = Array.isArray(list)
+            ? list.find((p) => p?.id === projectId)
+            : null;
+          const collabProject = (collaborationProjects || []).find((p) => p?.id === projectId);
+          const fallbackProject = listProject || collabProject || null;
+          if (fallbackProject) {
+            setProject(fallbackProject);
+            setTasks([]);
+            setPhases([]);
+            setScopeOrganizationId(
+              resolveScopeOrganizationId({
+                activeOrganization,
+                project: fallbackProject,
+                collaborationProjects,
+                projectId,
+              }),
+            );
+            setLoading(false);
+            return;
+          }
+        }
         setProject(null);
         setScopeOrganizationId(null);
         setLoading(false);
@@ -296,8 +382,51 @@ export default function ProjectDetailScreen() {
       setTasks(tasksData || []);
       setPhases(phasesResult.data || []);
 
+      if (user?.id && detailCacheKey) {
+        await setCached(
+          user.id,
+          detailCacheKey,
+          {
+            project: projectData,
+            tasks: tasksData || [],
+            phases: phasesResult.data || [],
+            scopeOrganizationId: orgId,
+          },
+          CACHE_TTL.list,
+        );
+      }
     } catch (error) {
       console.error('Error loading project data:', error);
+      if (user?.id) {
+        const cachedDetail = detailCacheKey ? await getCached(user.id, detailCacheKey) : null;
+        if (cachedDetail?.project) {
+          setProject(cachedDetail.project);
+          setTasks(cachedDetail.tasks || []);
+          setPhases(cachedDetail.phases || []);
+          setScopeOrganizationId(cachedDetail.scopeOrganizationId || null);
+          return;
+        }
+        const list = projectsListCacheKey ? await getCached(user.id, projectsListCacheKey) : null;
+        const listProject = Array.isArray(list)
+          ? list.find((p) => p?.id === projectId)
+          : null;
+        const collabProject = (collaborationProjects || []).find((p) => p?.id === projectId);
+        const fallbackProject = listProject || collabProject || null;
+        if (fallbackProject) {
+          setProject(fallbackProject);
+          setTasks([]);
+          setPhases([]);
+          setScopeOrganizationId(
+            resolveScopeOrganizationId({
+              activeOrganization,
+              project: fallbackProject,
+              collaborationProjects,
+              projectId,
+            }),
+          );
+          return;
+        }
+      }
       setProject(null);
     } finally {
       setLoading(false);
@@ -317,6 +446,7 @@ export default function ProjectDetailScreen() {
     );
     try {
       await completeTask(supabase, taskId);
+      signalReviewPromptOpportunity();
       if (sourceTask && project?.organization_id) {
         const completedTask = {
           ...sourceTask,
@@ -325,7 +455,7 @@ export default function ProjectDetailScreen() {
           completed_at: completedAt,
         };
         const days = suggestWorkdaysGained(completedTask);
-        if (days > 0) {
+        if (days >= 2) {
           try {
             await maybeCreateEarlyCompletionAdjustment(supabase, {
               organizationId: project.organization_id,
@@ -453,9 +583,11 @@ export default function ProjectDetailScreen() {
   );
 
   const derivedProjectProgress = useMemo(() => {
-    if (!phasesWithProgress.length) return 0;
+    if (!phasesWithProgress.length) {
+      return calculatePhaseProgressFromTasks(tasks);
+    }
     return computeWeightedProjectProgressPercent(phasesWithProgress, project?.due_date);
-  }, [phasesWithProgress, project?.due_date]);
+  }, [phasesWithProgress, project?.due_date, tasks]);
 
   useEffect(() => {
     setExpandedPhases((prev) => {
@@ -521,7 +653,10 @@ export default function ProjectDetailScreen() {
     try {
       setIsSavingProgress(true);
       await updateTask(supabase, progressTask.id, updates);
-      await markGettingStartedTaskUpdated();
+      await markGettingStartedTaskUpdated(user?.id);
+      if (reachedComplete) {
+        signalReviewPromptOpportunity();
+      }
       if (reachedComplete && project?.organization_id) {
         const completedAt = new Date().toISOString();
         const completedTask = {
@@ -532,7 +667,7 @@ export default function ProjectDetailScreen() {
           completed_at: completedAt,
         };
         const days = suggestWorkdaysGained(completedTask);
-        if (days > 0) {
+        if (days >= 2) {
           try {
             await maybeCreateEarlyCompletionAdjustment(supabase, {
               organizationId: project.organization_id,
@@ -627,7 +762,7 @@ export default function ProjectDetailScreen() {
         project_id: project.id,
         organization_id: project.organization_id || scopeOrganizationId,
       });
-      await markGettingStartedTaskCreated();
+      await markGettingStartedTaskCreated(user?.id);
       setShowCreateTask(false);
       await loadProjectData();
     } catch (error) {

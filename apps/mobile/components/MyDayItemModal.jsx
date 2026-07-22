@@ -1,12 +1,15 @@
 import { View, Text, StyleSheet, Modal, ScrollView, Animated, Dimensions } from 'react-native';
 import { useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { completeTask } from '@siteweave/core-logic';
 import PressableWithFade from './PressableWithFade';
 import ModalScrim from './ui/ModalScrim';
 import { useHaptics } from '../hooks/useHaptics';
+import { signalReviewPromptOpportunity } from '../utils/reviewPromptEvents';
+import { colors, spacing, radius, touch } from '../theme';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -14,7 +17,8 @@ export default function MyDayItemModal({ visible, item, onClose, onComplete, onA
   const { t } = useTranslation();
   const { supabase } = useAuth();
   const haptics = useHaptics();
-  
+  const insets = useSafeAreaInsets();
+
   const modalTranslateY = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -44,6 +48,7 @@ export default function MyDayItemModal({ visible, item, onClose, onComplete, onA
         haptics.medium();
         await completeTask(supabase, item.id);
         haptics.success();
+        signalReviewPromptOpportunity();
         onComplete?.();
         onClose();
       } catch (error) {
@@ -77,13 +82,13 @@ export default function MyDayItemModal({ visible, item, onClose, onComplete, onA
   const getPriorityColor = (priority) => {
     switch (priority?.toLowerCase()) {
       case 'high':
-        return '#EF4444';
+        return colors.error;
       case 'medium':
-        return '#F59E0B';
+        return colors.statusStuck;
       case 'low':
-        return '#6B7280';
+        return colors.textMuted;
       default:
-        return '#6B7280';
+        return colors.textMuted;
     }
   };
 
@@ -96,9 +101,9 @@ export default function MyDayItemModal({ visible, item, onClose, onComplete, onA
     >
       <View style={styles.modalContainer}>
         <ModalScrim onPress={onClose} opacity={0.5} />
-        
+
         <View style={styles.modalWrapper}>
-          <Animated.View 
+          <Animated.View
             style={[
               styles.modal,
               {
@@ -106,118 +111,127 @@ export default function MyDayItemModal({ visible, item, onClose, onComplete, onA
                   inputRange: [0, 1],
                   outputRange: [0, SCREEN_HEIGHT],
                 }) }],
-              }
+              },
             ]}
           >
-          <View style={styles.header}>
-            <Text style={styles.modalTitle}>
-              {isTask ? 'Task Details' : isEvent ? 'Event Details' : 'Item Details'}
-            </Text>
-            <PressableWithFade 
-              onPress={() => {
-                haptics.light();
-                onClose();
-              }} 
-              style={styles.closeButton}
-              hapticType="light"
-            >
-              <Ionicons name="close" size={24} color="#111827" />
-            </PressableWithFade>
-          </View>
+            <View style={styles.handleWrap}>
+              <View style={styles.handle} />
+            </View>
 
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            {isTask && (
-              <>
-                <Text style={styles.title}>{item.text || item.title}</Text>
-                {item.description && (
-                  <Text style={styles.description}>{item.description}</Text>
-                )}
-                {item.due_date && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="calendar-outline" size={20} color="#6B7280" />
-                    <Text style={styles.detailText}>
-                      Due: {formatDate(item.due_date)} {item.due_date && formatTime(item.due_date)}
-                    </Text>
-                  </View>
-                )}
-                {item.priority && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="flag-outline" size={20} color={getPriorityColor(item.priority)} />
-                    <Text style={[styles.detailText, { color: getPriorityColor(item.priority) }]}>
-                      Priority: {item.priority}
-                    </Text>
-                  </View>
-                )}
-                {item.project_id && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="folder-outline" size={20} color="#6B7280" />
-                    <Text style={styles.detailText}>Project Task</Text>
-                  </View>
-                )}
-              </>
-            )}
-
-            {isEvent && (
-              <>
-                <Text style={styles.title}>{item.title}</Text>
-                {item.description && (
-                  <Text style={styles.description}>{item.description}</Text>
-                )}
-                {item.start_time && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="time-outline" size={20} color="#3B82F6" />
-                    <Text style={styles.detailText}>
-                      {formatTime(item.start_time)}
-                      {item.end_time && ` - ${formatTime(item.end_time)}`}
-                    </Text>
-                  </View>
-                )}
-                {item.start_time && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="calendar-outline" size={20} color="#6B7280" />
-                    <Text style={styles.detailText}>{formatDate(item.start_time)}</Text>
-                  </View>
-                )}
-                {item.location && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="location-outline" size={20} color="#6B7280" />
-                    <Text style={styles.detailText}>{item.location}</Text>
-                  </View>
-                )}
-                {item.category && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="pricetag-outline" size={20} color="#6B7280" />
-                    <Text style={styles.detailText}>Category: {item.category}</Text>
-                  </View>
-                )}
-              </>
-            )}
-          </ScrollView>
-
-          {isTask && !item.completed && (
-            <View style={styles.actions}>
-              {item.project_id && onAddPhoto ? (
-                <PressableWithFade
-                  style={[styles.photoButton, photoUploading && styles.photoButtonDisabled]}
-                  onPress={() => onAddPhoto(item)}
-                  disabled={photoUploading}
-                  hapticType="light"
-                  testID="my-day-modal-add-photo"
-                >
-                  <Ionicons name="camera-outline" size={20} color="#3B82F6" />
-                  <Text style={styles.photoButtonText}>{t('mobile.add_photo')}</Text>
-                </PressableWithFade>
-              ) : null}
+            <View style={styles.header}>
+              <Text style={styles.modalTitle}>
+                {isTask ? 'Task Details' : isEvent ? 'Event Details' : 'Item Details'}
+              </Text>
               <PressableWithFade
-                style={styles.completeButton}
-                onPress={handleCompleteTask}
-                hapticType="medium"
+                onPress={() => {
+                  haptics.light();
+                  onClose();
+                }}
+                style={styles.closeButton}
+                hapticType="light"
+                hitSlop={touch.hitSlop}
               >
-                <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                <Text style={styles.completeButtonText}>{t('mobile.mark_complete')}</Text>
+                <Ionicons name="close" size={24} color={colors.text} />
               </PressableWithFade>
             </View>
-          )}
+
+            <ScrollView
+              style={styles.content}
+              contentContainerStyle={styles.contentContainer}
+              showsVerticalScrollIndicator={false}
+            >
+              {isTask && (
+                <>
+                  <Text style={styles.title}>{item.text || item.title}</Text>
+                  {item.description && (
+                    <Text style={styles.description}>{item.description}</Text>
+                  )}
+                  {item.due_date && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
+                      <Text style={styles.detailText}>
+                        Due: {formatDate(item.due_date)} {item.due_date && formatTime(item.due_date)}
+                      </Text>
+                    </View>
+                  )}
+                  {item.priority && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="flag-outline" size={20} color={getPriorityColor(item.priority)} />
+                      <Text style={[styles.detailText, { color: getPriorityColor(item.priority) }]}>
+                        Priority: {item.priority}
+                      </Text>
+                    </View>
+                  )}
+                  {item.project_id && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="folder-outline" size={20} color={colors.textMuted} />
+                      <Text style={styles.detailText}>Project Task</Text>
+                    </View>
+                  )}
+                </>
+              )}
+
+              {isEvent && (
+                <>
+                  <Text style={styles.title}>{item.title}</Text>
+                  {item.description && (
+                    <Text style={styles.description}>{item.description}</Text>
+                  )}
+                  {item.start_time && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="time-outline" size={20} color={colors.primary} />
+                      <Text style={styles.detailText}>
+                        {formatTime(item.start_time)}
+                        {item.end_time && ` - ${formatTime(item.end_time)}`}
+                      </Text>
+                    </View>
+                  )}
+                  {item.start_time && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="calendar-outline" size={20} color={colors.textMuted} />
+                      <Text style={styles.detailText}>{formatDate(item.start_time)}</Text>
+                    </View>
+                  )}
+                  {item.location && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="location-outline" size={20} color={colors.textMuted} />
+                      <Text style={styles.detailText}>{item.location}</Text>
+                    </View>
+                  )}
+                  {item.category && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="pricetag-outline" size={20} color={colors.textMuted} />
+                      <Text style={styles.detailText}>Category: {item.category}</Text>
+                    </View>
+                  )}
+                </>
+              )}
+            </ScrollView>
+
+            {isTask && !item.completed && (
+              <View style={[styles.actions, { paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) }]}>
+                {item.project_id && onAddPhoto ? (
+                  <PressableWithFade
+                    style={[styles.photoButton, photoUploading && styles.photoButtonDisabled]}
+                    onPress={() => onAddPhoto(item)}
+                    disabled={photoUploading}
+                    hapticType="light"
+                    testID="my-day-modal-add-photo"
+                  >
+                    <Ionicons name="camera-outline" size={20} color={colors.primary} />
+                    <Text style={styles.photoButtonText}>{t('mobile.add_photo')}</Text>
+                  </PressableWithFade>
+                ) : null}
+                <PressableWithFade
+                  style={styles.completeButton}
+                  onPress={handleCompleteTask}
+                  hapticType="medium"
+                >
+                  <Ionicons name="checkmark-circle" size={20} color={colors.white} />
+                  <Text style={styles.completeButtonText}>{t('mobile.mark_complete')}</Text>
+                </PressableWithFade>
+              </View>
+            )}
           </Animated.View>
         </View>
       </View>
@@ -230,102 +244,117 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
   },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
   modalWrapper: {
     flex: 1,
     justifyContent: 'flex-end',
   },
   modal: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
     maxHeight: '80%',
     minHeight: '40%',
+  },
+  handleWrap: {
+    alignSelf: 'center',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xl,
+    marginTop: spacing.sm,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#111827',
+    color: colors.text,
   },
   closeButton: {
-    padding: 4,
+    minWidth: touch.minSize,
+    minHeight: touch.minSize,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
-    padding: 20,
+    flexGrow: 0,
+  },
+  contentContainer: {
+    padding: spacing.xl,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 12,
+    color: colors.text,
+    marginBottom: spacing.md,
   },
   description: {
     fontSize: 16,
-    color: '#4B5563',
+    color: colors.textSecondary,
     lineHeight: 24,
-    marginBottom: 20,
+    marginBottom: spacing.xl,
   },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
   },
   detailText: {
     fontSize: 16,
-    color: '#4B5563',
+    color: colors.textSecondary,
   },
   actions: {
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    gap: 12,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    gap: spacing.md,
   },
   photoButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    borderRadius: 8,
-    gap: 8,
-    minHeight: 44,
+    padding: spacing.lg,
+    borderRadius: radius.button,
+    gap: spacing.sm,
+    minHeight: touch.minSize,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#F9FAFB',
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
   },
   photoButtonDisabled: {
     opacity: 0.5,
   },
   photoButtonText: {
-    color: '#3B82F6',
+    color: colors.primary,
     fontSize: 16,
     fontWeight: '600',
   },
   completeButton: {
-    backgroundColor: '#10B981',
+    backgroundColor: colors.statusDone,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    borderRadius: 8,
-    gap: 8,
-    minHeight: 44,
+    padding: spacing.lg,
+    borderRadius: radius.button,
+    gap: spacing.sm,
+    minHeight: touch.minSize,
   },
   completeButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: '600',
   },
 });
-

@@ -69,7 +69,7 @@ We use the collected information for the following purposes:
 - To provide, maintain, and improve the Service
 - To enable project management and team collaboration features
 - To send task assignments, notifications, and email updates
-- To send **transactional SMS** (only after you confirm by replying YES as described in Section 16), such as task reminders, assignment notices, and project invites
+- To send **transactional SMS** (only after you confirm via the web consent form or by replying YES as described in Section 18), such as task reminders, assignment notices, and project invites
 - To facilitate communication between team members
 - To manage calendar events and scheduling
 - To authenticate users and manage access control
@@ -134,11 +134,11 @@ Used for Microsoft account authentication.
 
 We may use email service providers (such as Resend) to send notifications. These services process email addresses and message content.
 
-### 5.5 SMS Services (Twilio)
+### 5.5 SMS Services (Signal House)
 
-We use Twilio to deliver transactional text messages to phone numbers you or your organization provide. Twilio processes phone numbers, message content, and delivery metadata as our service provider.
+We use Signal House to deliver transactional text messages to phone numbers you or your organization provide. Signal House processes phone numbers, message content, and delivery metadata as our service provider.
 
-- Privacy Policy: [https://www.twilio.com/legal/privacy](https://www.twilio.com/legal/privacy)
+- Website: [https://signalhouse.io](https://signalhouse.io)
 - We configure inbound handling for standard keywords including **HELP** and **STOP** (and equivalents such as STOPALL or UNSUBSCRIBE)
 
 ---
@@ -208,7 +208,7 @@ Depending on your location, you may have the following rights:
 
 ### 7.5 SMS Choices
 
-- **Opt-in:** We send substantive project SMS only after you reply **YES** (optionally with a short confirmation code) to our initial consent message.
+- **Opt-in:** We send substantive project SMS only after you confirm via the web consent form or reply **YES** (optionally with a short confirmation code) to our initial consent message.
 - **Opt-out:** Reply **STOP** at any time to stop receiving SiteWeave SMS from our number. You may receive a one-time confirmation that you are unsubscribed.
 - **Help:** Reply **HELP** for program instructions and links to these policies.
 
@@ -369,7 +369,7 @@ If you have questions, concerns, or requests regarding this Privacy Policy or ou
 
 ## 18. SMS / TEXT MESSAGING PROGRAM
 
-This section describes our **transactional** SMS program for construction project teams. Messages may be sent from a SiteWeave toll-free or other approved SMS number through Twilio.
+This section describes our **transactional** SMS program for construction project teams. Messages may be sent from a SiteWeave toll-free or other approved SMS number through Signal House.
 
 ### 18.1 What We Send
 
@@ -411,7 +411,7 @@ Message frequency varies based on project activity (typically occasional, not on
 
 ### 18.5 Administrator Responsibilities
 
-Organizations using SiteWeave should enter phone numbers only for individuals who expect project-related texts, and should direct assignees to reply YES when they receive the consent message.
+Organizations using SiteWeave should enter phone numbers only for individuals who expect project-related texts, and should direct assignees to complete the web consent form or reply YES when they receive the consent message.
 
 ### 18.6 Related Policies
 

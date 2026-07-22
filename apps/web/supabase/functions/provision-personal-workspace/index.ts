@@ -30,7 +30,7 @@ serve(async (req) => {
 
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('id, organization_id, account_intent, contact_id')
+      .select('id, organization_id, account_intent, contact_id, review_eligible_at')
       .eq('id', user.id)
       .maybeSingle()
 
@@ -93,6 +93,9 @@ serve(async (req) => {
           contact_id: contactId,
           account_intent: 'workspace_owner',
           role: 'Admin',
+          ...(!profile?.review_eligible_at
+            ? { review_eligible_at: new Date().toISOString() }
+            : {}),
         }, { onConflict: 'id' })
 
       if (linkError) throw linkError
@@ -179,6 +182,8 @@ serve(async (req) => {
       contactId = contact?.id
     }
 
+    const reviewEligibleAt = new Date().toISOString()
+
     const { error: profileUpsertError } = await supabaseAdmin
       .from('profiles')
       .upsert({
@@ -188,6 +193,7 @@ serve(async (req) => {
         contact_id: contactId,
         account_intent: 'workspace_owner',
         role: 'Admin',
+        review_eligible_at: reviewEligibleAt,
       }, { onConflict: 'id' })
 
     if (profileUpsertError) throw profileUpsertError

@@ -74,37 +74,64 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
   const groupedIssues = useMemo(() => groupIssuesByLocation(issues), [issues]);
 
   const projectTeamContacts = useMemo(
-    () =>
-      state.contacts.filter((contact) => {
+    () => {
+      const onProject = state.contacts.filter((contact) => {
         const hasProjectAccess = contact.project_contacts?.some(
           (pc) =>
             pc.project_id === projectId ||
             pc.project_id === String(projectId) ||
             String(pc.project_id) === String(projectId),
         );
-        return hasProjectAccess && contact.type === 'Team';
-      }),
-    [state.contacts, projectId],
+        return hasProjectAccess;
+      });
+      if (onProject.length > 0) return onProject;
+
+      // Fallback: org team contacts (profiles) when project_contacts aren't hydrated
+      const orgId = project?.organization_id || state.currentOrganization?.id;
+      return state.contacts.filter((contact) => {
+        if (orgId && contact.organization_id && String(contact.organization_id) !== String(orgId)) {
+          return false;
+        }
+        const type = String(contact.type || '').toLowerCase();
+        return !type || type === 'team' || type === 'internal' || type === 'user';
+      });
+    },
+    [state.contacts, projectId, project?.organization_id, state.currentOrganization?.id],
   );
 
   useEffect(() => {
-    if (!projectTeamContacts.length) {
-      setAssigneeOptions([]);
-      return;
-    }
-    const contactIds = projectTeamContacts.map((c) => c.id).filter(Boolean);
+    let cancelled = false;
     (async () => {
-      const { data: profiles } = await supabaseClient
+      const orgId = project?.organization_id || state.currentOrganization?.id;
+      const contactIds = projectTeamContacts.map((c) => c.id).filter(Boolean);
+
+      let profileQuery = supabaseClient
         .from('profiles')
-        .select('id, contact_id, contacts:contact_id(name)')
-        .in('contact_id', contactIds);
-      const opts = (profiles || []).map((p) => ({
-        userId: p.id,
-        label: p.contacts?.name || t('fieldIssues.team_member'),
-      }));
+        .select('id, contact_id, contacts:contact_id(name)');
+
+      if (contactIds.length > 0) {
+        profileQuery = profileQuery.in('contact_id', contactIds);
+      } else if (orgId) {
+        profileQuery = profileQuery.eq('organization_id', orgId);
+      } else {
+        if (!cancelled) setAssigneeOptions([]);
+        return;
+      }
+
+      const { data: profiles } = await profileQuery;
+      if (cancelled) return;
+      const opts = (profiles || [])
+        .map((p) => ({
+          userId: p.id,
+          label: p.contacts?.name || t('fieldIssues.team_member'),
+        }))
+        .filter((o) => o.userId);
       setAssigneeOptions(opts);
     })();
-  }, [projectTeamContacts]);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectTeamContacts, project?.organization_id, state.currentOrganization?.id, t]);
 
   const load = useCallback(async ({ append = false, beforeCreatedAt = null } = {}) => {
     if (!projectId) return;

@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Alert,
-  TextInput,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import Constants from 'expo-constants';
@@ -144,7 +143,7 @@ export default function FeedbackModal({ visible, onClose }) {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('settings.feedback_subject')} *</Text>
-          <TextInput
+          <BottomSheet.Input
             style={styles.textInput}
             value={subject}
             onChangeText={setSubject}
@@ -152,13 +151,14 @@ export default function FeedbackModal({ visible, onClose }) {
             placeholderTextColor={colors.textSubtle}
             editable={!submitting}
             maxLength={200}
+            returnKeyType="next"
             testID="feedback-subject"
           />
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('settings.feedback_message')} *</Text>
-          <TextInput
+          <BottomSheet.Input
             style={[styles.textInput, styles.messageInput]}
             value={message}
             onChangeText={setMessage}

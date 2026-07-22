@@ -17,6 +17,8 @@ export default function SheetInput({ style, onFocus, ...props }) {
       {...props}
       style={[styles.input, style]}
       onFocus={handleFocus}
+      // Keep caret above sticky sheet footer / keyboard.
+      blurOnSubmit={props.blurOnSubmit ?? props.multiline !== true}
     />
   );
 }
