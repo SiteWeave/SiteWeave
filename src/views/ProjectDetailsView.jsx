@@ -360,7 +360,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             if (!project?.id || !completedTask?.id) return;
             try {
                 const days = suggestWorkdaysGained(completedTask);
-                if (days < 1) return;
+                // Require ≥2 business days early so same-day / 1-day finishes don't spam the banner.
+                if (days < 2) return;
                 const planned = getSharedTaskEndDate(completedTask);
                 await maybeCreateEarlyCompletionAdjustment(supabaseClient, {
                     organizationId: project.organization_id,
