@@ -269,27 +269,80 @@ const fetchGoogleCalendarEvents = async (accessToken) => {
 };
 
 // Microsoft Graph API Integration
+const OUTLOOK_PKCE_VERIFIER_KEY = 'outlook_oauth_code_verifier';
+
+function generatePkceCodeVerifier() {
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    return btoa(String.fromCharCode.apply(null, array))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+}
+
+async function generatePkceCodeChallenge(codeVerifier) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(codeVerifier);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    return btoa(String.fromCharCode.apply(null, new Uint8Array(digest)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+}
+
+/** Build Microsoft authorize URL for browser SPA flow (PKCE required). */
+export async function buildOutlookWebAuthUrl(clientId) {
+    const redirectUri = `${window.location.origin}/calendar`;
+    const codeVerifier = generatePkceCodeVerifier();
+    const codeChallenge = await generatePkceCodeChallenge(codeVerifier);
+    sessionStorage.setItem(OUTLOOK_PKCE_VERIFIER_KEY, codeVerifier);
+
+    const url = new URL('https://login.microsoftonline.com/common/oauth2/v2.0/authorize');
+    url.searchParams.set('client_id', clientId);
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('redirect_uri', redirectUri);
+    url.searchParams.set('scope', 'https://graph.microsoft.com/Calendars.Read');
+    url.searchParams.set('response_mode', 'query');
+    url.searchParams.set('prompt', 'consent');
+    url.searchParams.set('code_challenge', codeChallenge);
+    url.searchParams.set('code_challenge_method', 'S256');
+    return url.toString();
+}
+
 const exchangeOutlookToken = async (code) => {
     const clientId = import.meta.env.VITE_MICROSOFT_CLIENT_ID;
     // Use the same redirect URI used during authorization (Calendar page)
     const redirectUri = window.location.origin + '/calendar';
+    const codeVerifier = sessionStorage.getItem(OUTLOOK_PKCE_VERIFIER_KEY);
+
+    const body = new URLSearchParams({
+        client_id: clientId,
+        code: code,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri,
+        scope: 'https://graph.microsoft.com/Calendars.Read',
+    });
+    if (codeVerifier) {
+        body.set('code_verifier', codeVerifier);
+    }
 
     const response = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({
-            client_id: clientId,
-            code: code,
-            grant_type: 'authorization_code',
-            redirect_uri: redirectUri,
-            scope: 'https://graph.microsoft.com/Calendars.Read',
-        }),
+        body,
     });
 
+    sessionStorage.removeItem(OUTLOOK_PKCE_VERIFIER_KEY);
+
     if (!response.ok) {
-        throw new Error('Failed to exchange Microsoft token');
+        const detail = await response.text().catch(() => '');
+        throw new Error(
+            detail
+                ? `Failed to exchange Microsoft token: ${detail}`
+                : 'Failed to exchange Microsoft token',
+        );
     }
 
     return await response.json();

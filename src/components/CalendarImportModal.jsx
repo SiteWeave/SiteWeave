@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from './LoadingSpinner';
-import { startGoogleCalendarOAuth, startOutlookCalendarOAuth, prepareCalendarEventsForInsert, filterNewCalendarImports } from '../utils/calendarIntegration';
+import { startGoogleCalendarOAuth, startOutlookCalendarOAuth, prepareCalendarEventsForInsert, filterNewCalendarImports, buildOutlookWebAuthUrl } from '../utils/calendarIntegration';
 import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 const CalendarImportModal = ({ onClose, importType = 'file' }) => {
@@ -213,18 +213,21 @@ const CalendarImportModal = ({ onClose, importType = 'file' }) => {
             return;
         }
 
-        // Browser fallback: redirect to web OAuth flow (Calendar route)
+        // Browser fallback: redirect to web OAuth flow (Calendar route) with PKCE
         const clientId = import.meta.env.VITE_MICROSOFT_CLIENT_ID;
         if (!clientId) {
             addToast(t('calendar.import_failed', { message: 'Outlook integration not configured. Missing VITE_MICROSOFT_CLIENT_ID.' }), 'error');
             return;
         }
 
-        localStorage.setItem('oauth_state', 'outlook');
-        const scope = 'https://graph.microsoft.com/Calendars.Read';
-        const redirectUri = window.location.origin + '/calendar';
-        const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&response_mode=query&prompt=consent`;
-        window.location.href = authUrl;
+        try {
+            localStorage.setItem('oauth_state', 'outlook');
+            const authUrl = await buildOutlookWebAuthUrl(clientId);
+            window.location.href = authUrl;
+        } catch (e) {
+            console.error('Outlook OAuth start failed:', e);
+            addToast(t('calendar.import_failed', { message: e.message }), 'error');
+        }
     };
 
     const handleImportEvents = async () => {
