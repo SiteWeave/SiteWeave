@@ -590,6 +590,7 @@ function ShareModal({ projectId, onClose, canManageCrew = true }) {
           )}
 
           {allowManage && (
+          <>
           <div className="mb-4">
             <label className="mb-1 block text-sm font-semibold text-slate-800">
               {t('share.invite_guest_section')}
@@ -709,6 +710,7 @@ function ShareModal({ projectId, onClose, canManageCrew = true }) {
               {submitting ? 'Adding…' : t('share.add_count_to_crew', { count: entries.length })}
             </button>
           </div>
+          </>
           )}
 
           {!allowManage && (
