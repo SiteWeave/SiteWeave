@@ -13,7 +13,7 @@ This error occurs when Azure AD detects a cross-origin token exchange request fr
 ### Step 1: Verify App Type
 1. Go to [Azure Portal](https://portal.azure.com/)
 2. Navigate to **Azure Active Directory** → **App registrations**
-3. Select your app (Client ID: `0a27b1b4-df05-40c1-860d-2ae87e696541`)
+3. Select your app (the one whose Client ID matches `VITE_MICROSOFT_CLIENT_ID`)
 4. Go to **Authentication**
 
 ### Step 2: Check Platform Configuration

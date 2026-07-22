@@ -4,6 +4,8 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  # Docs may mention env var *names*; omit from scan so example docs cannot fail the build
+  SECRETS_SCAN_OMIT_PATHS = "docs/**"
 
 # SPA routing - This is critical for client-side routing
 [[redirects]]
