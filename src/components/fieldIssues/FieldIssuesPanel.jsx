@@ -19,6 +19,10 @@ import UpgradeRequiredModal from '../UpgradeRequiredModal';
 import { logFieldIssueCreated } from '../../utils/activityLogger';
 import { markIssuesRead } from '../../utils/issuesReadState';
 import { savePunchListPdf } from '../../utils/savePunchListPdf';
+import {
+  buildIssueAssigneeOptionsFromContacts,
+  isUuid,
+} from '../../utils/projectMemberContacts';
 import FieldIssueCard from './FieldIssueCard';
 import IssueDetailDrawer from './IssueDetailDrawer';
 
@@ -59,6 +63,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
     location: '',
     description: '',
     photoFile: null,
+    assigned_to_user_id: '',
   });
 
   const hasLocations = useMemo(
@@ -73,65 +78,50 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
 
   const groupedIssues = useMemo(() => groupIssuesByLocation(issues), [issues]);
 
-  const projectTeamContacts = useMemo(
-    () => {
-      const onProject = state.contacts.filter((contact) => {
-        const hasProjectAccess = contact.project_contacts?.some(
-          (pc) =>
-            pc.project_id === projectId ||
-            pc.project_id === String(projectId) ||
-            String(pc.project_id) === String(projectId),
-        );
-        return hasProjectAccess;
-      });
-      if (onProject.length > 0) return onProject;
-
-      // Fallback: org team contacts (profiles) when project_contacts aren't hydrated
-      const orgId = project?.organization_id || state.currentOrganization?.id;
-      return state.contacts.filter((contact) => {
-        if (orgId && contact.organization_id && String(contact.organization_id) !== String(orgId)) {
-          return false;
-        }
-        const type = String(contact.type || '').toLowerCase();
-        return !type || type === 'team' || type === 'internal' || type === 'user';
-      });
-    },
-    [state.contacts, projectId, project?.organization_id, state.currentOrganization?.id],
-  );
+  const orgId = project?.organization_id || state.currentOrganization?.id;
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const orgId = project?.organization_id || state.currentOrganization?.id;
-      const contactIds = projectTeamContacts.map((c) => c.id).filter(Boolean);
+      const fromContacts = buildIssueAssigneeOptionsFromContacts(state.contacts, {
+        projectId,
+        organizationId: orgId,
+        fallbackLabel: t('fieldIssues.team_member'),
+      });
+      if (fromContacts.length > 0) {
+        if (!cancelled) setAssigneeOptions(fromContacts);
+        return;
+      }
 
-      let profileQuery = supabaseClient
-        .from('profiles')
-        .select('id, contact_id, contacts:contact_id(name)');
-
-      if (contactIds.length > 0) {
-        profileQuery = profileQuery.in('contact_id', contactIds);
-      } else if (orgId) {
-        profileQuery = profileQuery.eq('organization_id', orgId);
-      } else {
+      if (!orgId) {
         if (!cancelled) setAssigneeOptions([]);
         return;
       }
 
-      const { data: profiles } = await profileQuery;
+      const { data: profiles, error } = await supabaseClient
+        .from('profiles')
+        .select('id, contact_id, contacts:contact_id(name)')
+        .eq('organization_id', orgId);
+
       if (cancelled) return;
+      if (error) {
+        console.error('Failed to load issue assignees', error);
+        setAssigneeOptions([]);
+        return;
+      }
+
       const opts = (profiles || [])
         .map((p) => ({
           userId: p.id,
           label: p.contacts?.name || t('fieldIssues.team_member'),
         }))
-        .filter((o) => o.userId);
+        .filter((o) => isUuid(o.userId));
       setAssigneeOptions(opts);
     })();
     return () => {
       cancelled = true;
     };
-  }, [projectTeamContacts, project?.organization_id, state.currentOrganization?.id, t]);
+  }, [state.contacts, projectId, orgId, t]);
 
   const load = useCallback(async ({ append = false, beforeCreatedAt = null } = {}) => {
     if (!projectId) return;
@@ -293,6 +283,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
         location: walkthroughIssue.location.trim(),
         description: walkthroughIssue.description.trim() || null,
         created_by_user_id: state.user?.id,
+        assigned_to_user_id: walkthroughIssue.assigned_to_user_id || null,
       });
       if (created?.id && walkthroughIssue.photoFile) {
         const safeName = walkthroughIssue.photoFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -311,7 +302,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
           .eq('id', created.id);
         if (updatePhotoError) throw updatePhotoError;
       }
-      setWalkthroughIssue({ location: '', description: '', photoFile: null });
+      setWalkthroughIssue({ location: '', description: '', photoFile: null, assigned_to_user_id: '' });
       setShowWalkthrough(false);
       await load();
       addToast(t('punchList.item_saved_next'), 'success');
@@ -626,6 +617,20 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
                 onChange={(e) => setWalkthroughIssue({ ...walkthroughIssue, location: e.target.value })}
                 className="w-full text-base px-4 py-3 border border-slate-200 rounded-xl"
               />
+              <select
+                value={walkthroughIssue.assigned_to_user_id}
+                onChange={(e) =>
+                  setWalkthroughIssue({ ...walkthroughIssue, assigned_to_user_id: e.target.value })
+                }
+                className="w-full text-base px-4 py-3 border border-slate-200 rounded-xl"
+              >
+                <option value="">{t('fieldIssues.assign_to')}</option>
+                {assigneeOptions.map((opt) => (
+                  <option key={opt.userId} value={opt.userId}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
               <textarea
                 placeholder={t('punchList.note_placeholder')}
                 value={walkthroughIssue.description}

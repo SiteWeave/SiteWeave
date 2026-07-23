@@ -8,7 +8,7 @@ import { hasPermission } from '../utils/permissions';
 import useProjectPhases from '../hooks/useProjectPhases';
 import {
     buildPhasesWithDerivedProgress,
-    calculateOverallPhaseProgress,
+    computeProjectProgressPercent,
 } from '../utils/projectPhasesUtils';
 import { supabaseClient } from '../context/AppContext';
 
@@ -242,7 +242,15 @@ function BuildPath({
         resetDragState();
     };
 
-    const overallPct = calculateOverallPhaseProgress(displayPhases);
+    const overallPct = useMemo(
+        () =>
+            computeProjectProgressPercent({
+                tasks: Array.isArray(tasks) ? tasks : [],
+                phases: displayPhases,
+                projectDueDate: project?.due_date,
+            }),
+        [tasks, displayPhases, project?.due_date],
+    );
 
     return (
         <div className="h-full flex flex-col">

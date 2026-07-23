@@ -319,6 +319,12 @@ export default function FieldIssuesPanel({
             </Text>
           ) : null}
 
+          {item.assignee?.name || item.assignee?.email ? (
+            <Text variant="caption" style={styles.assigneeText}>
+              {t('fieldIssues.assignee_label')}: {item.assignee?.name || item.assignee?.email}
+            </Text>
+          ) : null}
+
           {item.description ? (
             <Text variant="caption" style={styles.cardDesc} numberOfLines={3}>
               {item.description}
@@ -688,6 +694,7 @@ const styles = StyleSheet.create({
   cardTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   cardTitle: { flex: 1, fontWeight: '700' },
   locationText: { color: colors.primary, fontWeight: '600' },
+  assigneeText: { color: colors.textMuted, marginTop: 2 },
   statusBadge: { borderRadius: 999, paddingHorizontal: spacing.sm, paddingVertical: 3 },
   statusBadgeOpen: { backgroundColor: '#DBEAFE' },
   statusBadgeClosed: { backgroundColor: colors.surfaceMuted },

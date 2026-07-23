@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, StyleSheet, Alert, Image } from 'react-native';
+import { View, StyleSheet, Alert, Image, ScrollView } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -33,6 +33,9 @@ const IMAGE_MEDIA_TYPES = ImagePicker.MediaType?.Images
   ? [ImagePicker.MediaType.Images]
   : (ImagePicker.MediaTypeOptions?.Images ?? ['images']);
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export default function FieldIssueSheet({
   visible,
   onClose,
@@ -49,6 +52,8 @@ export default function FieldIssueSheet({
   const [location, setLocation] = useState('');
   const [priority, setPriority] = useState('Medium');
   const [dueDate, setDueDate] = useState('');
+  const [assignedToUserId, setAssignedToUserId] = useState('');
+  const [assigneeOptions, setAssigneeOptions] = useState([]);
   const [photoUri, setPhotoUri] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -59,8 +64,40 @@ export default function FieldIssueSheet({
     setLocation(issueToEdit?.location || '');
     setPriority(issueToEdit?.priority || 'Medium');
     setDueDate(issueToEdit?.due_date || todayIso());
+    setAssignedToUserId(issueToEdit?.assigned_to_user_id || '');
     setPhotoUri(null);
   }, [visible, issueToEdit]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!visible || !supabase || !organizationId) {
+        setAssigneeOptions([]);
+        return;
+      }
+      try {
+        const { data: profiles, error } = await supabase
+          .from('profiles')
+          .select('id, contacts:contact_id(name, email)')
+          .eq('organization_id', organizationId);
+        if (error) throw error;
+        if (cancelled) return;
+        const opts = (profiles || [])
+          .map((p) => ({
+            userId: p.id,
+            label: p.contacts?.name || p.contacts?.email || t('fieldIssues.team_member'),
+          }))
+          .filter((o) => UUID_RE.test(o.userId));
+        setAssigneeOptions(opts);
+      } catch (e) {
+        console.warn('Failed to load issue assignees', e);
+        if (!cancelled) setAssigneeOptions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, supabase, organizationId, t]);
 
   const handleTakePhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -82,6 +119,7 @@ export default function FieldIssueSheet({
     if (!title.trim() || !supabase || !userId || !projectId || !organizationId) return;
 
     setSaving(true);
+    const assigneeId = assignedToUserId || null;
     const issuePayload = {
       project_id: projectId,
       organization_id: organizationId,
@@ -90,6 +128,7 @@ export default function FieldIssueSheet({
       location: location.trim() || null,
       priority,
       due_date: dueDate || null,
+      assigned_to_user_id: assigneeId,
       created_by_user_id: userId,
       bridgeToStream: true,
     };
@@ -105,6 +144,7 @@ export default function FieldIssueSheet({
               location: issuePayload.location,
               priority: issuePayload.priority,
               due_date: issuePayload.due_date,
+              assigned_to_user_id: assigneeId,
             },
             { previousStatus: issueToEdit.status, bridgeToStream: true },
           )
@@ -236,6 +276,57 @@ export default function FieldIssueSheet({
           })}
         </View>
 
+        <Text variant="caption" style={styles.label}>
+          {t('fieldIssues.assignee_label')}
+        </Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.assigneeRow}
+        >
+          <PressableWithFade
+            style={[
+              styles.assigneeChip,
+              !assignedToUserId ? styles.chipActiveNeutral : styles.chipInactive,
+            ]}
+            onPress={() => setAssignedToUserId('')}
+            disabled={saving}
+          >
+            <Text
+              style={[
+                styles.chipText,
+                !assignedToUserId ? styles.chipTextActiveNeutral : styles.chipTextInactive,
+              ]}
+            >
+              {t('fieldIssues.assign_to')}
+            </Text>
+          </PressableWithFade>
+          {assigneeOptions.map((opt) => {
+            const active = assignedToUserId === opt.userId;
+            return (
+              <PressableWithFade
+                key={opt.userId}
+                style={[
+                  styles.assigneeChip,
+                  active ? styles.chipActiveNeutral : styles.chipInactive,
+                ]}
+                onPress={() => setAssignedToUserId(opt.userId)}
+                disabled={saving}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    active ? styles.chipTextActiveNeutral : styles.chipTextInactive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {opt.label}
+                </Text>
+              </PressableWithFade>
+            );
+          })}
+        </ScrollView>
+
         <DateField
           label={t('mobile.event_date_label')}
           value={dueDate}
@@ -252,7 +343,11 @@ export default function FieldIssueSheet({
           </Text>
         </PressableWithFade>
         {photoUri ? (
-          <Image source={{ uri: photoUri }} style={styles.preview} accessibilityLabel={t('mobile.issue_photo_preview')} />
+          <Image
+            source={{ uri: photoUri }}
+            style={styles.preview}
+            accessibilityLabel={t('mobile.issue_photo_preview')}
+          />
         ) : null}
       </BottomSheet.Scroll>
     </BottomSheet>
@@ -285,6 +380,7 @@ const styles = StyleSheet.create({
   },
   textArea: { minHeight: 88, textAlignVertical: 'top', paddingVertical: spacing.lg },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  assigneeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingRight: spacing.md },
   chip: {
     flex: 1,
     minWidth: '22%',
@@ -296,12 +392,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  assigneeChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 20,
+    borderWidth: 1,
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    maxWidth: 160,
+  },
   chipInactive: {
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.border,
   },
+  chipActiveNeutral: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#1D4ED8',
+  },
   chipText: { fontSize: 13, fontWeight: '600' },
   chipTextInactive: { color: colors.textSecondary },
+  chipTextActiveNeutral: { color: '#1D4ED8', fontWeight: '700' },
   photoBtn: {
     flexDirection: 'row',
     alignItems: 'center',

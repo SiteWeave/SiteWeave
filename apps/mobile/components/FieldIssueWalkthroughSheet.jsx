@@ -4,7 +4,7 @@ import {
   StyleSheet,
   Alert,
   Image,
-  ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +22,9 @@ const IMAGE_MEDIA_TYPES = ImagePicker.MediaType?.Images
 
 const DEFAULT_LOCATIONS = ['Kitchen', 'Master Bath', 'Living Room', 'Exterior', 'Garage'];
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export default function FieldIssueWalkthroughSheet({
   visible,
   onClose,
@@ -36,6 +39,8 @@ export default function FieldIssueWalkthroughSheet({
   const [photoUri, setPhotoUri] = useState(null);
   const [location, setLocation] = useState('');
   const [note, setNote] = useState('');
+  const [assignedToUserId, setAssignedToUserId] = useState('');
+  const [assigneeOptions, setAssigneeOptions] = useState([]);
   const [saving, setSaving] = useState(false);
 
   const locationChips = useMemo(() => {
@@ -49,7 +54,40 @@ export default function FieldIssueWalkthroughSheet({
     setPhotoUri(null);
     setLocation('');
     setNote('');
+    setAssignedToUserId('');
   }, [visible]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!visible || !supabase || !organizationId) {
+        setAssigneeOptions([]);
+        return;
+      }
+      try {
+        const { data: profiles, error } = await supabase
+          .from('profiles')
+          .select('id, contacts:contact_id(name, email)')
+          .eq('organization_id', organizationId);
+        if (error) throw error;
+        if (cancelled) return;
+        setAssigneeOptions(
+          (profiles || [])
+            .map((p) => ({
+              userId: p.id,
+              label: p.contacts?.name || p.contacts?.email || t('fieldIssues.team_member'),
+            }))
+            .filter((o) => UUID_RE.test(o.userId)),
+        );
+      } catch (e) {
+        console.warn('Failed to load walkthrough assignees', e);
+        if (!cancelled) setAssigneeOptions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, supabase, organizationId, t]);
 
   const handleTakePhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -86,6 +124,7 @@ export default function FieldIssueWalkthroughSheet({
         location: location.trim(),
         description: note.trim() || null,
         created_by_user_id: userId,
+        assigned_to_user_id: assignedToUserId || null,
         priority: 'Medium',
       });
       if (issue?.id) {
@@ -172,6 +211,47 @@ export default function FieldIssueWalkthroughSheet({
         />
 
         <Text variant="caption" style={styles.fieldLabel}>
+          {t('fieldIssues.assignee_label')}
+        </Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.assigneeRow}
+        >
+          <PressableWithFade
+            style={[styles.assigneeChip, !assignedToUserId && styles.chipActive]}
+            onPress={() => setAssignedToUserId('')}
+            disabled={saving}
+          >
+            <Text
+              variant="caption"
+              style={[styles.chipText, !assignedToUserId && styles.chipTextActive]}
+            >
+              {t('fieldIssues.assign_to')}
+            </Text>
+          </PressableWithFade>
+          {assigneeOptions.map((opt) => {
+            const active = assignedToUserId === opt.userId;
+            return (
+              <PressableWithFade
+                key={opt.userId}
+                style={[styles.assigneeChip, active && styles.chipActive]}
+                onPress={() => setAssignedToUserId(opt.userId)}
+                disabled={saving}
+              >
+                <Text
+                  variant="caption"
+                  style={[styles.chipText, active && styles.chipTextActive]}
+                  numberOfLines={1}
+                >
+                  {opt.label}
+                </Text>
+              </PressableWithFade>
+            );
+          })}
+        </ScrollView>
+
+        <Text variant="caption" style={styles.fieldLabel}>
           {t('punchList.note_label')}
         </Text>
         <BottomSheet.Input
@@ -209,6 +289,18 @@ const styles = StyleSheet.create({
   photoLabel: { color: colors.textMuted },
   fieldLabel: { color: colors.textMuted, marginTop: spacing.sm, fontWeight: '600' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  assigneeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingRight: spacing.md },
+  assigneeChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+    minHeight: touch.minSize * 0.75,
+    justifyContent: 'center',
+    maxWidth: 160,
+  },
   chip: {
     borderRadius: 999,
     borderWidth: 1,
