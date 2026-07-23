@@ -123,3 +123,23 @@ export function resolveContactSmsConsent(contact, consentMap) {
   if (!normalized.isValid || !normalized.e164) return null;
   return consentMap.get(normalized.e164) || 'none';
 }
+
+/**
+ * Attach sms_phone_consent status onto task rows as `assignee_sms_consent`.
+ * Uses the nested `contacts.phone` from the task assignee join.
+ */
+export async function attachAssigneeSmsConsent(supabaseClient, tasks, organizationId = null) {
+  const list = Array.isArray(tasks) ? tasks : [];
+  if (list.length === 0) return list;
+
+  const phoneContacts = list
+    .map((task) => task?.contacts)
+    .filter((contact) => contact && contact.phone);
+  const map = await loadSmsConsentByPhones(supabaseClient, phoneContacts, organizationId);
+
+  return list.map((task) => ({
+    ...task,
+    assignee_sms_consent: resolveContactSmsConsent(task?.contacts, map),
+  }));
+}
+

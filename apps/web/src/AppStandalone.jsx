@@ -284,6 +284,7 @@ export default function AppStandalone() {
     <Routes>
       <Route path={ROUTE_PATHS.invite} element={<InviteAcceptPage />} />
       <Route path={ROUTE_PATHS.guestTaskShare} element={<GuestTaskShareView />} />
+      <Route path={ROUTE_PATHS.guestTaskShareShort} element={<GuestTaskShareView />} />
       <Route path={ROUTE_PATHS.guestPunchListReview} element={<GuestCloseoutReviewView />} />
       <Route path={ROUTE_PATHS.smsConsent} element={<SmsConsentView />} />
       <Route path={ROUTE_PATHS.smsOptIn} element={<SmsConsentView demo />} />

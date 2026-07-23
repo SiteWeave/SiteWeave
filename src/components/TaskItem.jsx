@@ -283,9 +283,20 @@ const TaskItem = memo(function TaskItem({
     };
 
     const selectedAssigneeContact = useMemo(() => {
-        if (task.contacts) return task.contacts;
-        if (!task.assignee_id) return null;
-        return assignableContacts.find((contact) => contact.id === task.assignee_id) || null;
+        const fromList = task.assignee_id
+            ? assignableContacts.find((contact) => contact.id === task.assignee_id) || null
+            : null;
+        if (task.contacts && fromList) {
+            return {
+                ...fromList,
+                ...task.contacts,
+                phone: task.contacts.phone || fromList.phone,
+                email: task.contacts.email || fromList.email,
+                name: task.contacts.name || fromList.name,
+                avatar_url: task.contacts.avatar_url || fromList.avatar_url,
+            };
+        }
+        return task.contacts || fromList;
     }, [task.contacts, task.assignee_id, assignableContacts]);
     const assigneeName = String(selectedAssigneeContact?.name || '').trim();
     const assigneeEmail = String(selectedAssigneeContact?.email || '').trim();

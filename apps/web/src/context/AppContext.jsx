@@ -6,10 +6,12 @@ import {
   clearStaleSupabaseSession,
   isStaleRefreshTokenError,
   sortProjectsByRecency,
+  normalizeAssigneePhone,
 } from '@siteweave/core-logic';
 import supabaseElectronAuth from '../utils/supabaseElectronAuth';
 import { resetInviteBootstrapState } from '../utils/workspaceClient';
 import { dedupeTasksById } from '../utils/taskDedupe';
+import { attachAssigneeSmsConsent } from '../utils/smsWebConsent';
 import {
   analyzeSemanticTaskDuplicates,
   analyzeTaskDuplicates,
@@ -27,6 +29,18 @@ supabaseElectronAuth.init(supabaseClient);
 export { supabaseClient };
 
 export const AppContext = createContext();
+
+function mergeTaskPreservingSmsConsent(previousTask, nextTask) {
+  if (!nextTask) return nextTask;
+  if (nextTask.assignee_sms_consent != null) return nextTask;
+  if (!previousTask || previousTask.assignee_sms_consent == null) return nextTask;
+  const prevPhone = normalizeAssigneePhone(previousTask.contacts?.phone, { defaultRegion: 'US' });
+  const nextPhone = normalizeAssigneePhone(nextTask.contacts?.phone, { defaultRegion: 'US' });
+  if (prevPhone.e164 && prevPhone.e164 === nextPhone.e164) {
+    return { ...nextTask, assignee_sms_consent: previousTask.assignee_sms_consent };
+  }
+  return nextTask;
+}
 
 /** Latest reducer state for lazy loaders (avoids stale closures across `await import()` / network). */
 const appStateRefForLazy = { current: null };
@@ -223,7 +237,15 @@ function appReducer(state, action) {
       }
       return { ...state, tasks: [...state.tasks, action.payload] };
     }
-    case 'UPDATE_TASK': return { ...state, tasks: state.tasks.map(task => task.id === action.payload.id ? action.payload : task) };
+    case 'UPDATE_TASK':
+      return {
+        ...state,
+        tasks: state.tasks.map((task) =>
+          task.id === action.payload.id
+            ? mergeTaskPreservingSmsConsent(task, action.payload)
+            : task,
+        ),
+      };
     case 'DELETE_TASK': return { ...state, tasks: state.tasks.filter(task => task.id !== action.payload) };
     case 'REORDER_TASKS': return { ...state, tasks: action.payload };
     case 'ADD_FILE': return { ...state, files: [...state.files, action.payload] };
@@ -1371,14 +1393,28 @@ export const AppProvider = ({ children }) => {
                 .select('*, contacts(name, avatar_url, email, phone)')
                 .eq('id', payload.new.id)
                 .single();
-              if (updatedTask) dispatch({ type: 'ADD_TASK', payload: updatedTask });
+              if (updatedTask) {
+                const [enriched] = await attachAssigneeSmsConsent(
+                  supabaseClient,
+                  [updatedTask],
+                  updatedTask.organization_id || currentOrganizationIdRef.current,
+                );
+                dispatch({ type: 'ADD_TASK', payload: enriched || updatedTask });
+              }
             } else if (payload.eventType === 'UPDATE') {
               const { data: updatedTask } = await supabaseClient
                 .from('tasks')
                 .select('*, contacts(name, avatar_url, email, phone)')
                 .eq('id', payload.new.id)
                 .single();
-              if (updatedTask) dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
+              if (updatedTask) {
+                const [enriched] = await attachAssigneeSmsConsent(
+                  supabaseClient,
+                  [updatedTask],
+                  updatedTask.organization_id || currentOrganizationIdRef.current,
+                );
+                dispatch({ type: 'UPDATE_TASK', payload: enriched || updatedTask });
+              }
             } else if (payload.eventType === 'DELETE') {
               dispatch({ type: 'DELETE_TASK', payload: payload.old.id });
             }

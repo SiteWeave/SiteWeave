@@ -22,6 +22,8 @@ export const ROUTE_PATHS = {
   projectInvite: '/project-invite/:token',
   invite: '/invite/:token',
   guestTaskShare: '/guest/tasks/:token',
+  /** Short SMS-friendly alias for guest task shares */
+  guestTaskShareShort: '/t/:token',
   guestPunchListReview: '/guest/punch-list/:token',
   smsConsent: '/sms-consent/:token',
   /** Public sample opt-in page for SMS program registration / review */

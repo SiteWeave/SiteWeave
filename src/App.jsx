@@ -218,7 +218,7 @@ function App() {
   if (location.pathname.startsWith('/guest/punch-list/')) {
     return <GuestCloseoutReviewView />
   }
-  if (location.pathname.startsWith('/guest/tasks/')) {
+  if (location.pathname.startsWith('/guest/tasks/') || /^\/t\/[^/]+/.test(location.pathname)) {
     return <GuestTaskShareView />
   }
   if (location.pathname === '/sms-opt-in') {
@@ -242,6 +242,7 @@ function App() {
         <Route path="/project-invite/:token" element={<ProjectInviteAcceptPage />} />
         <Route path="/guest/punch-list/:token" element={<GuestCloseoutReviewView />} />
         <Route path="/guest/tasks/:token" element={<GuestTaskShareView />} />
+        <Route path="/t/:token" element={<GuestTaskShareView />} />
         <Route path="/sms-consent/:token" element={<SmsConsentView />} />
         <Route path="/sms-opt-in" element={<SmsConsentView demo />} />
         <Route path="/signup" element={<SignUpView />} />

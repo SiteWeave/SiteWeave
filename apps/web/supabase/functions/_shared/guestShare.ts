@@ -11,11 +11,13 @@ export function getPublicAppBase(): string {
   return base.replace(/\/$/, '')
 }
 
-/** 32 bytes hex (64 chars) — unguessable opaque token */
+/** 16 bytes as base64url (~22 chars) — unguessable, SMS-friendly */
 export function generateGuestShareToken(): string {
-  const bytes = new Uint8Array(32)
+  const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)
-  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 export async function sha256Hex(input: string): Promise<string> {
@@ -24,6 +26,7 @@ export async function sha256Hex(input: string): Promise<string> {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+/** SMS-friendly: short token on the existing guest path (works before a web redeploy of `/t/`). */
 export function buildGuestTaskShareUrl(rawToken: string): string {
   const base = getPublicAppBase()
   return `${base}/guest/tasks/${encodeURIComponent(rawToken)}`

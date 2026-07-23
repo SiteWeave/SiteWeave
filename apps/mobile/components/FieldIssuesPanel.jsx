@@ -7,7 +7,6 @@ import {
   RefreshControl,
   Share,
   Image,
-  SectionList,
 } from 'react-native';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,7 +15,6 @@ import {
   fetchProjectIssues,
   updateProjectIssue,
   subscribeProjectIssues,
-  groupIssuesByLocation,
   isProjectCloseoutReady,
   createProjectCloseoutReviewLink,
 } from '@siteweave/core-logic';
@@ -33,7 +31,6 @@ import { colors, spacing, touch, radius } from '../theme';
 import { uploadIssueAfterPhotoFromUri } from '../utils/uploadIssuePhoto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const VIEW_MODES = ['list', 'location'];
 const PUNCH_LIST_COACH_KEY = 'siteweave_punch_list_coach_seen';
 const CLOSEOUT_BANNER_KEY_PREFIX = 'siteweave_closeout_banner_dismissed_';
 
@@ -81,30 +78,16 @@ export default function FieldIssuesPanel({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter] = useState('all');
-  const [viewMode, setViewMode] = useState('list');
   const [busyId, setBusyId] = useState(null);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showCoachMark, setShowCoachMark] = useState(false);
   const [closeoutBannerDismissed, setCloseoutBannerDismissed] = useState(false);
 
-  const hasLocations = useMemo(
-    () => issues.some((issue) => String(issue.location || '').trim()),
-    [issues],
-  );
-
   const existingLocations = useMemo(
     () => [...new Set(issues.map((i) => String(i.location || '').trim()).filter(Boolean))],
     [issues],
   );
-
-  const locationSections = useMemo(() => {
-    const groups = groupIssuesByLocation(issues);
-    return groups.map((group) => ({
-      title: group.location || t('punchList.unlocated_section'),
-      data: group.items,
-    }));
-  }, [issues, t]);
 
   const closeoutReady = useMemo(
     () => isProjectCloseoutReady(projectTasks),
@@ -468,36 +451,6 @@ export default function FieldIssuesPanel({
         </PressableWithFade>
       </View>
 
-      {hasLocations ? (
-        <View style={styles.utilityRow}>
-          {hasLocations ? (
-            <View style={styles.viewSegmented}>
-              {VIEW_MODES.map((mode) => (
-                <PressableWithFade
-                  key={mode}
-                  style={[
-                    styles.viewSegment,
-                    viewMode === mode && styles.viewSegmentActive,
-                  ]}
-                  onPress={() => setViewMode(mode)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: viewMode === mode }}
-                  accessibilityLabel={
-                    mode === 'list' ? t('punchList.view_list') : t('punchList.view_location')
-                  }
-                >
-                  <Text
-                    variant="caption"
-                    style={viewMode === mode ? styles.viewSegmentTextActive : styles.viewSegmentText}
-                  >
-                    {mode === 'list' ? t('punchList.view_list') : t('punchList.view_location')}
-                  </Text>
-                </PressableWithFade>
-              ))}
-            </View>
-          ) : null}
-        </View>
-      ) : null}
     </View>
   );
 
@@ -534,40 +487,19 @@ export default function FieldIssuesPanel({
 
   return (
     <>
-      {viewMode === 'location' && hasLocations ? (
-        <SectionList
-          style={styles.container}
-          sections={locationSections}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={({ item, index, section }) =>
-            renderIssueRow(item, index, section.data.length)
-          }
-          renderSectionHeader={({ section: { title } }) => (
-            <Text variant="bodyMedium" style={styles.sectionHeader}>{title}</Text>
-          )}
-          ListHeaderComponent={listHeader}
-          ListEmptyComponent={emptyComponent}
-          ListFooterComponent={issues.length > 0 ? listFooterComponent : null}
-          contentContainerStyle={[styles.listContent, { paddingBottom: contentPaddingBottom }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        />
-      ) : (
-        <FlatList
-          style={styles.container}
-          data={issues}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={({ item, index }) => renderIssueRow(item, index, issues.length)}
-          ListHeaderComponent={listHeader}
-          ListEmptyComponent={emptyComponent}
-          ListFooterComponent={issues.length > 0 ? listFooterComponent : null}
-          contentContainerStyle={[styles.listContent, { paddingBottom: contentPaddingBottom }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+      <FlatList
+        style={styles.container}
+        data={issues}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={({ item, index }) => renderIssueRow(item, index, issues.length)}
+        ListHeaderComponent={listHeader}
+        ListEmptyComponent={emptyComponent}
+        ListFooterComponent={issues.length > 0 ? listFooterComponent : null}
+        contentContainerStyle={[styles.listContent, { paddingBottom: contentPaddingBottom }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      />
 
       <FieldIssueWalkthroughSheet
         visible={showWalkthrough}
@@ -618,31 +550,6 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   secondaryCtaText: { fontWeight: '700', fontSize: 12, flexShrink: 1 },
-  utilityRow: {
-    alignItems: 'flex-start',
-  },
-  viewSegmented: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  viewSegment: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: 8,
-    minHeight: 32,
-    justifyContent: 'center',
-  },
-  viewSegmentActive: {
-    backgroundColor: colors.surfaceMuted,
-  },
-  viewSegmentText: {
-    color: colors.textMuted,
-    fontWeight: '600',
-  },
-  viewSegmentTextActive: {
-    color: colors.text,
-    fontWeight: '700',
-  },
   listFooter: {
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
@@ -682,7 +589,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
   },
   coachText: { flex: 1, color: colors.textMuted },
-  sectionHeader: { fontWeight: '700', marginTop: spacing.md, marginBottom: spacing.sm },
   row: {
     flexDirection: 'row',
     borderBottomWidth: 1,

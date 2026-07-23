@@ -5,7 +5,6 @@ import {
   createProjectIssue,
   createWalkthroughIssue,
   subscribeProjectIssues,
-  groupIssuesByLocation,
   isProjectCloseoutReady,
   createProjectCloseoutReviewLink,
   exportPunchListPdf,
@@ -43,7 +42,6 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
-  const [viewMode, setViewMode] = useState('list');
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
@@ -74,17 +72,10 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
   });
   const smsNotifyAvailable = isSmsNotificationsEnabled();
 
-  const hasLocations = useMemo(
-    () => issues.some((issue) => String(issue.location || '').trim()),
-    [issues],
-  );
-
   const closeoutReady = useMemo(
     () => isProjectCloseoutReady(projectTasks),
     [projectTasks],
   );
-
-  const groupedIssues = useMemo(() => groupIssuesByLocation(issues), [issues]);
 
   const orgId = project?.organization_id || state.currentOrganization?.id;
 
@@ -332,25 +323,8 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
     }
   };
 
-  const renderIssueList = () => {
-    if (viewMode === 'location' && hasLocations) {
-      return groupedIssues.map((group) => (
-        <div key={group.location || 'general'} className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 px-1">
-            {group.location || t('punchList.unlocated_section')}
-          </h3>
-          {group.items.map((issue) => (
-            <FieldIssueCard
-              key={issue.id}
-              issue={issue}
-              selected={selectedIssue?.id === issue.id}
-              onSelect={setSelectedIssue}
-            />
-          ))}
-        </div>
-      ));
-    }
-    return issues.map((issue) => (
+  const renderIssueList = () =>
+    issues.map((issue) => (
       <FieldIssueCard
         key={issue.id}
         issue={issue}
@@ -358,35 +332,14 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
         onSelect={setSelectedIssue}
       />
     ));
-  };
 
   return (
     <div className={`flex flex-col min-h-0 h-full ${embedded ? '' : 'p-6 app-card'}`}>
-      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 mb-3">
+      <div className="shrink-0 flex flex-col gap-3 mb-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <div>
-            <h2 className={embedded ? 'text-base font-semibold text-slate-900' : 'text-xl font-bold text-slate-900'}>
-              {t('collaboration.field_issues')}
-            </h2>
-          </div>
-          {hasLocations ? (
-            <div className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 p-1">
-              <button
-                type="button"
-                onClick={() => setViewMode('list')}
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${viewMode === 'list' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500'}`}
-              >
-                {t('punchList.view_list')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('location')}
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${viewMode === 'location' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500'}`}
-              >
-                {t('punchList.view_location')}
-              </button>
-            </div>
-          ) : null}
+          <h2 className={embedded ? 'text-base font-semibold text-slate-900' : 'text-xl font-bold text-slate-900'}>
+            {t('collaboration.field_issues')}
+          </h2>
           <div className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 p-1">
             {STATUS_FILTERS.map((option) => (
               <button
@@ -408,7 +361,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setShowWalkthrough(true)}
@@ -438,7 +391,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
           <button
             type="button"
             onClick={() => setShowCreate(true)}
-            className="app-action-primary px-3 py-1.5 text-xs font-semibold rounded-lg shrink-0"
+            className="app-action-primary px-3 py-1.5 text-xs font-semibold rounded-lg"
           >
             {t('fieldIssues.new_issue_button')}
           </button>

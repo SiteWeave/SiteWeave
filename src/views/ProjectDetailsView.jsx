@@ -93,6 +93,7 @@ import Icon from '../components/Icon';
 import { formatLocalDateOnly } from '../utils/dateHelpers';
 import { SkeletonList } from '../components/ui/Skeleton';
 import SmsConsentLinkPrompt from '../components/SmsConsentLinkPrompt';
+import { attachAssigneeSmsConsent } from '../utils/smsWebConsent';
 
 function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const { t, i18n } = useTranslation();
@@ -636,25 +637,11 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 (task.task_photos || []).map((photo) => photoById.get(photo.id) || photo),
             ),
         }));
-        const phones = new Set();
-        for (const t of base) {
-            const n = normalizeAssigneePhone(String(t.contacts?.phone || '').trim(), { defaultRegion: 'US' });
-            if (n.isValid && n.e164) phones.add(n.e164);
-        }
-        let cmap = new Map();
-        if (phones.size > 0) {
-            const { data: consentRows } = await supabaseClient
-                .from('sms_phone_consent')
-                .select('phone_e164,status')
-                .in('phone_e164', [...phones]);
-            cmap = new Map((consentRows || []).map((r) => [r.phone_e164, r.status]));
-        }
-        return base.map((t) => {
-            const n = normalizeAssigneePhone(String(t.contacts?.phone || '').trim(), { defaultRegion: 'US' });
-            const assignee_sms_consent =
-                n.isValid && n.e164 ? cmap.get(n.e164) || 'none' : null;
-            return { ...t, assignee_sms_consent };
-        });
+        return attachAssigneeSmsConsent(
+            supabaseClient,
+            base,
+            project?.organization_id || state.currentOrganization?.id || null,
+        );
     };
 
     const replaceTaskRow = (taskId, nextTask) => {
@@ -1609,6 +1596,13 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 revokeTaskPhotoDraftUrls(pendingPhotos);
             }
 
+            const [createdWithConsent] = await attachAssigneeSmsConsent(
+                supabaseClient,
+                [createdTask],
+                project?.organization_id || state.currentOrganization?.id || null,
+            );
+            createdTask = createdWithConsent || createdTask;
+
             dispatch({ type: 'ADD_TASK', payload: createdTask });
             setProjectTasksList(prev => [...prev, createdTask]);
             addToast(t('toast.task_added_successfully'), 'success');
@@ -1952,6 +1946,12 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                     updatedTask = { ...updatedTask, ...fresh };
                 }
             }
+            const [withConsent] = await attachAssigneeSmsConsent(
+                supabaseClient,
+                [updatedTask],
+                project?.organization_id || state.currentOrganization?.id || null,
+            );
+            updatedTask = withConsent || updatedTask;
             dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
             setProjectTasksList((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updatedTask } : t)));
 

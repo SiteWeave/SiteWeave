@@ -32,7 +32,7 @@ Optional:
 # supabase secrets set SIGNAL_HOUSE_WEBHOOK_SECRET=long_random_string
 ```
 
-`SIGNAL_HOUSE_FROM_NUMBER` format: E.164 like `+15129941576` (no spaces/parentheses). The client strips non-digits for the Signal House API.
+`SIGNAL_HOUSE_FROM_NUMBER` format: E.164 like `+15129941576` (preferred). The client strips non-digits and sends **US 11-digit** form (`15129941576`). Bare 10-digit values return Signal House **Number not found**. The number must be purchased/assigned and active on the same Signal House account as `SIGNAL_HOUSE_API_KEY`. Outbound SMS sends `recipientPhoneNumber` as a **one-element array** (API rejects a plain string).
 
 Also keep the kill switch secret when enabling product SMS:
 
