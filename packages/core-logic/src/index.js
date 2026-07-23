@@ -38,6 +38,12 @@ export {
 
 export { normalizeAssigneePhone } from './utils/assigneePhone.js';
 export { isTradePartnerContact } from './utils/contactType.js';
+export {
+  isUuid,
+  resolveContactAuthUserId,
+  buildIssueAssigneeOptionsFromContacts,
+  fetchIssueAssigneeOptions,
+} from './utils/issueAssigneeOptions.js';
 
 export {
   SITEWEAVE_PHYSICAL_ADDRESS,

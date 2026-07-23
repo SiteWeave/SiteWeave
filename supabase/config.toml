@@ -343,6 +343,10 @@ verify_jwt = false
 [functions.process-task-notifications]
 verify_jwt = false
 
+# Cron + service-role/sb_secret auth enforced in-handler via requireCronOrServiceRole.
+[functions.process-scheduled-pings]
+verify_jwt = false
+
 [functions.send-email-fixtures]
 verify_jwt = false
 

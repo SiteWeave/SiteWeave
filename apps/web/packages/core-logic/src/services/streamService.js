@@ -11,8 +11,6 @@ const REPLY_BODY_MAX = 4000;
 export const STREAM_POST_TYPES = [
   { value: 'general', label: 'Update' },
   { value: 'daily_log', label: 'Daily log' },
-  { value: 'announcement', label: 'Announcement' },
-  { value: 'milestone', label: 'Milestone' },
 ];
 
 /**

@@ -13,6 +13,8 @@ import Icon from '../Icon';
 import { getFieldIssueDisplayStatus } from '../../utils/fieldIssueStatus';
 import { logFieldIssueUpdated, logFieldIssueClosed } from '../../utils/activityLogger';
 import IssueCommentsPanel from './IssueCommentsPanel';
+import IssuePingPanel from './IssuePingPanel';
+import { useWorkspaceTier } from '../../hooks/useWorkspaceTier';
 
 const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
 
@@ -25,15 +27,19 @@ export default function IssueDetailDrawer({
   onClose,
   onUpdated,
   onDeleted,
+  onUpgradeRequired,
 }) {
   const { t } = useTranslation();
   const { addToast } = useToast();
+  const { canPing } = useWorkspaceTier();
   const [detail, setDetail] = React.useState(issue);
   const [saving, setSaving] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
+  const [pinging, setPinging] = React.useState(false);
   const [form, setForm] = React.useState({
     title: issue?.title || '',
     description: issue?.description || '',
+    location: issue?.location || '',
     priority: issue?.priority || 'Medium',
     dueDate: issue?.due_date || '',
     assigned_to_user_id: issue?.assigned_to_user_id || '',
@@ -45,6 +51,7 @@ export default function IssueDetailDrawer({
     setForm({
       title: issue?.title || '',
       description: issue?.description || '',
+      location: issue?.location || '',
       priority: issue?.priority || 'Medium',
       dueDate: issue?.due_date || '',
       assigned_to_user_id: issue?.assigned_to_user_id || '',
@@ -81,6 +88,7 @@ export default function IssueDetailDrawer({
         {
           title: form.title.trim(),
           description: form.description,
+          location: form.location.trim() || null,
           priority: form.priority,
           due_date: form.dueDate || null,
           assigned_to_user_id: form.assigned_to_user_id || null,
@@ -99,8 +107,8 @@ export default function IssueDetailDrawer({
     }
   };
 
-  const handleToggleStatus = async () => {
-    const next = displayStatus === 'open' ? 'closed' : 'open';
+  const handleSetStatus = async (next) => {
+    if (displayStatus === next) return;
     setSaving(true);
     try {
       const updated = await updateProjectIssue(
@@ -168,6 +176,58 @@ export default function IssueDetailDrawer({
     });
   };
 
+  const handleIssuePing = async ({ recipientUserIds, delayHours, deliveryChannels, message }) => {
+    if (!canPing) {
+      onUpgradeRequired?.('pings');
+      return;
+    }
+    if (!recipientUserIds?.length) {
+      addToast(t('fieldIssues.ping_select_recipients'), 'warning');
+      return;
+    }
+    if (!deliveryChannels?.length) {
+      addToast(t('fieldIssues.ping_select_channels'), 'warning');
+      return;
+    }
+    setPinging(true);
+    try {
+      const senderName =
+        currentUser?.user_metadata?.full_name || currentUser?.email || 'SiteWeave user';
+      const { data, error } = await supabaseClient.functions.invoke('dispatch-notification', {
+        body: {
+          action: 'manual_issue_reminder',
+          entityType: 'issue',
+          entityId: String(detail.id),
+          issueId: detail.id,
+          entityTitle: form.title || detail.title,
+          priority: form.priority || detail.priority,
+          recipientUserIds,
+          deliveryChannels,
+          delayHours,
+          message,
+          projectId: project.id,
+          projectName: project.name,
+          projectAddress: project.address || null,
+          organizationId: project.organization_id,
+          senderName,
+        },
+      });
+      if (error) throw error;
+      if (!data?.success) {
+        throw new Error(data?.error || t('fieldIssues.ping_failed'));
+      }
+      if (data.scheduled) {
+        addToast(t('fieldIssues.ping_scheduled', { hours: delayHours }), 'success');
+      } else {
+        addToast(t('fieldIssues.ping_sent'), 'success');
+      }
+    } catch (e) {
+      addToast(e.message || t('fieldIssues.ping_failed'), 'error');
+    } finally {
+      setPinging(false);
+    }
+  };
+
   if (!detail) return null;
 
   return (
@@ -193,20 +253,39 @@ export default function IssueDetailDrawer({
         </div>
 
         <div className="mt-2.5 space-y-2">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleToggleStatus}
-              disabled={saving}
-              className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors ${
-                displayStatus === 'open'
-                  ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                  : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-              }`}
-              title={displayStatus === 'open' ? t('fieldIssues.mark_closed') : t('fieldIssues.reopen')}
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              role="group"
+              aria-label={t('fieldIssues.status_label')}
+              className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5"
             >
-              {displayStatus === 'open' ? t('fieldIssues.status_open') : t('fieldIssues.status_closed')}
-            </button>
+              <button
+                type="button"
+                onClick={() => handleSetStatus('open')}
+                disabled={saving}
+                aria-pressed={displayStatus === 'open'}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                  displayStatus === 'open'
+                    ? 'bg-white text-emerald-800 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {t('fieldIssues.status_open')}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetStatus('closed')}
+                disabled={saving}
+                aria-pressed={displayStatus === 'closed'}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                  displayStatus === 'closed'
+                    ? 'bg-white text-slate-700 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {t('fieldIssues.status_closed')}
+              </button>
+            </div>
             <select
               value={form.priority}
               onChange={(e) => setForm({ ...form, priority: e.target.value })}
@@ -254,6 +333,19 @@ export default function IssueDetailDrawer({
 
         <div>
           <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
+            {t('punchList.location_label')}
+          </label>
+          <input
+            type="text"
+            value={form.location}
+            onChange={(e) => setForm({ ...form, location: e.target.value })}
+            placeholder={t('punchList.location_placeholder')}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
             {t('fieldIssues.assignee_label')}
           </label>
           <select
@@ -268,6 +360,19 @@ export default function IssueDetailDrawer({
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
+          <label className="mb-2 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
+            {t('fieldIssues.ping_section')}
+          </label>
+          <IssuePingPanel
+            assigneeOptions={assigneeOptions}
+            defaultAssigneeUserId={form.assigned_to_user_id || detail.assigned_to_user_id || ''}
+            onSend={handleIssuePing}
+            busy={pinging}
+            onUpgradeRequired={onUpgradeRequired}
+          />
         </div>
 
         {projectTasks?.length > 0 ? (

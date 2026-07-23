@@ -3,7 +3,13 @@ import { View, StyleSheet, Alert, Image, ScrollView } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { createProjectIssue, updateProjectIssue, todayIso } from '@siteweave/core-logic';
+import {
+  createProjectIssue,
+  updateProjectIssue,
+  todayIso,
+  fetchIssueAssigneeOptions,
+  isSmsNotificationsEnabled,
+} from '@siteweave/core-logic';
 import BottomSheet from './ui/BottomSheet';
 import DateField from './ui/DateField';
 import { Text } from './ui/Text';
@@ -33,9 +39,6 @@ const IMAGE_MEDIA_TYPES = ImagePicker.MediaType?.Images
   ? [ImagePicker.MediaType.Images]
   : (ImagePicker.MediaTypeOptions?.Images ?? ['images']);
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 export default function FieldIssueSheet({
   visible,
   onClose,
@@ -54,8 +57,15 @@ export default function FieldIssueSheet({
   const [dueDate, setDueDate] = useState('');
   const [assignedToUserId, setAssignedToUserId] = useState('');
   const [assigneeOptions, setAssigneeOptions] = useState([]);
+  const [assigneesLoading, setAssigneesLoading] = useState(false);
   const [photoUri, setPhotoUri] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [notifyChannels, setNotifyChannels] = useState({
+    email: true,
+    app: true,
+    sms: false,
+  });
+  const smsNotifyAvailable = isSmsNotificationsEnabled();
 
   useEffect(() => {
     if (!visible) return;
@@ -66,38 +76,35 @@ export default function FieldIssueSheet({
     setDueDate(issueToEdit?.due_date || todayIso());
     setAssignedToUserId(issueToEdit?.assigned_to_user_id || '');
     setPhotoUri(null);
+    setNotifyChannels({ email: true, app: true, sms: false });
   }, [visible, issueToEdit]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!visible || !supabase || !organizationId) {
+      if (!visible || !supabase || !projectId) {
         setAssigneeOptions([]);
         return;
       }
+      setAssigneesLoading(true);
       try {
-        const { data: profiles, error } = await supabase
-          .from('profiles')
-          .select('id, contacts:contact_id(name, email)')
-          .eq('organization_id', organizationId);
-        if (error) throw error;
-        if (cancelled) return;
-        const opts = (profiles || [])
-          .map((p) => ({
-            userId: p.id,
-            label: p.contacts?.name || p.contacts?.email || t('fieldIssues.team_member'),
-          }))
-          .filter((o) => UUID_RE.test(o.userId));
-        setAssigneeOptions(opts);
+        const opts = await fetchIssueAssigneeOptions(supabase, {
+          projectId,
+          organizationId,
+          fallbackLabel: t('fieldIssues.team_member'),
+        });
+        if (!cancelled) setAssigneeOptions(opts);
       } catch (e) {
         console.warn('Failed to load issue assignees', e);
         if (!cancelled) setAssigneeOptions([]);
+      } finally {
+        if (!cancelled) setAssigneesLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [visible, supabase, organizationId, t]);
+  }, [visible, supabase, projectId, organizationId, t]);
 
   const handleTakePhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -115,11 +122,15 @@ export default function FieldIssueSheet({
     }
   };
 
-  const handleSave = async () => {
-    if (!title.trim() || !supabase || !userId || !projectId || !organizationId) return;
-
-    setSaving(true);
+  const persistIssue = async () => {
     const assigneeId = assignedToUserId || null;
+    const channelPayload = assigneeId
+      ? {
+          email: notifyChannels.email,
+          app: notifyChannels.app,
+          sms: smsNotifyAvailable && notifyChannels.sms,
+        }
+      : undefined;
     const issuePayload = {
       project_id: projectId,
       organization_id: organizationId,
@@ -131,8 +142,10 @@ export default function FieldIssueSheet({
       assigned_to_user_id: assigneeId,
       created_by_user_id: userId,
       bridgeToStream: true,
+      notifyChannels: channelPayload,
     };
 
+    setSaving(true);
     try {
       const issue = issueToEdit?.id
         ? await updateProjectIssue(
@@ -146,7 +159,11 @@ export default function FieldIssueSheet({
               due_date: issuePayload.due_date,
               assigned_to_user_id: assigneeId,
             },
-            { previousStatus: issueToEdit.status, bridgeToStream: true },
+            {
+              previousStatus: issueToEdit.status,
+              bridgeToStream: true,
+              notifyChannels: channelPayload,
+            },
           )
         : await createProjectIssue(supabase, issuePayload);
       if (photoUri && issue?.id) {
@@ -188,6 +205,26 @@ export default function FieldIssueSheet({
     }
   };
 
+  const handleSave = async () => {
+    if (!title.trim() || !supabase || !userId || !projectId || !organizationId) return;
+
+    if (!assignedToUserId) {
+      Alert.alert(
+        t('fieldIssues.assignee_label'),
+        t('fieldIssues.assign_later_confirm', {
+          defaultValue: 'No assignee selected. Create this issue unassigned?',
+        }),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          { text: t('common.continue', { defaultValue: 'Continue' }), onPress: () => persistIssue() },
+        ],
+      );
+      return;
+    }
+
+    await persistIssue();
+  };
+
   return (
     <BottomSheet
       visible={visible}
@@ -218,6 +255,103 @@ export default function FieldIssueSheet({
           placeholderTextColor={colors.textSubtle}
           editable={!saving}
         />
+
+        <Text variant="caption" style={styles.label}>
+          {t('fieldIssues.assignee_label')}
+        </Text>
+        {assigneesLoading ? (
+          <Text variant="caption" style={styles.hint}>
+            {t('common.loading')}
+          </Text>
+        ) : null}
+        {!assigneesLoading && assigneeOptions.length === 0 ? (
+          <Text variant="caption" style={styles.hint}>
+            {t('fieldIssues.no_project_assignees', {
+              defaultValue: 'No project members with accounts yet. Add crew to the project to assign.',
+            })}
+          </Text>
+        ) : null}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.assigneeRow}
+        >
+          <PressableWithFade
+            style={[
+              styles.assigneeChip,
+              !assignedToUserId ? styles.chipActiveNeutral : styles.chipInactive,
+            ]}
+            onPress={() => setAssignedToUserId('')}
+            disabled={saving}
+          >
+            <Text
+              style={[
+                styles.chipText,
+                !assignedToUserId ? styles.chipTextActiveNeutral : styles.chipTextInactive,
+              ]}
+            >
+              {t('mobile.task_assignee_none')}
+            </Text>
+          </PressableWithFade>
+          {assigneeOptions.map((opt) => {
+            const active = assignedToUserId === opt.userId;
+            return (
+              <PressableWithFade
+                key={opt.userId}
+                style={[
+                  styles.assigneeChip,
+                  active ? styles.chipActiveNeutral : styles.chipInactive,
+                ]}
+                onPress={() => setAssignedToUserId(opt.userId)}
+                disabled={saving}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    active ? styles.chipTextActiveNeutral : styles.chipTextInactive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {opt.label}
+                </Text>
+              </PressableWithFade>
+            );
+          })}
+        </ScrollView>
+
+        {assignedToUserId ? (
+          <View style={styles.notifyBlock}>
+            <Text variant="caption" style={styles.label}>
+              {t('fieldIssues.notify_channels')}
+            </Text>
+            {[
+              { key: 'email', label: t('fieldIssues.notify_email') },
+              { key: 'app', label: t('fieldIssues.notify_app') },
+              ...(smsNotifyAvailable
+                ? [{ key: 'sms', label: t('fieldIssues.notify_sms') }]
+                : []),
+            ].map((ch) => {
+              const active = Boolean(notifyChannels[ch.key]);
+              return (
+                <PressableWithFade
+                  key={ch.key}
+                  style={styles.notifyRow}
+                  onPress={() =>
+                    setNotifyChannels((prev) => ({ ...prev, [ch.key]: !prev[ch.key] }))
+                  }
+                  disabled={saving}
+                >
+                  <Ionicons
+                    name={active ? 'checkbox' : 'square-outline'}
+                    size={22}
+                    color={active ? colors.primary : colors.textSubtle}
+                  />
+                  <Text style={styles.notifyLabel}>{ch.label}</Text>
+                </PressableWithFade>
+              );
+            })}
+          </View>
+        ) : null}
 
         <Text variant="caption" style={styles.label}>
           {t('mobile.issue_description_label')}
@@ -276,57 +410,6 @@ export default function FieldIssueSheet({
           })}
         </View>
 
-        <Text variant="caption" style={styles.label}>
-          {t('fieldIssues.assignee_label')}
-        </Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.assigneeRow}
-        >
-          <PressableWithFade
-            style={[
-              styles.assigneeChip,
-              !assignedToUserId ? styles.chipActiveNeutral : styles.chipInactive,
-            ]}
-            onPress={() => setAssignedToUserId('')}
-            disabled={saving}
-          >
-            <Text
-              style={[
-                styles.chipText,
-                !assignedToUserId ? styles.chipTextActiveNeutral : styles.chipTextInactive,
-              ]}
-            >
-              {t('fieldIssues.assign_to')}
-            </Text>
-          </PressableWithFade>
-          {assigneeOptions.map((opt) => {
-            const active = assignedToUserId === opt.userId;
-            return (
-              <PressableWithFade
-                key={opt.userId}
-                style={[
-                  styles.assigneeChip,
-                  active ? styles.chipActiveNeutral : styles.chipInactive,
-                ]}
-                onPress={() => setAssignedToUserId(opt.userId)}
-                disabled={saving}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    active ? styles.chipTextActiveNeutral : styles.chipTextInactive,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {opt.label}
-                </Text>
-              </PressableWithFade>
-            );
-          })}
-        </ScrollView>
-
         <DateField
           label={t('mobile.event_date_label')}
           value={dueDate}
@@ -365,6 +448,10 @@ const styles = StyleSheet.create({
   labelFirst: {
     marginTop: 0,
   },
+  hint: {
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+  },
   input: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -381,6 +468,21 @@ const styles = StyleSheet.create({
   textArea: { minHeight: 88, textAlignVertical: 'top', paddingVertical: spacing.lg },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   assigneeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingRight: spacing.md },
+  notifyBlock: {
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  notifyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: touch.minSize,
+  },
+  notifyLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: colors.text,
+  },
   chip: {
     flex: 1,
     minWidth: '22%',
@@ -397,10 +499,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: 20,
     borderWidth: 1,
-    minHeight: 36,
+    minHeight: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    maxWidth: 160,
+    maxWidth: 180,
   },
   chipInactive: {
     backgroundColor: colors.surfaceMuted,

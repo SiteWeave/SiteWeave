@@ -1,12 +1,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildMinimalDigestEmail } from '../_shared/notificationEmailTemplates.ts'
 import { sendTransactionalEmail } from '../_shared/transactionalEmailLayout.ts'
-import { sendSms } from '../_shared/signalHouseSms.ts'
 import { normalizeAssigneePhone } from '../_shared/phone.ts'
 import { createGuestShare } from '../_shared/guestShare.ts'
-import { gateOrSendOptInForSubstantiveSms, sendOptInIfEligible } from '../_shared/smsConsent.ts'
-import { withTransactionalSmsFooter } from '../_shared/smsCompliance.ts'
+import { sendOptInIfEligible } from '../_shared/smsConsent.ts'
 import { isSmsNotificationsEnabled } from '../_shared/smsNotifications.ts'
 import { corsHeadersFor, corsPreflightResponse } from '../_shared/cors.ts'
 import { assertHasFullTierAccess } from '../_shared/workspaceTier.ts'
@@ -14,9 +11,16 @@ import {
   assertCanManageProject,
   assertOrgMember,
   createServiceClient,
-  jsonResponse,
   requireUser,
 } from '../_shared/auth.ts'
+import {
+  channelsToJson,
+  mergeRecipientInputs,
+  normalizePingChannels,
+  resolveRecipientsByUserIds,
+  sendProjectPings,
+  type PingRecipientInput,
+} from '../_shared/projectPing.ts'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 
@@ -24,6 +28,8 @@ function buildAppUrl(projectId?: string | null): string {
   const base = Deno.env.get('DESKTOP_APP_URL') || Deno.env.get('PUBLIC_APP_URL') || 'https://app.siteweave.org'
   return projectId ? `${base}/?project=${projectId}` : base
 }
+
+const DELAY_HOURS = new Set([0, 12, 24, 36, 48])
 
 serve(async (req) => {
   const corsHeaders = corsHeadersFor(req)
@@ -272,6 +278,8 @@ serve(async (req) => {
         recipientEmail,
         recipientPhone,
         recipientName,
+        recipients: recipientsRaw,
+        recipientUserIds: recipientUserIdsRaw,
         projectId,
         projectName,
         organizationId,
@@ -281,6 +289,7 @@ serve(async (req) => {
         taskDueDateLabel,
         projectAddress,
         organizationName: organizationNameRaw,
+        message,
       } = body
       if (!taskId || !projectId || !organizationId) {
         return new Response(JSON.stringify({ error: 'Missing task/project/organization identifiers' }), {
@@ -300,78 +309,56 @@ serve(async (req) => {
         })
       }
 
-      const normalizedEmail = recipientEmail ? String(recipientEmail).trim().toLowerCase() : null
-      const normalizedPhone = normalizeAssigneePhone(recipientPhone || '')
-      const smsPhone = normalizedPhone.isValid ? normalizedPhone.e164 : null
-      const hasEmail = Boolean(normalizedEmail && normalizedEmail.includes('@'))
-      const hasSms = Boolean(smsPhone)
-
-      let channels: ('email' | 'sms')[]
-      if (Array.isArray(deliveryChannelsRaw) && deliveryChannelsRaw.length > 0) {
-        channels = [...new Set(
-          deliveryChannelsRaw
-            .map((c: unknown) => String(c || '').toLowerCase())
-            .filter((c: string) => c === 'email' || c === 'sms'),
-        )] as ('email' | 'sms')[]
-        if (channels.length === 0) {
-          return new Response(JSON.stringify({ error: 'deliveryChannels must include email and/or sms' }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      const recipientInputs: PingRecipientInput[] = []
+      if (Array.isArray(recipientsRaw) && recipientsRaw.length > 0) {
+        for (const r of recipientsRaw) {
+          recipientInputs.push({
+            userId: r?.userId || r?.user_id || null,
+            email: r?.email || null,
+            phone: r?.phone || null,
+            name: r?.name || null,
           })
         }
-        if (channels.includes('email') && !hasEmail) {
-          return new Response(JSON.stringify({ error: 'Email ping requested but no valid recipient email' }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders },
-          })
+      } else if (Array.isArray(recipientUserIdsRaw) && recipientUserIdsRaw.length > 0) {
+        for (const id of recipientUserIdsRaw) {
+          if (id) recipientInputs.push({ userId: String(id) })
         }
-        if (channels.includes('sms') && !hasSms) {
-          return new Response(JSON.stringify({ error: 'SMS ping requested but no valid recipient phone' }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders },
-          })
-        }
-      } else if (hasEmail && hasSms) {
-        channels = ['email']
-      } else if (hasEmail) {
-        channels = ['email']
-      } else if (hasSms) {
-        channels = ['sms']
       } else {
-        channels = []
+        recipientInputs.push({
+          email: recipientEmail || null,
+          phone: recipientPhone || null,
+          name: recipientName || null,
+        })
       }
 
-      if (!isSmsNotificationsEnabled()) {
-        channels = channels.filter((c) => c !== 'sms')
-      }
-
-      const recipientAddress = normalizedEmail || (smsPhone ? `sms:${smsPhone}` : null)
-      const organizationName = String(organizationNameRaw || projectName || 'Your team').trim() || 'Your team'
-      if (!recipientAddress || channels.length === 0) {
-        return new Response(JSON.stringify({ error: 'No valid recipient email or phone for reminder' }), {
+      if (!recipientInputs.length) {
+        return new Response(JSON.stringify({ error: 'No recipients provided' }), {
           status: 400,
           headers: { 'Content-Type': 'application/json', ...corsHeaders },
         })
       }
 
-      let emailDelivered = false
-      let smsDelivered = false
-      let smsSid: string | null = null
-      let smsStatus: string | null = null
-      let errorMessage: string | null = null
+      const userIds = recipientInputs.map((r) => r.userId).filter(Boolean) as string[]
+      const resolved = await resolveRecipientsByUserIds(supabase, userIds)
+      const byUserId = new Map(resolved.map((r) => [r.userId!, r]))
+      const recipients = mergeRecipientInputs(recipientInputs, byUserId)
 
-      let guestUrl = buildAppUrl(projectId)
-      const shareManual = await createGuestShare(supabase, {
-        projectId,
-        organizationId,
-        taskIds: [taskId],
-        source: 'manual_reminder',
-      })
-      if ('url' in shareManual) {
-        guestUrl = shareManual.url
-      } else {
-        console.error('createGuestShare (manual_reminder):', shareManual.error)
+      let channels = normalizePingChannels(deliveryChannelsRaw)
+      if (channels.length === 0) {
+        const first = recipients[0]
+        if (first?.email) channels = ['email']
+        else if (first?.phone && isSmsNotificationsEnabled()) channels = ['sms']
       }
+      channels = channels.filter((c) => c === 'email' || c === 'sms' || c === 'app')
+
+      if (channels.length === 0) {
+        return new Response(JSON.stringify({ error: 'No valid delivery channels' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+
+      const organizationName = String(organizationNameRaw || projectName || 'Your team').trim() || 'Your team'
 
       const { data: taskDatesRow } = await supabase
         .from('tasks')
@@ -395,138 +382,256 @@ serve(async (req) => {
         .eq('id', organizationId)
         .maybeSingle()
 
-      const template = buildMinimalDigestEmail({
-        heading: `${projectName || 'Project'}: Task reminder`,
-        subheading: taskText || 'Task',
-        ctaUrl: guestUrl,
-        reviewLinkText: 'Review this task in SiteWeave',
-        summaryLabel: 'Reminder',
-        summaryValue: 1,
-        recipientName: recipientName || 'there',
-        tasks: [
-          {
-            title: taskText || 'Task',
-            priority: taskPriority ? String(taskPriority) : null,
-            dueDateLabel: taskDueDateLabel ? String(taskDueDateLabel) : null,
-            dueDateIso,
-            startDateIso,
-          },
-        ],
-        footerText: `${senderName || 'A teammate'} sent this reminder.`,
-        projectName: projectName || null,
-        projectAddress: projectAddress ? String(projectAddress).trim() : null,
-        tasksSectionTitle: 'Task reminder',
-        omitLeadBlock: true,
+      const result = await sendProjectPings({
+        supabase,
+        recipients,
+        channels,
+        organizationId,
+        organizationName,
+        projectId,
+        projectName: projectName || 'Project',
+        projectAddress: projectAddress || null,
+        senderName: senderName || null,
+        entityType: 'task',
+        entityId: String(taskId),
+        entityTitle: taskText || 'Task',
+        priority: taskPriority || null,
+        dueDateLabel: taskDueDateLabel || null,
+        dueDateIso,
+        startDateIso,
         calendarTimeZone: orgTzManual?.progress_report_timezone ?? null,
+        message: message || null,
+        sourceType: 'task_manual_reminder',
       })
 
-      const sendEmail = channels.includes('email')
-      const sendSms = channels.includes('sms')
+      return new Response(
+        JSON.stringify({
+          success: result.success,
+          status: result.success ? 'sent' : 'failed',
+          sent: result.sent,
+          failed: result.failed,
+          channels: result.channels,
+          sms: result.sms || null,
+          error: result.error,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+      )
+    }
 
-      if (RESEND_API_KEY && normalizedEmail && sendEmail) {
-        const sendResult = await sendTransactionalEmail({
-          to: normalizedEmail,
-          subject: `Reminder: ${taskText || 'Task'}`,
-          html: template.html,
-          text: template.text,
-          replyTo: null,
-        })
-        if (!sendResult.success) {
-          errorMessage = sendResult.error || `Resend error`
-        } else {
-          emailDelivered = true
-        }
-      }
+    // Immediate or scheduled issue/task ping (multi-recipient, channels, delay).
+    if (action === 'manual_issue_reminder' || action === 'project_ping') {
+      const authResult = await requireUser(req, corsHeaders)
+      if (authResult instanceof Response) return authResult
+      const { user } = authResult
 
-      if (smsPhone && sendSms) {
-        const gate = await gateOrSendOptInForSubstantiveSms(supabase, {
-          phoneE164: smsPhone,
-          organizationId,
-          organizationName,
-        })
-        if (!gate.allowed) {
-          if (gate.optInSent) {
-            errorMessage = errorMessage
-              ? `${errorMessage}; SMS: consent message sent (reply YES)`
-              : 'SMS: consent message sent — assignee must reply YES before reminders go out.'
-          } else {
-            errorMessage = errorMessage
-              ? `${errorMessage}; SMS: blocked (${gate.reason || 'consent'})`
-              : `SMS: blocked (${gate.reason || 'consent'})`
-          }
-        } else {
-          const smsBody = withTransactionalSmsFooter(
-            `${senderName || 'A teammate'} sent a reminder: ${taskText || 'Task'} in ${projectName || 'your project'}. Open: ${guestUrl}`,
-          )
-          const smsResult = await sendSms({ to: smsPhone, body: smsBody })
-          if (!smsResult.success) {
-            errorMessage = errorMessage
-              ? `${errorMessage}; SMS: ${smsResult.error || 'twilio_failed'}`
-              : `SMS: ${smsResult.error || 'twilio_failed'}`
-          } else {
-            smsDelivered = true
-            smsSid = smsResult.sid || null
-            smsStatus = smsResult.status || null
-          }
-        }
-      }
+      const entityTypeRaw = String(body.entityType || (action === 'manual_issue_reminder' ? 'issue' : body.entityType || 'issue'))
+      const entityType = entityTypeRaw === 'task' ? 'task' : 'issue'
+      const entityId = String(body.entityId || body.issueId || body.taskId || '')
+      const {
+        projectId,
+        projectName,
+        organizationId,
+        senderName,
+        deliveryChannels: deliveryChannelsRaw,
+        channels: channelsObj,
+        recipientUserIds: recipientUserIdsRaw,
+        recipients: recipientsRaw,
+        projectAddress,
+        organizationName: organizationNameRaw,
+        message,
+        delayHours: delayHoursRaw,
+        entityTitle,
+        priority,
+        dueDateLabel,
+      } = body
 
-      const status: 'sent' | 'failed' = emailDelivered || smsDelivered ? 'sent' : 'failed'
-      if (status === 'failed' && !errorMessage) {
-        errorMessage = 'No notification channel succeeded'
-      }
-
-      const { data: insertedNotification, error: notificationError } = await supabase
-        .from('user_notifications')
-        .insert({
-          organization_id: organizationId,
-          project_id: projectId,
-          recipient_email: recipientAddress,
-          source_type: 'task_manual_reminder',
-          source_id: crypto.randomUUID(),
-          title: 'Manual reminder',
-          body: `${taskText || 'Task'} in ${projectName || 'your project'}.`,
-          metadata: {
-            action_url: guestUrl,
-            channels: { email: emailDelivered, sms: smsDelivered },
-            task_id: taskId,
-            sent_by: senderName || null,
-          },
-        })
-        .select('id')
-        .single()
-
-      if (notificationError) {
-        return new Response(JSON.stringify({ error: notificationError.message }), {
-          status: 500,
+      if (!entityId || !projectId || !organizationId) {
+        return new Response(JSON.stringify({ error: 'Missing entity/project/organization identifiers' }), {
+          status: 400,
           headers: { 'Content-Type': 'application/json', ...corsHeaders },
         })
       }
 
-      if (insertedNotification?.id) {
-        await supabase.from('notification_action_history').insert({
-          notification_id: insertedNotification.id,
-          action_type: status === 'sent' ? 'manual_send' : 'manual_send_failed',
-          payload: {
-            task_id: taskId,
-            channels: { email: emailDelivered, sms: smsDelivered },
-            error: errorMessage,
-          },
+      const pingAuthz = await assertCanManageProject(supabase, user.id, projectId, corsHeaders)
+      if (pingAuthz instanceof Response) return pingAuthz
+
+      const tierCheck = await assertHasFullTierAccess(supabase, organizationId)
+      if (!tierCheck.ok) {
+        return new Response(JSON.stringify({ error: tierCheck.error }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
         })
       }
 
+      const delayHours = Number(delayHoursRaw ?? 0)
+      if (!DELAY_HOURS.has(delayHours)) {
+        return new Response(JSON.stringify({ error: 'delayHours must be 0, 12, 24, 36, or 48' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+
+      const recipientInputs: PingRecipientInput[] = []
+      if (Array.isArray(recipientsRaw) && recipientsRaw.length > 0) {
+        for (const r of recipientsRaw) {
+          recipientInputs.push({
+            userId: r?.userId || r?.user_id || null,
+            email: r?.email || null,
+            phone: r?.phone || null,
+            name: r?.name || null,
+          })
+        }
+      }
+      if (Array.isArray(recipientUserIdsRaw)) {
+        for (const id of recipientUserIdsRaw) {
+          if (id && !recipientInputs.some((r) => String(r.userId) === String(id))) {
+            recipientInputs.push({ userId: String(id) })
+          }
+        }
+      }
+
+      if (!recipientInputs.length) {
+        return new Response(JSON.stringify({ error: 'Select at least one recipient' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+
+      let channels = normalizePingChannels(deliveryChannelsRaw ?? channelsObj)
+      if (channels.length === 0) channels = ['email', 'app']
+
+      const recipientUserIds = [
+        ...new Set(recipientInputs.map((r) => r.userId).filter(Boolean).map(String)),
+      ]
+      const organizationName = String(organizationNameRaw || projectName || 'Your team').trim() || 'Your team'
+
+      if (delayHours > 0) {
+        const sendAt = new Date(Date.now() + delayHours * 60 * 60 * 1000).toISOString()
+        const { data: row, error: insertError } = await supabase
+          .from('scheduled_project_pings')
+          .insert({
+            organization_id: organizationId,
+            project_id: projectId,
+            entity_type: entityType,
+            entity_id: entityId,
+            recipient_user_ids: recipientUserIds,
+            recipients: recipientInputs,
+            channels: channelsToJson(channels),
+            send_at: sendAt,
+            status: 'pending',
+            created_by: user.id,
+            message: message ? String(message).slice(0, 500) : null,
+          })
+          .select('id, send_at')
+          .single()
+
+        if (insertError) {
+          return new Response(JSON.stringify({ error: insertError.message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          })
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            scheduled: true,
+            id: row.id,
+            send_at: row.send_at,
+            delayHours,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
+        )
+      }
+
+      // Immediate send
+      let title = entityTitle ? String(entityTitle) : ''
+      let entityPriority = priority ? String(priority) : null
+      let entityDueLabel = dueDateLabel ? String(dueDateLabel) : null
+      let dueDateIso: string | null = null
+      let startDateIso: string | null = null
+
+      if (entityType === 'issue') {
+        const { data: issue } = await supabase
+          .from('project_issues')
+          .select('id, title, priority, due_date')
+          .eq('id', entityId)
+          .maybeSingle()
+        if (!issue) {
+          return new Response(JSON.stringify({ error: 'Issue not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          })
+        }
+        title = title || issue.title || 'Issue'
+        entityPriority = entityPriority || issue.priority || null
+        if (issue.due_date) {
+          dueDateIso = String(issue.due_date).slice(0, 10)
+          entityDueLabel = entityDueLabel || dueDateIso
+        }
+      } else {
+        const { data: task } = await supabase
+          .from('tasks')
+          .select('id, text, priority, due_date, start_date')
+          .eq('id', entityId)
+          .maybeSingle()
+        if (!task) {
+          return new Response(JSON.stringify({ error: 'Task not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders },
+          })
+        }
+        title = title || task.text || 'Task'
+        entityPriority = entityPriority || task.priority || null
+        if (task.due_date) {
+          dueDateIso = String(task.due_date).slice(0, 10)
+          entityDueLabel = entityDueLabel || dueDateIso
+        }
+        if (task.start_date) startDateIso = String(task.start_date).slice(0, 10)
+      }
+
+      const resolved = await resolveRecipientsByUserIds(supabase, recipientUserIds)
+      const byUserId = new Map(resolved.map((r) => [r.userId!, r]))
+      const recipients = mergeRecipientInputs(recipientInputs, byUserId)
+
+      const { data: orgTz } = await supabase
+        .from('organizations')
+        .select('progress_report_timezone')
+        .eq('id', organizationId)
+        .maybeSingle()
+
+      const result = await sendProjectPings({
+        supabase,
+        recipients,
+        channels,
+        organizationId,
+        organizationName,
+        projectId,
+        projectName: projectName || 'Project',
+        projectAddress: projectAddress || null,
+        senderName: senderName || null,
+        entityType,
+        entityId,
+        entityTitle: title,
+        priority: entityPriority,
+        dueDateLabel: entityDueLabel,
+        dueDateIso,
+        startDateIso,
+        calendarTimeZone: orgTz?.progress_report_timezone ?? null,
+        message: message || null,
+        sourceType: entityType === 'issue' ? 'issue_manual_reminder' : 'task_manual_reminder',
+      })
+
       return new Response(
         JSON.stringify({
-          success: status === 'sent',
-          status,
-          channels: { email: emailDelivered, sms: smsDelivered },
-          sms: {
-            attempted: sendSms && Boolean(smsPhone),
-            to: smsPhone,
-            sid: smsSid,
-            status: smsStatus,
-          },
-          error: errorMessage,
+          success: result.success,
+          scheduled: false,
+          status: result.success ? 'sent' : 'failed',
+          sent: result.sent,
+          failed: result.failed,
+          channels: result.channels,
+          sms: result.sms || null,
+          error: result.error,
         }),
         { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
       )

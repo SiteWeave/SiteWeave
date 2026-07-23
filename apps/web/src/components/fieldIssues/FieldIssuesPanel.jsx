@@ -9,6 +9,7 @@ import {
   isProjectCloseoutReady,
   createProjectCloseoutReviewLink,
   exportPunchListPdf,
+  isSmsNotificationsEnabled,
 } from '@siteweave/core-logic';
 import { useAppContext, supabaseClient } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -21,8 +22,8 @@ import { markIssuesRead } from '../../utils/issuesReadState';
 import { savePunchListPdf } from '../../utils/savePunchListPdf';
 import {
   buildIssueAssigneeOptionsFromContacts,
-  isUuid,
-} from '../../utils/projectMemberContacts';
+  fetchIssueAssigneeOptions,
+} from '@siteweave/core-logic';
 import FieldIssueCard from './FieldIssueCard';
 import IssueDetailDrawer from './IssueDetailDrawer';
 
@@ -41,12 +42,13 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
   const [isLoading, setIsLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('open');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [viewMode, setViewMode] = useState('list');
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeFeature, setUpgradeFeature] = useState('punch_list_export');
   const [exportBusy, setExportBusy] = useState(false);
   const [closeoutBannerDismissed, setCloseoutBannerDismissed] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -65,6 +67,12 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
     photoFile: null,
     assigned_to_user_id: '',
   });
+  const [notifyChannels, setNotifyChannels] = useState({
+    email: true,
+    app: true,
+    sms: false,
+  });
+  const smsNotifyAvailable = isSmsNotificationsEnabled();
 
   const hasLocations = useMemo(
     () => issues.some((issue) => String(issue.location || '').trim()),
@@ -93,30 +101,22 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
         return;
       }
 
-      if (!orgId) {
+      if (!projectId) {
         if (!cancelled) setAssigneeOptions([]);
         return;
       }
 
-      const { data: profiles, error } = await supabaseClient
-        .from('profiles')
-        .select('id, contact_id, contacts:contact_id(name)')
-        .eq('organization_id', orgId);
-
-      if (cancelled) return;
-      if (error) {
+      try {
+        const opts = await fetchIssueAssigneeOptions(supabaseClient, {
+          projectId,
+          organizationId: orgId,
+          fallbackLabel: t('fieldIssues.team_member'),
+        });
+        if (!cancelled) setAssigneeOptions(opts);
+      } catch (error) {
         console.error('Failed to load issue assignees', error);
-        setAssigneeOptions([]);
-        return;
+        if (!cancelled) setAssigneeOptions([]);
       }
-
-      const opts = (profiles || [])
-        .map((p) => ({
-          userId: p.id,
-          label: p.contacts?.name || t('fieldIssues.team_member'),
-        }))
-        .filter((o) => isUuid(o.userId));
-      setAssigneeOptions(opts);
     })();
     return () => {
       cancelled = true;
@@ -180,6 +180,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
 
     setIsCreating(true);
     try {
+      const assigneeId = newIssue.assigned_to_user_id || null;
       const created = await createProjectIssue(supabaseClient, {
         project_id: projectId,
         organization_id: project.organization_id,
@@ -188,8 +189,15 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
         priority: newIssue.priority,
         due_date: newIssue.dueDate || null,
         created_by_user_id: state.user?.id,
-        assigned_to_user_id: newIssue.assigned_to_user_id || null,
+        assigned_to_user_id: assigneeId,
         location: newIssue.location?.trim() || null,
+        notifyChannels: assigneeId
+          ? {
+              email: notifyChannels.email,
+              app: notifyChannels.app,
+              sms: smsNotifyAvailable && notifyChannels.sms,
+            }
+          : undefined,
       });
       await logFieldIssueCreated(created, state.user, projectId);
       setShowCreate(false);
@@ -201,6 +209,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
         assigned_to_user_id: '',
         location: '',
       });
+      setNotifyChannels({ email: true, app: true, sms: false });
       setSelectedIssue(created);
       await load();
       addToast(t('fieldIssues.created'), 'success');
@@ -223,6 +232,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
 
   const handleShareReviewLink = async () => {
     if (!canExport) {
+      setUpgradeFeature('punch_list_export');
       setShowUpgrade(true);
       return;
     }
@@ -240,6 +250,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
 
   const handleExportPdf = async () => {
     if (!canExport) {
+      setUpgradeFeature('punch_list_export');
       setShowUpgrade(true);
       return;
     }
@@ -277,13 +288,21 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
     }
     setIsCreating(true);
     try {
+      const assigneeId = walkthroughIssue.assigned_to_user_id || null;
       const created = await createWalkthroughIssue(supabaseClient, {
         project_id: projectId,
         organization_id: project.organization_id,
         location: walkthroughIssue.location.trim(),
         description: walkthroughIssue.description.trim() || null,
         created_by_user_id: state.user?.id,
-        assigned_to_user_id: walkthroughIssue.assigned_to_user_id || null,
+        assigned_to_user_id: assigneeId,
+        notifyChannels: assigneeId
+          ? {
+              email: notifyChannels.email,
+              app: notifyChannels.app,
+              sms: smsNotifyAvailable && notifyChannels.sms,
+            }
+          : undefined,
       });
       if (created?.id && walkthroughIssue.photoFile) {
         const safeName = walkthroughIssue.photoFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -495,6 +514,10 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
               onClose={() => setSelectedIssue(null)}
               onUpdated={handleIssueUpdated}
               onDeleted={handleIssueDeleted}
+              onUpgradeRequired={(feature) => {
+                setUpgradeFeature(feature || 'pings');
+                setShowUpgrade(true);
+              }}
             />
           </div>
         ) : null}
@@ -558,6 +581,45 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
                   </option>
                 ))}
               </select>
+              {newIssue.assigned_to_user_id ? (
+                <fieldset className="space-y-2 rounded-lg border border-slate-200 px-3 py-2.5">
+                  <legend className="px-1 text-xs font-medium text-slate-600">
+                    {t('fieldIssues.notify_channels')}
+                  </legend>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={notifyChannels.email}
+                      onChange={(e) =>
+                        setNotifyChannels((prev) => ({ ...prev, email: e.target.checked }))
+                      }
+                    />
+                    {t('fieldIssues.notify_email')}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={notifyChannels.app}
+                      onChange={(e) =>
+                        setNotifyChannels((prev) => ({ ...prev, app: e.target.checked }))
+                      }
+                    />
+                    {t('fieldIssues.notify_app')}
+                  </label>
+                  {smsNotifyAvailable ? (
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={notifyChannels.sms}
+                        onChange={(e) =>
+                          setNotifyChannels((prev) => ({ ...prev, sms: e.target.checked }))
+                        }
+                      />
+                      {t('fieldIssues.notify_sms')}
+                    </label>
+                  ) : null}
+                </fieldset>
+              ) : null}
             </div>
             <div className="p-4 border-t border-slate-200 flex justify-end gap-2">
               <button
@@ -631,6 +693,45 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
                   </option>
                 ))}
               </select>
+              {walkthroughIssue.assigned_to_user_id ? (
+                <fieldset className="space-y-2 rounded-xl border border-slate-200 px-4 py-3">
+                  <legend className="px-1 text-sm font-medium text-slate-600">
+                    {t('fieldIssues.notify_channels')}
+                  </legend>
+                  <label className="flex items-center gap-2 text-base text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={notifyChannels.email}
+                      onChange={(e) =>
+                        setNotifyChannels((prev) => ({ ...prev, email: e.target.checked }))
+                      }
+                    />
+                    {t('fieldIssues.notify_email')}
+                  </label>
+                  <label className="flex items-center gap-2 text-base text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={notifyChannels.app}
+                      onChange={(e) =>
+                        setNotifyChannels((prev) => ({ ...prev, app: e.target.checked }))
+                      }
+                    />
+                    {t('fieldIssues.notify_app')}
+                  </label>
+                  {smsNotifyAvailable ? (
+                    <label className="flex items-center gap-2 text-base text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={notifyChannels.sms}
+                        onChange={(e) =>
+                          setNotifyChannels((prev) => ({ ...prev, sms: e.target.checked }))
+                        }
+                      />
+                      {t('fieldIssues.notify_sms')}
+                    </label>
+                  ) : null}
+                </fieldset>
+              ) : null}
               <textarea
                 placeholder={t('punchList.note_placeholder')}
                 value={walkthroughIssue.description}
@@ -663,7 +764,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
       <UpgradeRequiredModal
         isOpen={showUpgrade}
         onClose={() => setShowUpgrade(false)}
-        feature="punch_list_export"
+        feature={upgradeFeature || 'punch_list_export'}
       />
     </div>
   );

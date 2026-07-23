@@ -172,6 +172,23 @@ serve(async (req) => {
       notificationResult = { success: false, error: error.message || 'Failed to process task notifications' }
     }
 
+    // Also drain due scheduled issue/task pings when this cron runs.
+    let scheduledPingsResult: Record<string, unknown> | null = null
+    try {
+      const pingsInvoke = await invokeEdgeFunction('process-scheduled-pings', {})
+      scheduledPingsResult = pingsInvoke.ok
+        ? { success: true, ...(pingsInvoke.data || {}) }
+        : {
+            success: false,
+            error: pingsInvoke.error || 'Failed to process scheduled pings',
+          }
+    } catch (error) {
+      scheduledPingsResult = {
+        success: false,
+        error: error.message || 'Failed to process scheduled pings',
+      }
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true,
@@ -180,6 +197,7 @@ serve(async (req) => {
         results: results,
         error_details: errors,
         task_notifications: notificationResult,
+        scheduled_pings: scheduledPingsResult,
       }),
       { 
         status: 200, 

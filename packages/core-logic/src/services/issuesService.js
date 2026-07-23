@@ -214,6 +214,7 @@ export async function createProjectIssue(supabase, params) {
     before_photo_path = null,
     after_photo_path = null,
     bridgeToStream = true,
+    notifyChannels = null,
   } = params;
 
   const insertRow = {
@@ -245,7 +246,10 @@ export async function createProjectIssue(supabase, params) {
 
   notifyFieldIssueCreated(supabase, { issueId: issue.id });
   if (assigned_to_user_id && assigned_to_user_id !== created_by_user_id) {
-    notifyFieldIssueAssigned(supabase, { issueId: issue.id });
+    notifyFieldIssueAssigned(supabase, {
+      issueId: issue.id,
+      channels: notifyChannels || undefined,
+    });
   }
 
   if (bridgeToStream && created_by_user_id) {
@@ -269,7 +273,7 @@ export async function createProjectIssue(supabase, params) {
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {number} issueId
  * @param {Object} updates
- * @param {{ bridgeToStream?: boolean, previousStatus?: string }} [options]
+ * @param {{ bridgeToStream?: boolean, previousStatus?: string, notifyChannels?: { email?: boolean, sms?: boolean, app?: boolean } }} [options]
  */
 export async function updateProjectIssue(supabase, issueId, updates, options = {}) {
   const patch = {
@@ -296,7 +300,10 @@ export async function updateProjectIssue(supabase, issueId, updates, options = {
   const [withUrls] = enrichIssuesWithPhotoUrls(supabase, [issue]);
 
   if (updates.assigned_to_user_id != null) {
-    notifyFieldIssueAssigned(supabase, { issueId });
+    notifyFieldIssueAssigned(supabase, {
+      issueId,
+      channels: options.notifyChannels || undefined,
+    });
   }
 
   const wasOpen = (options.previousStatus || '').toLowerCase() !== 'closed';
@@ -425,6 +432,7 @@ export async function createWalkthroughIssue(supabase, params) {
     assigned_to_user_id = null,
     priority = 'Medium',
     due_date = null,
+    notifyChannels = null,
   } = params;
 
   const note = String(description || '').trim();
@@ -446,6 +454,7 @@ export async function createWalkthroughIssue(supabase, params) {
     location: null,
     before_photo_path,
     bridgeToStream: true,
+    notifyChannels,
   });
 }
 

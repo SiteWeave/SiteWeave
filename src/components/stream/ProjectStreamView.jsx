@@ -203,7 +203,7 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
     };
   }, [project?.id, project?.organization_id, project?.name, supabaseClient, currentUserId, load, bumpReplyCount]);
 
-  const handlePost = async ({ post_type, title, body, file }) => {
+  const handlePost = async ({ post_type, title, body, file, payload }) => {
     if (!currentUserId || !project) return;
     let file_url = null;
     let file_name = null;
@@ -222,6 +222,7 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
       body,
       file_url,
       file_name,
+      ...(payload ? { payload } : {}),
     });
     if (postMatchesSearch(newPost, searchRef.current)) {
       setPosts((prev) => upsertById(prev, newPost, 'prepend'));
@@ -258,7 +259,13 @@ export default function ProjectStreamView({ project, supabaseClient, currentUser
         />
       </header>
 
-      <StreamComposer onSubmit={handlePost} canPost={canPost} />
+      <StreamComposer
+        onSubmit={handlePost}
+        canPost={canPost}
+        project={project}
+        supabaseClient={supabaseClient}
+        tasks={state.tasks || []}
+      />
 
       {loading ? (
         <div className="space-y-4">

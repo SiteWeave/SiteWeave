@@ -686,12 +686,7 @@ const TaskItem = memo(function TaskItem({
                             </PermissionGuard>
                         )}
 
-                        {onPingAssignee &&
-                            task.assignee_id &&
-                            (
-                                (assigneeEmail && assigneeEmail.includes('@')) ||
-                                (smsEnabled && Boolean(String(selectedAssigneeContact?.phone || '').trim()))
-                            ) && (
+                        {onPingAssignee && (
                                 <PermissionGuard permission="can_assign_tasks">
                                     <div className="flex shrink-0 items-center gap-0.5">
                                         <button
@@ -702,14 +697,7 @@ const TaskItem = memo(function TaskItem({
                                             }}
                                             disabled={pingingTaskId === task.id}
                                             className="relative flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-500 shadow-xs hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
-                                            title={
-                                                smsEnabled &&
-                                                assigneePhoneOkPing &&
-                                                smsConsent !== 'confirmed' &&
-                                                !smsConsentBlocked
-                                                    ? t('tasks.ping_title_sms')
-                                                    : t('tasks.ping_title_email')
-                                            }
+                                            title={t('tasks.ping_title_email')}
                                             aria-label={t('tasks.ping_assignee_aria', { task: task.text })}
                                         >
                                             <Icon
@@ -719,6 +707,7 @@ const TaskItem = memo(function TaskItem({
                                             <span className="hidden sm:inline">{t('tasks.ping')}</span>
                                         </button>
                                         {smsEnabled &&
+                                            task.assignee_id &&
                                             onRequestAssigneeSmsConsent &&
                                             assigneePhoneOkPing &&
                                             !smsPingAllowed &&
@@ -738,6 +727,7 @@ const TaskItem = memo(function TaskItem({
                                                 </button>
                                             )}
                                         {smsEnabled &&
+                                            task.assignee_id &&
                                             onRequestAssigneeSmsConsent &&
                                             smsConsent === 'pending' &&
                                             !smsConsentBlocked && (
@@ -755,6 +745,7 @@ const TaskItem = memo(function TaskItem({
                                                 </button>
                                             )}
                                         {onShareSmsConsentLink &&
+                                            task.assignee_id &&
                                             assigneePhoneOkPing &&
                                             smsConsent !== 'confirmed' &&
                                             smsConsent !== 'opted_out' && (

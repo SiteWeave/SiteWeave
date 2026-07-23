@@ -9,6 +9,62 @@ import {
   sendExpoPush,
   type ProjectRecipient,
 } from '../_shared/projectCommunicationNotify.ts'
+import { buildMinimalDigestEmail } from '../_shared/notificationEmailTemplates.ts'
+import { sendTransactionalEmail } from '../_shared/transactionalEmailLayout.ts'
+import { sendSms } from '../_shared/signalHouseSms.ts'
+import { normalizeAssigneePhone } from '../_shared/phone.ts'
+import { gateOrSendOptInForSubstantiveSms } from '../_shared/smsConsent.ts'
+import { withTransactionalSmsFooter } from '../_shared/smsCompliance.ts'
+import { isSmsNotificationsEnabled } from '../_shared/smsNotifications.ts'
+
+type NotifyChannels = { email: boolean; sms: boolean; app: boolean }
+
+function parseNotifyChannels(raw: unknown): NotifyChannels {
+  const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  return {
+    email: obj.email !== false,
+    app: obj.app !== false,
+    sms: obj.sms === true,
+  }
+}
+
+async function resolveAssigneeContact(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{ email: string | null; phone: string | null; name: string | null }> {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, contact_id, contacts:contact_id(name, email, phone)')
+    .eq('id', userId)
+    .maybeSingle()
+
+  const contactRaw = profile?.contacts
+  const contact = Array.isArray(contactRaw) ? contactRaw[0] : contactRaw
+  let email = contact?.email ? String(contact.email).trim().toLowerCase() : null
+  const phone = contact?.phone ? String(contact.phone).trim() : null
+  const name = contact?.name ? String(contact.name).trim() : null
+
+  if (!email) {
+    const { data: { user: authUser } } = await supabase.auth.admin.getUserById(userId)
+    email = authUser?.email ? authUser.email.toLowerCase() : null
+  }
+
+  return { email, phone, name }
+}
+
+async function resolveActorDisplayName(supabase: SupabaseClient, userId: string): Promise<string> {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('contacts:contact_id(name)')
+    .eq('id', userId)
+    .maybeSingle()
+  const contactRaw = profile?.contacts
+  const contact = Array.isArray(contactRaw) ? contactRaw[0] : contactRaw
+  const name = contact?.name ? String(contact.name).trim() : ''
+  if (name) return name
+  const { data: { user: authUser } } = await supabase.auth.admin.getUserById(userId)
+  return authUser?.email || 'A teammate'
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,8 +75,6 @@ const corsHeaders = {
 const STREAM_TYPE_LABELS: Record<string, string> = {
   general: 'Update',
   daily_log: 'Daily log',
-  announcement: 'Announcement',
-  milestone: 'Milestone',
 }
 
 async function loadPushTokens(supabase: SupabaseClient, userIds: string[]) {
@@ -278,9 +332,14 @@ serve(async (req) => {
         })
       }
 
+      const channels =
+        action === 'field_issue_assigned'
+          ? parseNotifyChannels(body?.channels)
+          : { email: false, sms: false, app: true }
+
       const { data: issue, error: issueError } = await supabase
         .from('project_issues')
-        .select('id, project_id, organization_id, title, assigned_to_user_id, created_by_user_id')
+        .select('id, project_id, organization_id, title, priority, assigned_to_user_id, created_by_user_id')
         .eq('id', issueId)
         .single()
 
@@ -293,7 +352,7 @@ serve(async (req) => {
 
       const { data: project } = await supabase
         .from('projects')
-        .select('name')
+        .select('name, address')
         .eq('id', issue.project_id)
         .single()
 
@@ -302,10 +361,18 @@ serve(async (req) => {
 
       const allRecipients = await getProjectRecipients(supabase, issue.project_id, {})
       let recipients: ProjectRecipient[] = []
+      let assigneeContact: { email: string | null; phone: string | null; name: string | null } | null = null
+
       if (action === 'field_issue_assigned' && issue.assigned_to_user_id) {
-        recipients = allRecipients.filter(
-          (r) => r.userId === issue.assigned_to_user_id && r.userId !== user.id,
-        )
+        if (issue.assigned_to_user_id !== user.id) {
+          recipients = allRecipients.filter((r) => r.userId === issue.assigned_to_user_id)
+          if (!recipients.length) {
+            assigneeContact = await resolveAssigneeContact(supabase, issue.assigned_to_user_id)
+            if (assigneeContact.email) {
+              recipients = [{ userId: issue.assigned_to_user_id, email: assigneeContact.email }]
+            }
+          }
+        }
       } else {
         recipients = allRecipients.filter((r) => r.userId !== user.id)
       }
@@ -315,39 +382,140 @@ serve(async (req) => {
           ? `Assigned to you · ${projectName}`
           : `New field issue · ${projectName}`
 
-      const notifRows = recipients.map((r) => ({
-        organization_id: issue.organization_id,
-        project_id: issue.project_id,
-        recipient_user_id: r.userId,
-        recipient_email: r.email,
-        source_type: action,
-        source_id: String(issue.id),
-        title,
-        body: issue.title,
-        metadata: {
-          action_url: actionUrl,
-          issue_id: issue.id,
-          screen: `/projects/${issue.project_id}/updates`,
-          project_id: issue.project_id,
-        },
-      }))
+      let emailDelivered = false
+      let smsDelivered = false
+      let smsOptInSent = false
 
-      await insertUserNotifications(supabase, notifRows)
-
-      const pushTokens = await loadPushTokens(supabase, recipients.map((r) => r.userId))
-      await sendExpoPush(pushTokens, {
-        title,
-        body: issue.title,
-        data: {
+      if (channels.app && recipients.length) {
+        const notifRows = recipients.map((r) => ({
+          organization_id: issue.organization_id,
           project_id: issue.project_id,
-          issue_id: issue.id,
-          screen: `/projects/${issue.project_id}/updates`,
+          recipient_user_id: r.userId,
+          recipient_email: r.email,
           source_type: action,
-        },
-      })
+          source_id: String(issue.id),
+          title,
+          body: issue.title,
+          metadata: {
+            action_url: actionUrl,
+            issue_id: issue.id,
+            screen: `/projects/${issue.project_id}/updates`,
+            project_id: issue.project_id,
+            channels: {
+              email: channels.email,
+              sms: channels.sms,
+              app: true,
+            },
+          },
+        }))
+
+        await insertUserNotifications(supabase, notifRows)
+
+        const pushTokens = await loadPushTokens(supabase, recipients.map((r) => r.userId))
+        await sendExpoPush(pushTokens, {
+          title,
+          body: issue.title,
+          data: {
+            project_id: issue.project_id,
+            issue_id: issue.id,
+            screen: `/projects/${issue.project_id}/updates`,
+            source_type: action,
+          },
+        })
+      }
+
+      if (
+        action === 'field_issue_assigned' &&
+        issue.assigned_to_user_id &&
+        issue.assigned_to_user_id !== user.id &&
+        (channels.email || channels.sms)
+      ) {
+        const assignee =
+          assigneeContact || (await resolveAssigneeContact(supabase, issue.assigned_to_user_id))
+        const recipientEmail =
+          recipients[0]?.email ||
+          (assignee.email && assignee.email.includes('@') ? assignee.email : null)
+        const normalizedPhone = normalizeAssigneePhone(assignee.phone || '')
+        const smsPhone = normalizedPhone.isValid ? normalizedPhone.e164 : null
+        const actorName = await resolveActorDisplayName(supabase, user.id)
+
+        const { data: orgRow } = await supabase
+          .from('organizations')
+          .select('name, progress_report_timezone')
+          .eq('id', issue.organization_id)
+          .maybeSingle()
+        const organizationName = orgRow?.name || projectName || 'Your team'
+
+        if (channels.email && recipientEmail) {
+          const template = buildMinimalDigestEmail({
+            heading: `${projectName}: Issue assigned to you`,
+            subheading: issue.title || 'Field issue',
+            ctaUrl: actionUrl,
+            reviewLinkText: 'Open this issue in SiteWeave',
+            summaryLabel: 'Assigned',
+            summaryValue: 1,
+            recipientName: assignee.name || 'there',
+            tasks: [
+              {
+                title: issue.title || 'Field issue',
+                priority: issue.priority ? String(issue.priority) : null,
+              },
+            ],
+            footerText: `${actorName} assigned this field issue to you.`,
+            projectName,
+            projectAddress: project?.address ? String(project.address).trim() : null,
+            tasksSectionTitle: 'Field issue',
+            omitLeadBlock: true,
+            calendarTimeZone: orgRow?.progress_report_timezone ?? null,
+          })
+          const sendResult = await sendTransactionalEmail({
+            to: recipientEmail,
+            subject: `Assigned: ${issue.title || 'Field issue'}`,
+            html: template.html,
+            text: template.text,
+          })
+          emailDelivered = Boolean(sendResult.success)
+          if (!sendResult.success) {
+            console.error('field_issue_assigned email failed', sendResult.error)
+          }
+        }
+
+        if (channels.sms && smsPhone && isSmsNotificationsEnabled()) {
+          const gate = await gateOrSendOptInForSubstantiveSms(supabase, {
+            phoneE164: smsPhone,
+            organizationId: issue.organization_id,
+            organizationName,
+          })
+          if (!gate.allowed) {
+            smsOptInSent = Boolean(gate.optInSent)
+            console.log('field_issue_assigned SMS gated', {
+              reason: gate.reason,
+              optInSent: gate.optInSent,
+            })
+          } else {
+            const smsBody = withTransactionalSmsFooter(
+              `${actorName} assigned you a field issue: ${issue.title || 'Issue'} in ${projectName}. Open: ${actionUrl}`,
+            )
+            const smsResult = await sendSms({ to: smsPhone, body: smsBody })
+            smsDelivered = Boolean(smsResult.success)
+            if (!smsResult.success) {
+              console.error('field_issue_assigned SMS failed', smsResult.error)
+            }
+          }
+        }
+      }
 
       return new Response(
-        JSON.stringify({ success: true, notified: recipients.length }),
+        JSON.stringify({
+          success: true,
+          notified: channels.app ? recipients.length : 0,
+          channels: {
+            email: emailDelivered,
+            sms: smsDelivered,
+            app: channels.app && recipients.length > 0,
+            sms_opt_in_sent: smsOptInSent,
+          },
+        }),
         { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
       )
     }

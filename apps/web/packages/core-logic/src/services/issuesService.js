@@ -260,6 +260,8 @@ export async function createProjectIssue(supabase, params) {
 
     bridgeToStream = true,
 
+    notifyChannels = null,
+
   } = params;
 
 
@@ -314,7 +316,13 @@ export async function createProjectIssue(supabase, params) {
 
   if (assigned_to_user_id && assigned_to_user_id !== created_by_user_id) {
 
-    notifyFieldIssueAssigned(supabase, { issueId: issue.id });
+    notifyFieldIssueAssigned(supabase, {
+
+      issueId: issue.id,
+
+      channels: notifyChannels || undefined,
+
+    });
 
   }
 
@@ -362,7 +370,7 @@ export async function createProjectIssue(supabase, params) {
 
  * @param {Object} updates
 
- * @param {{ bridgeToStream?: boolean, previousStatus?: string }} [options]
+ * @param {{ bridgeToStream?: boolean, previousStatus?: string, notifyChannels?: { email?: boolean, sms?: boolean, app?: boolean } }} [options]
 
  */
 
@@ -414,7 +422,13 @@ export async function updateProjectIssue(supabase, issueId, updates, options = {
 
   if (updates.assigned_to_user_id != null) {
 
-    notifyFieldIssueAssigned(supabase, { issueId });
+    notifyFieldIssueAssigned(supabase, {
+
+      issueId,
+
+      channels: options.notifyChannels || undefined,
+
+    });
 
   }
 

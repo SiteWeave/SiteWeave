@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import AddContactModal from '../components/AddContactModal';
+import ContactsImportModal from '../components/ContactsImportModal';
 import ContactCard from '../components/ContactCard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { logContactCreated, logContactUpdated } from '../utils/activityLogger';
@@ -235,37 +236,10 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
         setContactToDelete(null);
     };
 
-    const handleImportContacts = () => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.csv';
-        input.onchange = (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    try {
-                        const csv = ev.target.result;
-                        const lines = csv.split('\n');
-                        const headers = lines[0].split(',');
-                        const parsed = lines.slice(1).map(line => {
-                            const values = line.split(',');
-                            const contact = {};
-                            headers.forEach((header, index) => {
-                                contact[header.trim().toLowerCase().replace(' ', '_')] = values[index]?.trim();
-                            });
-                            return contact;
-                        }).filter(contact => contact.name);
-                        addToast(t('contacts.import_found', { count: parsed.length }), 'info');
-                    } catch {
-                        addToast(t('contacts.import_parse_error'), 'error');
-                    }
-                };
-                reader.readAsText(file);
-            }
-        };
-        input.click();
-        setShowImportModal(false);
+    const handleImportSuccess = (importedContacts) => {
+        for (const contact of importedContacts || []) {
+            dispatch({ type: 'ADD_CONTACT', payload: contact });
+        }
     };
 
     const handleExportContacts = () => {
@@ -501,20 +475,10 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             )}
 
             {showImportModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-start justify-center overflow-y-auto py-8 z-50">
-                    <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
-                        <h2 className="text-2xl font-bold mb-6">{t('contacts.import_title')}</h2>
-                        <p className="text-gray-600 mb-6">{t('contacts.import_description_trade')}</p>
-                        <div className="flex justify-end gap-4">
-                            <button type="button" onClick={() => setShowImportModal(false)} className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
-                                {t('common.cancel')}
-                            </button>
-                            <button type="button" onClick={handleImportContacts} className="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
-                                {t('contacts.choose_file')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <ContactsImportModal
+                    onClose={() => setShowImportModal(false)}
+                    onSuccess={handleImportSuccess}
+                />
             )}
 
             {showExportModal && (

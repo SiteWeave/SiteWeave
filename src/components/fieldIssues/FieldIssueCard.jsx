@@ -26,12 +26,22 @@ function initials(name) {
   return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
 }
 
+function descriptionLocationLine(issue, t) {
+  const description = String(issue.description || '').trim();
+  const location = String(issue.location || '').trim();
+  if (description && location) {
+    return t('fieldIssues.description_in_location', { description, location });
+  }
+  return description || location || '';
+}
+
 export default function FieldIssueCard({ issue, selected, onSelect }) {
   const { t } = useTranslation();
   const displayStatus = getFieldIssueDisplayStatus(issue);
   const priorityKey = (issue.priority || 'medium').toLowerCase();
   const priorityClass = PRIORITY_STYLES[priorityKey] || PRIORITY_STYLES.medium;
   const assigneeName = issue.assignee?.name || issue.assignee?.email || null;
+  const detailLine = descriptionLocationLine(issue, t);
 
   return (
     <button
@@ -61,11 +71,20 @@ export default function FieldIssueCard({ issue, selected, onSelect }) {
               {t(`fieldIssues.priority_${priorityKey}`) || issue.priority || t('fieldIssues.priority_medium')}
             </span>
           </div>
-          {issue.description ? (
-            <p className="text-xs text-slate-600 line-clamp-2 mb-1.5">{issue.description}</p>
-          ) : null}
-          {issue.location ? (
-            <p className="text-xs font-semibold text-blue-700 mb-1">{issue.location}</p>
+          {detailLine ? (
+            <p className="text-xs text-slate-600 line-clamp-2 mb-1.5">
+              {issue.description?.trim() && issue.location?.trim() ? (
+                <>
+                  <span>{String(issue.description).trim()}</span>
+                  <span className="text-slate-400"> {t('fieldIssues.in_connector')} </span>
+                  <span className="font-semibold text-blue-700">{String(issue.location).trim()}</span>
+                </>
+              ) : issue.location?.trim() && !issue.description?.trim() ? (
+                <span className="font-semibold text-blue-700">{detailLine}</span>
+              ) : (
+                detailLine
+              )}
+            </p>
           ) : null}
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             <span

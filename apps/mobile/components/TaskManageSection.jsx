@@ -1,26 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
+import { View, StyleSheet, Alert, ScrollView } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { fetchProjectContacts, updateTask } from '@siteweave/core-logic';
+import { fetchProjectContacts, updateTask, isSmsNotificationsEnabled } from '@siteweave/core-logic';
 import { Text } from './ui/Text';
 import PressableWithFade from './PressableWithFade';
 import ContactSuggestionPicker from './ui/ContactSuggestionPicker';
 import { colors, spacing } from '../theme';
 
-async function pingAssignee(supabase, { task, project, organizationName, senderName }) {
-  const email = String(task?.contacts?.email || '').trim();
-  if (!email || !email.includes('@')) {
-    throw new Error('no_email');
-  }
+async function pingRecipients(supabase, { task, project, organizationName, senderName, recipients, deliveryChannels }) {
   const { data, error } = await supabase.functions.invoke('dispatch-notification', {
     body: {
       action: 'manual_task_reminder',
       taskId: task.id,
       taskText: task.text || 'Task',
-      recipientEmail: email,
-      recipientPhone: null,
-      deliveryChannels: ['email'],
-      recipientName: task.contacts?.name || 'there',
+      recipients: recipients.map((r) => ({
+        email: r.email || null,
+        phone: r.phone || null,
+        name: r.name || null,
+        userId: r.profile_id || null,
+      })),
+      deliveryChannels,
       projectId: project.id,
       projectName: project.name,
       projectAddress: project.address || null,
@@ -31,6 +30,7 @@ async function pingAssignee(supabase, { task, project, organizationName, senderN
   });
   if (error) throw error;
   if (!data?.success) throw new Error(data?.error || 'ping_failed');
+  return data;
 }
 
 export default function TaskManageSection({
@@ -47,6 +47,8 @@ export default function TaskManageSection({
   const [pinging, setPinging] = useState(false);
   const [assigneeEmail, setAssigneeEmail] = useState('');
   const [savingAssignee, setSavingAssignee] = useState(false);
+  const [showPingPicker, setShowPingPicker] = useState(false);
+  const [pingEmails, setPingEmails] = useState([]);
 
   const assigneeContact = useMemo(() => {
     if (!task?.assignee_id) return null;
@@ -65,6 +67,11 @@ export default function TaskManageSection({
       .catch(() => setContacts([]));
   }, [supabase, project?.id]);
 
+  useEffect(() => {
+    const email = assigneeContact?.email || task?.contacts?.email;
+    setPingEmails(email ? [String(email).toLowerCase()] : []);
+  }, [assigneeContact, task]);
+
   if (!task || !project || !canAssignTasks) return null;
 
   const handleAssigneeSelect = async (contact) => {
@@ -80,26 +87,54 @@ export default function TaskManageSection({
     }
   };
 
+  const togglePingEmail = (contact) => {
+    const email = String(contact?.email || '').trim().toLowerCase();
+    if (!email) return;
+    setPingEmails((prev) =>
+      prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email],
+    );
+  };
+
   const handlePing = async () => {
     if (!supabase) return;
+    const recipients = contacts.filter((c) =>
+      pingEmails.includes(String(c.email || '').trim().toLowerCase()),
+    );
+    if (!recipients.length) {
+      Alert.alert(t('common.error'), t('tasks.ping_select_recipients'));
+      return;
+    }
+    const smsEnabled = isSmsNotificationsEnabled();
+    const deliveryChannels = ['email'];
+    if (smsEnabled && recipients.some((r) => r.phone)) {
+      // Prefer email on mobile unless only phone exists
+    }
     setPinging(true);
     try {
       const senderName =
         currentUser?.user_metadata?.full_name || currentUser?.email || 'SiteWeave user';
-      await pingAssignee(supabase, { task, project, organizationName, senderName });
+      await pingRecipients(supabase, {
+        task,
+        project,
+        organizationName,
+        senderName,
+        recipients,
+        deliveryChannels,
+      });
       Alert.alert(t('common.success'), t('mobile.task_ping_sent'));
+      setShowPingPicker(false);
     } catch (err) {
       if (err?.message === 'no_email') {
         Alert.alert(t('common.error'), t('sms.no_contact'));
       } else {
-        Alert.alert(t('common.error'), t('mobile.task_ping_failed'));
+        Alert.alert(t('common.error'), err?.message || t('mobile.task_ping_failed'));
       }
     } finally {
       setPinging(false);
     }
   };
 
-  const canPing = selectedEmails.length > 0 && !pinging;
+  const canOpenPing = contacts.some((c) => c?.email) && !pinging;
 
   return (
     <View style={styles.wrap} testID="task-manage-section">
@@ -107,9 +142,9 @@ export default function TaskManageSection({
         <Text variant="caption" style={styles.sectionLabel}>
           {t('mobile.task_set_assignee')}
         </Text>
-        {canPing ? (
+        {canOpenPing ? (
           <PressableWithFade
-            onPress={handlePing}
+            onPress={() => setShowPingPicker((v) => !v)}
             testID="task-ping-assignee"
             accessibilityLabel={t('tasks.ping_assignee_aria', { task: task.text || 'Task' })}
           >
@@ -132,6 +167,43 @@ export default function TaskManageSection({
         <Text variant="caption" style={styles.muted}>
           {t('mobile.task_assignee_none')}
         </Text>
+      ) : null}
+
+      {showPingPicker ? (
+        <View style={styles.pingBox} testID="task-ping-multi">
+          <Text variant="caption" style={styles.sectionLabel}>
+            {t('tasks.ping_recipients')}
+          </Text>
+          <ScrollView style={styles.pingList} nestedScrollEnabled>
+            {contacts
+              .filter((c) => c?.email)
+              .map((contact) => {
+                const email = String(contact.email).trim().toLowerCase();
+                const selected = pingEmails.includes(email);
+                return (
+                  <PressableWithFade
+                    key={contact.id || email}
+                    onPress={() => togglePingEmail(contact)}
+                    style={[styles.pingRow, selected && styles.pingRowSelected]}
+                  >
+                    <Text style={selected ? styles.pingRowTextSelected : styles.pingRowText} numberOfLines={1}>
+                      {contact.name || contact.email}
+                    </Text>
+                  </PressableWithFade>
+                );
+              })}
+          </ScrollView>
+          <PressableWithFade
+            onPress={handlePing}
+            disabled={pinging || pingEmails.length === 0}
+            style={[styles.pingSend, (pinging || pingEmails.length === 0) && styles.pingSendDisabled]}
+            testID="task-ping-send"
+          >
+            <Text style={styles.pingSendText}>
+              {pinging ? t('fieldIssues.ping_sending') : t('tasks.ping_send')}
+            </Text>
+          </PressableWithFade>
+        </View>
       ) : null}
     </View>
   );
@@ -166,4 +238,33 @@ const styles = StyleSheet.create({
     textTransform: 'lowercase',
   },
   muted: { color: colors.textSubtle },
+  pingBox: {
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  pingList: { maxHeight: 160 },
+  pingRow: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: 8,
+  },
+  pingRowSelected: {
+    backgroundColor: colors.primaryLight || colors.surfaceMuted || '#EFF6FF',
+  },
+  pingRowText: { color: colors.text, fontSize: 14 },
+  pingRowTextSelected: { color: colors.primary, fontSize: 14, fontWeight: '600' },
+  pingSend: {
+    marginTop: spacing.xs,
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  pingSendDisabled: { opacity: 0.5 },
+  pingSendText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });

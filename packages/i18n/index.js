@@ -122,12 +122,15 @@ export function getLocalizedEventCategoryName(category, t) {
   return key ? t(key) : category.name;
 }
 
-/** Translate MS Project import issue/warning (key string or { key, params }). */
+/** Translate import issue/warning (key string or { key, params }). */
 export function translateImportMessage(msg, t) {
   if (msg && typeof msg === 'object' && msg.key) {
     return t(msg.key, msg.params || {});
   }
-  if (typeof msg === 'string' && msg.startsWith('ms_import.')) {
+  if (
+    typeof msg === 'string'
+    && (msg.startsWith('ms_import.') || msg.startsWith('contacts_import.'))
+  ) {
     return t(msg);
   }
   return typeof msg === 'string' ? msg : String(msg);

@@ -9,7 +9,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { createWalkthroughIssue } from '@siteweave/core-logic';
+import { createWalkthroughIssue, fetchIssueAssigneeOptions } from '@siteweave/core-logic';
 import BottomSheet from './ui/BottomSheet';
 import { Text } from './ui/Text';
 import PressableWithFade from './PressableWithFade';
@@ -21,9 +21,6 @@ const IMAGE_MEDIA_TYPES = ImagePicker.MediaType?.Images
   : (ImagePicker.MediaTypeOptions?.Images ?? ['images']);
 
 const DEFAULT_LOCATIONS = ['Kitchen', 'Master Bath', 'Living Room', 'Exterior', 'Garage'];
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export default function FieldIssueWalkthroughSheet({
   visible,
@@ -60,25 +57,17 @@ export default function FieldIssueWalkthroughSheet({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!visible || !supabase || !organizationId) {
+      if (!visible || !supabase || !projectId) {
         setAssigneeOptions([]);
         return;
       }
       try {
-        const { data: profiles, error } = await supabase
-          .from('profiles')
-          .select('id, contacts:contact_id(name, email)')
-          .eq('organization_id', organizationId);
-        if (error) throw error;
-        if (cancelled) return;
-        setAssigneeOptions(
-          (profiles || [])
-            .map((p) => ({
-              userId: p.id,
-              label: p.contacts?.name || p.contacts?.email || t('fieldIssues.team_member'),
-            }))
-            .filter((o) => UUID_RE.test(o.userId)),
-        );
+        const opts = await fetchIssueAssigneeOptions(supabase, {
+          projectId,
+          organizationId,
+          fallbackLabel: t('fieldIssues.team_member'),
+        });
+        if (!cancelled) setAssigneeOptions(opts);
       } catch (e) {
         console.warn('Failed to load walkthrough assignees', e);
         if (!cancelled) setAssigneeOptions([]);
@@ -87,7 +76,7 @@ export default function FieldIssueWalkthroughSheet({
     return () => {
       cancelled = true;
     };
-  }, [visible, supabase, organizationId, t]);
+  }, [visible, supabase, projectId, organizationId, t]);
 
   const handleTakePhoto = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();

@@ -49,14 +49,20 @@ export async function notifyFieldIssueCreated(supabase, { issueId }) {
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
- * @param {{ issueId: number }} params
+ * @param {{ issueId: number, channels?: { email?: boolean, sms?: boolean, app?: boolean } }} params
  */
-export async function notifyFieldIssueAssigned(supabase, { issueId }) {
+export async function notifyFieldIssueAssigned(supabase, { issueId, channels }) {
   if (!issueId) return
   try {
-    await supabase.functions.invoke('notify-project-communication', {
-      body: { action: 'field_issue_assigned', issueId },
-    })
+    const body = { action: 'field_issue_assigned', issueId }
+    if (channels && typeof channels === 'object') {
+      body.channels = {
+        email: channels.email !== false,
+        app: channels.app !== false,
+        sms: channels.sms === true,
+      }
+    }
+    await supabase.functions.invoke('notify-project-communication', { body })
   } catch (e) {
     console.warn('notifyFieldIssueAssigned', e)
   }

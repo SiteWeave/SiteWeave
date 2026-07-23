@@ -16,7 +16,6 @@ import {
   fetchProjectContacts,
   listWeatherImpactsForProject,
   buildSiteDaySections,
-  buildSiteDayBodyFromSections,
   isPassiveSiteDayReady,
   todayIso,
   wasCompletedToday,
@@ -83,10 +82,15 @@ export default function SiteDaySheet({
 
   const projectOptions = useMemo(() => projects.filter((p) => p?.id), [projects]);
 
-  const body = useMemo(
-    () => buildSiteDayBodyFromSections(sections, t),
-    [sections, t, i18n.language],
-  );
+  const note = String(sections.notes || '').trim();
+  const hasSectionContent =
+    (sections.work_completed?.length || 0) > 0 ||
+    (sections.weather?.length || 0) > 0 ||
+    (sections.blockers?.length || 0) > 0 ||
+    (sections.crew_on_site?.length || 0) > 0 ||
+    photos.length > 0 ||
+    Boolean(note);
+  const submitBody = note || t('mobile.site_day_heading');
 
   const passiveReady = useMemo(
     () =>
@@ -301,7 +305,7 @@ export default function SiteDaySheet({
   };
 
   const handlePost = async () => {
-    if (!supabase || !userId || !organizationId || !selectedProjectId || !body.trim()) return;
+    if (!supabase || !userId || !organizationId || !selectedProjectId || !hasSectionContent) return;
 
     setLoading(true);
     const structuredPayload = {
@@ -315,7 +319,7 @@ export default function SiteDaySheet({
       author_id: userId,
       post_type: 'daily_log',
       title: t('mobile.site_day_post_title'),
-      body: body.trim(),
+      body: submitBody,
       payload: structuredPayload,
       file_url: photos[0]?.url || null,
       file_name: photos[0]?.file_name || null,
@@ -356,7 +360,7 @@ export default function SiteDaySheet({
         onClose={onClose}
         primaryLabel={passiveReady ? t('mobile.site_day_post_ready') : t('mobile.site_day_post')}
         onPrimary={handlePost}
-        primaryDisabled={loading || drafting || !body.trim() || !selectedProjectId}
+        primaryDisabled={loading || drafting || !hasSectionContent || !selectedProjectId}
         primaryLoading={loading}
         snap="large"
         expandOnFocus

@@ -24,6 +24,7 @@ import {
     createGuestTaskShareLink,
 } from '@siteweave/core-logic';
 import TaskItem from '../components/TaskItem';
+import TaskPingModal from '../components/TaskPingModal';
 import TaskModal from '../components/TaskModal';
 import TaskPhotosModal from '../components/TaskPhotosModal';
 import TaskDiscussionModal from '../components/TaskDiscussionModal';
@@ -107,6 +108,14 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         [projects, state.selectedProjectId],
     );
     const [projectHydrating, setProjectHydrating] = useState(false);
+    const projectContacts = useMemo(
+        () => contacts.filter(
+            (contact) =>
+                Array.isArray(contact.project_contacts) &&
+                contact.project_contacts.some((pc) => String(pc.project_id) === String(project?.id)),
+        ),
+        [contacts, project?.id],
+    );
 
     const organizationDisplayName = useMemo(() => {
         if (!project?.organization_id) return t('projectDetail.your_team');
@@ -127,14 +136,15 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [showTaskModal, setShowTaskModal] = useState(false);
     const [isCreatingTask, setIsCreatingTask] = useState(false);
     const [pingingTaskId, setPingingTaskId] = useState(null);
+    const [pingModalTask, setPingModalTask] = useState(null);
     const [smsConsentLinkTarget, setSmsConsentLinkTarget] = useState(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [taskToDelete, setTaskToDelete] = useState(null);
-    const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
-    const [bulkDeleteTaskIds, setBulkDeleteTaskIds] = useState([]);
     const [showPhaseDeleteConfirm, setShowPhaseDeleteConfirm] = useState(false);
     const [phaseToDelete, setPhaseToDelete] = useState(null);
     const [selectedTasks, setSelectedTasks] = useState([]);
+    const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+    const [bulkDeleteTaskIds, setBulkDeleteTaskIds] = useState([]);
     const [taskFilter, setTaskFilter] = useState('all'); // all, completed, pending
     const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
     const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, updates, activity
@@ -225,12 +235,12 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [showProgressReportModal, setShowProgressReportModal] = useState(false);
     const [showWeatherImpactModal, setShowWeatherImpactModal] = useState(false);
     const [selectedWeatherImpact, setSelectedWeatherImpact] = useState(null);
-    const [applyingWeatherImpactId, setApplyingWeatherImpactId] = useState(null);
     const [projectRefreshNonce, setProjectRefreshNonce] = useState(0);
     const [weatherImpacts, setWeatherImpacts] = useState([]);
     const [scheduleAdjustments, setScheduleAdjustments] = useState([]);
     const [showScheduleGainModal, setShowScheduleGainModal] = useState(false);
     const [selectedScheduleAdjustment, setSelectedScheduleAdjustment] = useState(null);
+    const [applyingWeatherImpactId, setApplyingWeatherImpactId] = useState(null);
     const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
     const [showProjectModal, setShowProjectModal] = useState(false);
@@ -1223,41 +1233,29 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             setUpgradeFeature('pings');
             return;
         }
+        setPingModalTask(task);
+    };
+
+    const handleConfirmTaskPing = async ({ recipients, deliveryChannels }) => {
+        const task = pingModalTask;
+        if (!task || !project) return;
+        if (!canPing) {
+            setUpgradeFeature('pings');
+            return;
+        }
+        if (!recipients?.length) {
+            addToast(t('tasks.ping_select_recipients'), 'warning');
+            return;
+        }
+        if (!deliveryChannels?.length) {
+            addToast(t('tasks.ping_select_channels'), 'warning');
+            return;
+        }
+
         const smsEnabled = isSmsNotificationsEnabled();
-        const fallbackContact = task.assignee_id
-            ? contacts.find((contact) => contact.id === task.assignee_id)
-            : null;
-        const email = String(task.contacts?.email || fallbackContact?.email || '').trim();
-        const rawPhone = String(task.contacts?.phone || fallbackContact?.phone || '').trim();
-        const normalizedPhone = normalizeAssigneePhone(rawPhone, { defaultRegion: 'US' });
-        const phone = normalizedPhone.isValid ? normalizedPhone.e164 : null;
-        if (!smsEnabled) {
-            if (!email || !email.includes('@')) {
-                addToast(t('sms.no_contact'), 'warning');
-                return;
-            }
-        } else if ((!email || !email.includes('@')) && !phone) {
-            addToast(t('sms.no_contact'), 'warning');
-            return;
-        }
-
-        const deliveryChannels = [];
-        if (email && email.includes('@')) deliveryChannels.push('email');
-        if (smsEnabled && phone && task.assignee_sms_consent === 'confirmed') deliveryChannels.push('sms');
-        if (deliveryChannels.length === 0) {
-            if (smsEnabled && phone && !(email && email.includes('@'))) {
-                addToast(t('sms.requires_consent'), 'warning');
-            } else {
-                addToast(t('sms.no_contact'), 'warning');
-            }
-            return;
-        }
-
-        const emailAsked = deliveryChannels.includes('email');
-        const smsAsked = smsEnabled && deliveryChannels.includes('sms');
-
         const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
         for (const ch of deliveryChannels) {
+            if (ch === 'app') continue;
             const pingAction = ch === 'email' ? 'assignee_ping_email' : 'assignee_ping_sms';
             const { count, error: countErr } = await supabaseClient
                 .from('activity_log')
@@ -1285,10 +1283,13 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         action: 'manual_task_reminder',
                         taskId: task.id,
                         taskText: task.text || 'Task',
-                        recipientEmail: email || null,
-                        recipientPhone: phone,
+                        recipients: recipients.map((r) => ({
+                            userId: r.userId || null,
+                            email: r.email || null,
+                            phone: r.phone || null,
+                            name: r.name || null,
+                        })),
                         deliveryChannels,
-                        recipientName: task.contacts?.name || 'there',
                         projectId: project.id,
                         projectName: project.name,
                         projectAddress: project.address || null,
@@ -1304,92 +1305,57 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 success: !manualReminderError && Boolean(manualReminderResult?.success),
                 error: manualReminderError?.message || manualReminderResult?.error || null,
                 channels: manualReminderResult?.channels || {},
+                sent: manualReminderResult?.sent || 0,
             };
-            if (!res.success && email && email.includes('@')) {
+
+            if (!res.success && recipients.length === 1 && recipients[0].email?.includes('@')) {
                 const legacyPing = await sendTaskPingEmail(
-                    email,
+                    recipients[0].email,
                     { title: task.text || 'Task' },
                     { name: project.name, address: project.address },
                     senderName,
                 );
                 if (legacyPing.success) {
-                    res = { success: true, error: null, channels: { email: true, sms: false } };
+                    res = { success: true, error: null, channels: { email: true, sms: false }, sent: 1 };
                 }
             }
+
             const channels = res.channels || {};
             if (res.success) {
-                if (channels.email && email.includes('@')) {
-                    await logTaskAssigneeEmailSent({
-                        task,
-                        user: state.user,
-                        projectId: project.id,
-                        kind: 'ping',
-                        recipientEmail: email,
-                        success: true,
-                        errorMessage: null,
-                        channel: 'email',
-                    });
+                for (const r of recipients) {
+                    if (channels.email && r.email?.includes('@')) {
+                        await logTaskAssigneeEmailSent({
+                            task,
+                            user: state.user,
+                            projectId: project.id,
+                            kind: 'ping',
+                            recipientEmail: r.email,
+                            success: true,
+                            errorMessage: null,
+                            channel: 'email',
+                        });
+                    }
+                    if (smsEnabled && channels.sms && r.phone) {
+                        await logTaskAssigneeEmailSent({
+                            task,
+                            user: state.user,
+                            projectId: project.id,
+                            kind: 'ping',
+                            recipientEmail: r.phone,
+                            success: true,
+                            errorMessage: null,
+                            channel: 'sms',
+                        });
+                    }
                 }
-                if (smsEnabled && channels.sms && phone) {
-                    await logTaskAssigneeEmailSent({
-                        task,
-                        user: state.user,
-                        projectId: project.id,
-                        kind: 'ping',
-                        recipientEmail: phone,
-                        success: true,
-                        errorMessage: null,
-                        channel: 'sms',
-                    });
-                }
-            } else {
-                await logTaskAssigneeEmailSent({
-                    task,
-                    user: state.user,
-                    projectId: project.id,
-                    kind: 'ping',
-                    recipientEmail: email || phone,
-                    success: false,
-                    errorMessage: res.error,
-                    channel: smsAsked && !emailAsked ? 'sms' : 'email',
-                });
-            }
-            if (res.success) {
-                const ch = channels;
-                if (smsEnabled && ch.email && ch.sms) {
-                    const sid = manualReminderResult?.sms?.sid;
-                    addToast(
-                        sid
-                            ? t('toast.reminder_sent_email_sms_sid', { sid })
-                            : t('toast.reminder_sent_email_sms'),
-                        'success',
-                    );
-                } else if (smsEnabled && ch.sms && !ch.email) {
-                    const sid = manualReminderResult?.sms?.sid;
-                    addToast(
-                        sid
-                            ? t('toast.reminder_sent_sms_sid', { sid })
-                            : t('toast.reminder_sent_sms'),
-                        'success',
-                    );
-                } else if (ch.email) {
-                    addToast(t('toast.reminder_sent_email'), 'success');
-                } else {
-                    addToast(t('toast.reminder_not_delivered'), 'warning');
-                }
-                if (smsEnabled && smsAsked && phone && !ch.sms) {
-                    addToast(
-                        t('toast.sms_not_sent', {
-                            reason: res.error || t('toast.sms_not_sent_default_reason'),
-                        }),
-                        'warning',
-                    );
-                }
-                if (smsEnabled && !phone && rawPhone) {
-                    addToast(t('toast.sms_skipped_invalid_phone'), 'warning');
-                } else if (smsEnabled && !phone && !rawPhone && emailAsked && ch.email) {
-                    addToast(t('toast.sms_skipped_no_phone'), 'info');
-                }
+                addToast(
+                    t('tasks.ping_sent_count', {
+                        count: res.sent || recipients.length,
+                        defaultValue: 'Reminder sent.',
+                    }),
+                    'success',
+                );
+                setPingModalTask(null);
             } else {
                 addToast(res.error || t('toast.could_not_send_reminder'), 'error');
             }
@@ -2677,6 +2643,15 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 feature={upgradeFeature || 'exports'}
             />
 
+            <TaskPingModal
+                open={Boolean(pingModalTask)}
+                task={pingModalTask}
+                projectContacts={projectContacts}
+                onClose={() => setPingModalTask(null)}
+                onConfirm={handleConfirmTaskPing}
+                busy={Boolean(pingModalTask && pingingTaskId === pingModalTask.id)}
+            />
+
             {showSaveAsTemplateModal && canCreateProjects && (
                 <SaveAsTemplateModal 
                     projectId={project.id} 
@@ -2745,29 +2720,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                     }}
                     onChanged={() => setProjectRefreshNonce((n) => n + 1)}
                 />
-            ) : null}
-
-            {pendingScheduleAdjustments.length > 0 && canEditProjects ? (
-                <div className="mb-4 flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-emerald-950">
-                        {t(
-                            pendingScheduleAdjustments.length === 1
-                                ? 'scheduleAdjustments.banner_one'
-                                : 'scheduleAdjustments.banner_other',
-                            { count: pendingScheduleAdjustments.length },
-                        )}
-                    </p>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setSelectedScheduleAdjustment(pendingScheduleAdjustments[0]);
-                            setShowScheduleGainModal(true);
-                        }}
-                        className="shrink-0 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
-                    >
-                        {t('scheduleAdjustments.review_cta')}
-                    </button>
-                </div>
             ) : null}
 
             {pendingUnappliedWeatherImpacts.length > 0 && canEditProjects ? (
@@ -2858,20 +2810,18 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             </button>
                             )}
                         </nav>
+                        {canEditProjects ? (
                         <ProjectSmartNotificationsCard
                             variant="inline"
                             project={project}
                             organization={state.currentOrganization}
                             canEdit={canEditProjects}
-                            onConfigure={
-                                canEditProjects
-                                    ? ({ activate } = {}) => {
-                                          setSmartNotifActivateOnOpen(Boolean(activate));
-                                          setShowSmartNotificationsModal(true);
-                                      }
-                                    : undefined
-                            }
+                            onConfigure={({ activate } = {}) => {
+                                setSmartNotifActivateOnOpen(Boolean(activate));
+                                setShowSmartNotificationsModal(true);
+                            }}
                         />
+                        ) : null}
                     </div>
 
                     {/* Tab Content */}
@@ -3068,14 +3018,16 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                 {phasesLoading && allTasks.length === 0 ? (
                                     <SkeletonList count={3} rowClassName="h-12" className="py-4 space-y-3" />
                                 ) : null}
-                                {!phasesLoading && projectPhases.length === 0 && (
+                                {!phasesLoading && projectPhases.length === 0 && canEditProjects && (
                                     <PhasesEmptyState
-                                        taskCount={allTasks.length}
                                         onAddPhase={() => setShowAddPhaseModal(true)}
                                         onUseTemplate={seedDefaultPhases}
                                         isMutating={phasesMutating}
                                     />
                                 )}
+                                {!phasesLoading && projectPhases.length === 0 && !canEditProjects && allTasks.length === 0 ? (
+                                    <p className="py-6 text-center text-sm text-gray-500">{t('projectDetail.no_phases_yet', { defaultValue: 'No phases yet.' })}</p>
+                                ) : null}
                                 {!phasesLoading && projectPhases.length > 0 && (
                                     <>
                                         <PhasesHintBanner />
@@ -3269,9 +3221,9 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                                     : undefined
                                                                             }
                                                                             onShareSmsConsentLink={handleShareSmsConsentLink}
-                                                                            pingingTaskId={pingingTaskId}
-                                                                            project={project}
-                                                                        />
+                                                                                    pingingTaskId={pingingTaskId}
+                                                                                    project={project}
+                                                                                />
                                                                     ),
                                                                 )}
                                                             </ul>
@@ -3294,6 +3246,29 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                     <p className="text-center text-sm text-gray-500 py-8">
                                         {t('projectDetail.no_tasks_description')}
                                     </p>
+                                ) : null}
+
+                                {pendingScheduleAdjustments.length > 0 && canEditProjects ? (
+                                    <div className="mt-4 flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <p className="text-sm text-emerald-950">
+                                            {t(
+                                                pendingScheduleAdjustments.length === 1
+                                                    ? 'scheduleAdjustments.banner_one'
+                                                    : 'scheduleAdjustments.banner_other',
+                                                { count: pendingScheduleAdjustments.length },
+                                            )}
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedScheduleAdjustment(pendingScheduleAdjustments[0]);
+                                                setShowScheduleGainModal(true);
+                                            }}
+                                            className="shrink-0 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
+                                        >
+                                            {t('scheduleAdjustments.review_cta')}
+                                        </button>
+                                    </div>
                                 ) : null}
                             </div>
                         )}
@@ -3569,6 +3544,42 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 />
             )}
 
+            {discussionModalTaskId && project && (
+                <TaskDiscussionModal
+                    task={allTasks.find((t) => t.id === discussionModalTaskId)}
+                    project={project}
+                    onClose={() => setDiscussionModalTaskId(null)}
+                />
+            )}
+
+            {photoModalTask && (
+                <TaskPhotosModal
+                    task={photoModalTask}
+                    onClose={() => setPhotoModalTaskId(null)}
+                    onAddPhotos={handleAddTaskPhotos}
+                    onUpdatePhoto={handleUpdateTaskPhoto}
+                    onDeletePhoto={handleDeleteTaskPhoto}
+                    onMovePhoto={handleMoveTaskPhoto}
+                    canManagePhotos={canManageTaskPhotos({
+                        project,
+                        userId: state.user?.id,
+                        userContactId: state.userContactId,
+                        userRoleName: state.userRole?.name,
+                        canEditTasks,
+                        task: photoModalTask,
+                    })}
+                    photoActionBusy={photoActionTaskIds[photoModalTask.id] === true}
+                    photoUploadProgress={
+                        taskPhotoUploadProgress?.taskId === photoModalTask.id
+                            ? {
+                                  current: taskPhotoUploadProgress.current,
+                                  total: taskPhotoUploadProgress.total,
+                              }
+                            : null
+                    }
+                />
+            )}
+
             {showPhasesModal && project && (
                 <div
                     className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-8 p-4 bg-black/40 backdrop-blur-[1px]"
@@ -3645,42 +3656,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         </div>
                     </div>
                 </div>
-            )}
-
-            {discussionModalTaskId && project && (
-                <TaskDiscussionModal
-                    task={allTasks.find((t) => t.id === discussionModalTaskId)}
-                    project={project}
-                    onClose={() => setDiscussionModalTaskId(null)}
-                />
-            )}
-
-            {photoModalTask && (
-                <TaskPhotosModal
-                    task={photoModalTask}
-                    onClose={() => setPhotoModalTaskId(null)}
-                    onAddPhotos={handleAddTaskPhotos}
-                    onUpdatePhoto={handleUpdateTaskPhoto}
-                    onDeletePhoto={handleDeleteTaskPhoto}
-                    onMovePhoto={handleMoveTaskPhoto}
-                    canManagePhotos={canManageTaskPhotos({
-                        project,
-                        userId: state.user?.id,
-                        userContactId: state.userContactId,
-                        userRoleName: state.userRole?.name,
-                        canEditTasks,
-                        task: photoModalTask,
-                    })}
-                    photoActionBusy={photoActionTaskIds[photoModalTask.id] === true}
-                    photoUploadProgress={
-                        taskPhotoUploadProgress?.taskId === photoModalTask.id
-                            ? {
-                                  current: taskPhotoUploadProgress.current,
-                                  total: taskPhotoUploadProgress.total,
-                              }
-                            : null
-                    }
-                />
             )}
 
             <ConfirmDialog

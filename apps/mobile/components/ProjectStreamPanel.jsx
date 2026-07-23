@@ -23,6 +23,7 @@ import PanelEmptyState from './PanelEmptyState';
 import { Text } from './ui/Text';
 import { SkeletonCard } from './ui/Skeleton';
 import { useBranding } from '../context/BrandingContext';
+import { useCreateAction } from '../context/CreateActionContext';
 import { useHaptics } from '../hooks/useHaptics';
 import { colors, spacing, radius, touch } from '../theme';
 
@@ -38,6 +39,7 @@ export default function ProjectStreamPanel({
 }) {
   const { t, i18n } = useTranslation();
   const { primaryColor } = useBranding();
+  const { openSiteDay } = useCreateAction();
   const haptics = useHaptics();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -118,6 +120,10 @@ export default function ProjectStreamPanel({
   const handlePost = async () => {
     const trimmed = body.trim();
     if (!canPost || !trimmed || !currentUserId || !project) return;
+    if (composePostType === 'daily_log') {
+      await openSiteDay?.();
+      return;
+    }
     setSending(true);
     try {
       await createStreamPost(supabase, {
@@ -225,40 +231,57 @@ export default function ProjectStreamPanel({
           )}
         />
         {canPost ? (
-          <>
-            <TextInput
-              ref={composerRef}
-              style={styles.composer}
-              value={body}
-              onChangeText={setBody}
-              placeholder={t('mobile.stream_composer_placeholder')}
-              multiline
-              placeholderTextColor={colors.textSubtle}
-            />
-            <Text variant="caption" style={styles.visibilityHint}>
-              {t('mobile.stream_visibility_hint')}
-            </Text>
-            <View style={styles.composerFooter}>
+          composePostType === 'daily_log' ? (
+            <View style={styles.siteDayPrompt}>
+              <Text variant="body" style={styles.siteDayPromptText}>
+                {t('mobile.stream_daily_log_use_site_day')}
+              </Text>
               <PressableWithFade
-                style={[
-                  styles.postBtn,
-                  { backgroundColor: primaryColor },
-                  (sending || !body.trim()) && styles.postBtnDisabled,
-                ]}
-                onPress={handlePost}
-                disabled={sending || !body.trim()}
-                testID="stream-post-button"
+                style={[styles.postBtn, { backgroundColor: primaryColor }]}
+                onPress={() => openSiteDay?.()}
+                testID="stream-open-site-day"
               >
-                {sending ? (
-                  <ActivityIndicator color={colors.white} size="small" />
-                ) : (
-                  <Text variant="caption" style={styles.postBtnText}>
-                    {t('mobile.stream_post')}
-                  </Text>
-                )}
+                <Text variant="caption" style={styles.postBtnText}>
+                  {t('mobile.stream_daily_log_open_site_day')}
+                </Text>
               </PressableWithFade>
             </View>
-          </>
+          ) : (
+            <>
+              <TextInput
+                ref={composerRef}
+                style={styles.composer}
+                value={body}
+                onChangeText={setBody}
+                placeholder={t('mobile.stream_composer_placeholder')}
+                multiline
+                placeholderTextColor={colors.textSubtle}
+              />
+              <Text variant="caption" style={styles.visibilityHint}>
+                {t('mobile.stream_visibility_hint')}
+              </Text>
+              <View style={styles.composerFooter}>
+                <PressableWithFade
+                  style={[
+                    styles.postBtn,
+                    { backgroundColor: primaryColor },
+                    (sending || !body.trim()) && styles.postBtnDisabled,
+                  ]}
+                  onPress={handlePost}
+                  disabled={sending || !body.trim()}
+                  testID="stream-post-button"
+                >
+                  {sending ? (
+                    <ActivityIndicator color={colors.white} size="small" />
+                  ) : (
+                    <Text variant="caption" style={styles.postBtnText}>
+                      {t('mobile.stream_post')}
+                    </Text>
+                  )}
+                </PressableWithFade>
+              </View>
+            </>
+          )
         ) : (
           <Text variant="caption" style={styles.blockedHint}>
             {t('mobile.stream_composer_blocked')}
@@ -266,7 +289,7 @@ export default function ProjectStreamPanel({
         )}
       </View>
     ),
-    [listHeaderExtra, error, viewFilter, body, sending, primaryColor, t, load, filterOptions, canPost, searchQuery],
+    [listHeaderExtra, error, viewFilter, body, sending, primaryColor, t, load, filterOptions, canPost, searchQuery, composePostType, openSiteDay],
   );
 
   const renderPost = ({ item: post, index }) => {
@@ -450,6 +473,14 @@ const styles = StyleSheet.create({
   postBtnText: { color: colors.white, fontWeight: '700', fontSize: 13 },
   visibilityHint: { color: colors.textSubtle, marginBottom: spacing.sm },
   blockedHint: { color: colors.textMuted, marginBottom: spacing.md, lineHeight: 18 },
+  siteDayPrompt: {
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.card,
+    backgroundColor: colors.surfaceMuted,
+  },
+  siteDayPromptText: { color: colors.text, lineHeight: 20 },
   postRow: {
     paddingVertical: spacing.lg,
     borderBottomWidth: 1,
