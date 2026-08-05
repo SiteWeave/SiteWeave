@@ -618,20 +618,27 @@ function DashboardView() {
                 <div className="xl:col-span-3">
                     <header className="mb-8 app-card p-5" data-onboarding="dashboard-welcome" data-testid="dashboard-view">
                         <div className="flex min-w-0 items-center gap-4">
-                            <div className="@container min-w-0 shrink">
-                                <h1 className="app-section-title mb-0.5 whitespace-nowrap text-2xl sm:text-[1.75rem]">
-                                    {isGuestOnly ? (
-                                        t('dashboard.guest_title')
-                                    ) : (
-                                        <>
-                                            <span className="hidden @[18rem]:inline">{t('dashboard.title')}</span>
-                                            <span className="@[18rem]:hidden">{t('dashboard.title_short')}</span>
-                                        </>
-                                    )}
-                                </h1>
-                                <p className="app-section-subtitle truncate">
-                                    {isGuestOnly ? t('dashboard.guest_subtitle') : t('dashboard.subtitle')}
-                                </p>
+                            {/* Outer flex-1 + basis-0 sizes from remaining space; inner @container
+                                must be w-full or inline-size containment collapses and hides the subtitle. */}
+                            <div className="min-w-0 flex-1 basis-0">
+                                <div className="@container w-full min-w-0">
+                                    <h1 className="app-section-title mb-0.5 whitespace-nowrap text-2xl sm:text-[1.75rem]">
+                                        {isGuestOnly ? (
+                                            t('dashboard.guest_title')
+                                        ) : (
+                                            <>
+                                                <span className="hidden @[18rem]:inline">{t('dashboard.title')}</span>
+                                                <span className="@[18rem]:hidden">{t('dashboard.title_short')}</span>
+                                            </>
+                                        )}
+                                    </h1>
+                                    <p
+                                        className="app-section-subtitle truncate"
+                                        title={isGuestOnly ? t('dashboard.guest_subtitle') : t('dashboard.subtitle')}
+                                    >
+                                        {isGuestOnly ? t('dashboard.guest_subtitle') : t('dashboard.subtitle')}
+                                    </p>
+                                </div>
                             </div>
                             <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                                 <ViewSwitcher compact currentView={viewType} onViewChange={setViewType} />
