@@ -1,5 +1,24 @@
 import { supabaseClient } from '../context/AppContext';
 
+/** In-flight dedupe so blur/double-submit doesn't insert twin activity rows. */
+const recentActivityKeys = new Map();
+const ACTIVITY_DEDUPE_MS = 2500;
+
+function shouldSkipDuplicateActivity(action, entityType, entityId) {
+    if (!action || !entityType || !entityId) return false;
+    const key = `${action}:${entityType}:${entityId}`;
+    const now = Date.now();
+    const prev = recentActivityKeys.get(key);
+    if (prev && now - prev < ACTIVITY_DEDUPE_MS) return true;
+    recentActivityKeys.set(key, now);
+    if (recentActivityKeys.size > 200) {
+        for (const [k, ts] of recentActivityKeys) {
+            if (now - ts > ACTIVITY_DEDUPE_MS) recentActivityKeys.delete(k);
+        }
+    }
+    return false;
+}
+
 async function resolveUserAvatarForLog(user) {
     if (!user?.id) return null;
     const { data, error } = await supabaseClient
@@ -37,6 +56,10 @@ export async function logActivity({
     try {
         if (!user || !user.id) {
             console.warn('Cannot log activity: user not provided');
+            return;
+        }
+
+        if (shouldSkipDuplicateActivity(action, entityType, entityId)) {
             return;
         }
 

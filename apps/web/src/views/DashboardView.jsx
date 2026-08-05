@@ -40,6 +40,7 @@ import {
   useBrandingPrimaryColor,
 } from '@siteweave/onboarding-ui';
 import { ROUTE_PATHS } from '../config/routes';
+import { logProjectCreated } from '../utils/activityLogger';
 
 const loadBrandingColor = (organizationId) =>
   getOrganizationBranding(supabaseClient, organizationId).then((b) => b?.primary_color);
@@ -532,6 +533,7 @@ function DashboardView() {
                     console.warn('No contacts to add to project - project may not be visible after reload');
                 }
                 dispatch({ type: 'ADD_PROJECT', payload: createdProject });
+                logProjectCreated(createdProject, state.user);
                 addToast('Project created successfully!', 'success');
                 setShowModal(false);
             }

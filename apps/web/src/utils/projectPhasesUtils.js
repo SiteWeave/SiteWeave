@@ -102,7 +102,7 @@ export function setAllPhaseSectionsExpanded(projectId, phaseKeys, expanded) {
     const value = expanded ? '1' : '0';
     for (const key of phaseKeys) {
         try {
-            window.localStorage.setItem(phaseCollapseStorageKey(projectId, phaseKey), value);
+            window.localStorage.setItem(phaseCollapseStorageKey(projectId, key), value);
         } catch {
             /* ignore */
         }

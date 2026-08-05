@@ -19,6 +19,7 @@ import ProjectLimitReachedModal from '../components/ProjectLimitReachedModal';
 import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
 import { trashProject, restoreProject } from '@siteweave/core-logic';
 import { ROUTE_PATHS } from '../config/routes';
+import { logProjectCreated } from '../utils/activityLogger';
 import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import { useProjectShortcuts } from '../hooks/useKeyboardShortcuts';
 import { calculateProjectsProgressMap } from '../utils/projectHelpers';
@@ -531,6 +532,7 @@ function DashboardView() {
                     console.warn('No contacts to add to project - project may not be visible after reload');
                 }
                 dispatch({ type: 'ADD_PROJECT', payload: createdProject });
+                logProjectCreated(createdProject, state.user);
                 addToast('Project created successfully!', 'success');
                 setShowModal(false);
             }

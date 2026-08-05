@@ -1,4 +1,5 @@
 import React from 'react'
+import { captureException } from '../utils/sentry'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -13,8 +14,12 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     console.error('Error caught by boundary:', error, errorInfo)
     this.setState({ errorInfo })
-    
-    // Optionally log to error reporting service
+
+    captureException(error, {
+      tags: { boundary: 'react' },
+      extra: { componentStack: errorInfo?.componentStack },
+    })
+
     if (this.props.onError) {
       this.props.onError(error, errorInfo)
     }

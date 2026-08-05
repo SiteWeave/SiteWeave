@@ -10,6 +10,8 @@ const appVersion = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json
 
 export default defineConfig({
   base: '/',
+  // Load VITE_* from repo root .env (same file Electron uses)
+  envDir: path.resolve(__dirname, '../..'),
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
   },
@@ -70,6 +72,4 @@ export default defineConfig({
     transformer: 'lightningcss',
   },
   publicDir: 'public',
-  // Vite automatically loads .env files from the project root
-  // Environment variables prefixed with VITE_ are automatically exposed
 })

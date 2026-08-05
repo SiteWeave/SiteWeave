@@ -29,6 +29,7 @@ const TaskItem = memo(function TaskItem({
     onCopyGuestLink = null,
     pingingTaskId = null,
     project = null,
+    isActionCoachRow = false,
 }) {
     const { i18n, t } = useTranslation();
     /** @type {[TaskPanel, (p: TaskPanel) => void]} */
@@ -42,12 +43,21 @@ const TaskItem = memo(function TaskItem({
     const [editPriority, setEditPriority] = useState(task.priority);
     const [showAllPredecessors, setShowAllPredecessors] = useState(false);
     const [draftPercent, setDraftPercent] = useState(null);
+    const [showConfetti, setShowConfetti] = useState(false);
+    const [percentEditing, setPercentEditing] = useState(false);
+    const [percentText, setPercentText] = useState('');
+    const [hoverExpanded, setHoverExpanded] = useState(false);
 
     const rootRef = useRef(null);
     const suppressRowDragRef = useRef(false);
+    const percentCommitLockRef = useRef(false);
+    const confettiTimerRef = useRef(null);
+    const percentInputRef = useRef(null);
+    const hoverCloseTimerRef = useRef(null);
 
     const syncDraftsFromTask = useCallback(() => {
         setDraftStart(task.start_date || '');
+
         setDraftDue(task.due_date || '');
         setEditPhaseId(task.project_phase_id || '');
         setEditAssigneeId(task.assignee_id || '');
@@ -65,9 +75,10 @@ const TaskItem = memo(function TaskItem({
     useEffect(() => {
         if (!panel) return undefined;
         const onDocMouseDown = (e) => {
-            if (rootRef.current && !rootRef.current.contains(e.target)) {
-                setPanel(null);
-            }
+            if (rootRef.current?.contains(e.target)) return;
+            // DateRangePicker portals the calendar to document.body
+            if (e.target?.closest?.('[data-siteweave-date-range-popover]')) return;
+            setPanel(null);
         };
         document.addEventListener('mousedown', onDocMouseDown);
         return () => document.removeEventListener('mousedown', onDocMouseDown);
@@ -81,6 +92,26 @@ const TaskItem = memo(function TaskItem({
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
     }, [panel]);
+
+    const handleRowMouseEnter = useCallback(() => {
+        if (hoverCloseTimerRef.current) {
+            window.clearTimeout(hoverCloseTimerRef.current);
+            hoverCloseTimerRef.current = null;
+        }
+        setHoverExpanded(true);
+    }, []);
+
+    const handleRowMouseLeave = useCallback(() => {
+        if (hoverCloseTimerRef.current) window.clearTimeout(hoverCloseTimerRef.current);
+        hoverCloseTimerRef.current = window.setTimeout(() => {
+            setHoverExpanded(false);
+            hoverCloseTimerRef.current = null;
+        }, 320);
+    }, []);
+
+    useEffect(() => () => {
+        if (hoverCloseTimerRef.current) window.clearTimeout(hoverCloseTimerRef.current);
+    }, []);
 
     const priorityClasses = {
         High: 'bg-red-100 text-red-700',
@@ -105,18 +136,77 @@ const TaskItem = memo(function TaskItem({
     // Show the in-progress draft while editing, otherwise the saved value.
     const displayPercent = draftPercent === null ? progressPercent : draftPercent;
 
-    // Commit the percent once (on blur / Enter) so a single 0→100 edit fires one
-    // update + one toast instead of one per keystroke or spinner click.
-    const commitPercent = useCallback(() => {
-        if (draftPercent === null) return;
-        const bounded = Math.max(0, Math.min(100, Number(draftPercent) || 0));
-        setDraftPercent(null);
-        if (bounded === progressPercent) return;
+    const applyPercent = useCallback((rawValue) => {
+        if (percentCommitLockRef.current) return;
+        const bounded = Math.max(0, Math.min(100, Math.round(Number(rawValue) || 0)));
+        percentCommitLockRef.current = true;
+        if (bounded === progressPercent) {
+            percentCommitLockRef.current = false;
+            return;
+        }
+        const reachedComplete = bounded >= 100 && progressPercent < 100;
         onEdit(task.id, {
             percent_complete: bounded,
             completed: bounded >= 100,
         });
-    }, [draftPercent, progressPercent, onEdit, task.id]);
+        if (reachedComplete) {
+            const prefersReduced =
+                typeof window !== 'undefined' &&
+                window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (!prefersReduced) {
+                setShowConfetti(true);
+                if (confettiTimerRef.current) window.clearTimeout(confettiTimerRef.current);
+                confettiTimerRef.current = window.setTimeout(() => {
+                    setShowConfetti(false);
+                    confettiTimerRef.current = null;
+                }, 900);
+            }
+        }
+        queueMicrotask(() => {
+            percentCommitLockRef.current = false;
+        });
+    }, [progressPercent, onEdit, task.id]);
+
+    // Commit slider draft once (on blur / Enter / slider release).
+    const commitPercent = useCallback(() => {
+        if (draftPercent === null) return;
+        const next = draftPercent;
+        setDraftPercent(null);
+        applyPercent(next);
+    }, [draftPercent, applyPercent]);
+
+    const openPercentEdit = useCallback((e) => {
+        e?.stopPropagation?.();
+        setDraftPercent(null);
+        setPercentText(String(displayPercent));
+        setPercentEditing(true);
+    }, [displayPercent]);
+
+    const commitPercentText = useCallback(() => {
+        if (!percentEditing) return;
+        setPercentEditing(false);
+        applyPercent(percentText);
+        setPercentText('');
+    }, [percentEditing, percentText, applyPercent]);
+
+    const cancelPercentText = useCallback(() => {
+        setPercentEditing(false);
+        setPercentText('');
+    }, []);
+
+    useEffect(() => {
+        if (!percentEditing) return undefined;
+        const input = percentInputRef.current;
+        if (input) {
+            input.focus();
+            input.select();
+        }
+        return undefined;
+    }, [percentEditing]);
+
+    useEffect(() => () => {
+        if (confettiTimerRef.current) window.clearTimeout(confettiTimerRef.current);
+    }, []);
 
     const daysSelected = () => {
         if (!draftStart || !draftDue) return null;
@@ -360,14 +450,24 @@ const TaskItem = memo(function TaskItem({
         );
     };
 
+    const showStatusSignals = photoCount > 0 || depWarningCount > 0 || Boolean(assigneeDisplay);
+
     return (
         <li
             ref={rootRef}
             draggable
             onDragStart={handleTaskRowDragStart}
-            className={`group relative transition-colors animate-slide-in border-b border-gray-100 last:border-b-0 ${
+            onMouseEnter={handleRowMouseEnter}
+            onMouseLeave={handleRowMouseLeave}
+            className={`task-row group relative transition-colors animate-slide-in border-b border-gray-100 last:border-b-0 ${
                 isSelected ? 'bg-blue-50/80' : ''
-            } ${isComplete ? 'bg-green-50/40' : 'bg-white hover:bg-gray-50/80'}`}
+            } ${isComplete ? 'bg-green-50/40' : 'bg-white hover:bg-gray-50/80'}${
+                isActionCoachRow ? ' task-row--coach' : ''
+            }${hoverExpanded ? ' task-row--hover-open' : ''}${
+                panel ? ' task-row--panel-open' : ''
+            }${
+                unmetCount > 0 && !isComplete ? ' task-row--blocked' : ''
+            }`}
             role="listitem"
             aria-label={`Task: ${task.text}, Priority: ${task.priority}, ${dateLine()}`}
             onClick={(e) => {
@@ -377,7 +477,25 @@ const TaskItem = memo(function TaskItem({
                 }
             }}
         >
-            <div className="px-2 py-2.5 sm:px-3">
+            <div className="px-2 py-3.5 sm:px-3 relative">
+                {showConfetti && (
+                    <div className="task-confetti-burst" aria-hidden>
+                        {Array.from({ length: 12 }, (_, i) => (
+                            <span
+                                key={i}
+                                className="task-confetti-piece"
+                                style={{
+                                    '--tx': `${(i % 2 === 0 ? -1 : 1) * (12 + (i % 5) * 8)}px`,
+                                    '--ty': `${-28 - (i % 4) * 10}px`,
+                                    '--rot': `${(i * 37) % 360}deg`,
+                                    backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6'][i % 5],
+                                    left: `${20 + (i * 5)}%`,
+                                    animationDelay: `${i * 18}ms`,
+                                }}
+                            />
+                        ))}
+                    </div>
+                )}
 
                 {/* ── Row 1: What ── */}
                 <div className="flex items-start justify-between gap-3">
@@ -393,13 +511,13 @@ const TaskItem = memo(function TaskItem({
                             <PermissionGuard
                                 permission="can_edit_tasks"
                                 fallback={
-                                    <span className="shrink-0 tabular-nums text-xs font-semibold text-gray-600 w-12 text-right" title={t('tasks.percent_complete')}>
+                                    <span className="shrink-0 tabular-nums text-xs font-semibold text-gray-600 w-10 text-right" title={t('tasks.percent_complete')}>
                                         {progressPercent}%
                                     </span>
                                 }
                             >
                                 <label
-                                    className="flex shrink-0 items-center gap-0.5"
+                                    className="flex shrink-0 items-center gap-1.5 w-[8.5rem]"
                                     title={t('tasks.percent_complete_title')}
                                     onClick={stop}
                                     onMouseDown={suppressRowDrag}
@@ -410,28 +528,99 @@ const TaskItem = memo(function TaskItem({
                                     }}
                                 >
                                     <input
-                                        type="number"
+                                        type="range"
                                         draggable={false}
                                         min="0"
                                         max="100"
+                                        step="5"
                                         value={displayPercent}
                                         onChange={(e) => {
+                                            if (percentEditing) setPercentEditing(false);
                                             const bounded = Math.max(0, Math.min(100, Number(e.target.value) || 0));
                                             setDraftPercent(bounded);
                                         }}
-                                        onBlur={commitPercent}
+                                        onPointerUp={commitPercent}
                                         onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
+                                            // Shift+arrow = 1% fine nudge while focused on the slider
+                                            if (
+                                                e.shiftKey &&
+                                                (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+                                            ) {
                                                 e.preventDefault();
-                                                e.currentTarget.blur();
+                                                const delta = e.key === 'ArrowRight' ? 1 : -1;
+                                                const base = draftPercent === null ? progressPercent : draftPercent;
+                                                setDraftPercent(Math.max(0, Math.min(100, base + delta)));
+                                            }
+                                        }}
+                                        onKeyUp={(e) => {
+                                            if (
+                                                e.key === 'Enter' ||
+                                                e.key === 'ArrowLeft' ||
+                                                e.key === 'ArrowRight' ||
+                                                e.key === 'Home' ||
+                                                e.key === 'End'
+                                            ) {
+                                                commitPercent();
                                             } else if (e.key === 'Escape') {
                                                 setDraftPercent(null);
                                             }
                                         }}
-                                        className="h-7 w-14 shrink-0 select-text rounded border border-gray-300 px-1 text-xs text-gray-800 [-moz-appearance:textfield] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                        aria-label={`Percent complete for ${task.text}`}
+                                        className={`task-progress-slider h-2 w-full cursor-pointer ${
+                                            displayPercent >= 100 ? 'task-progress-slider--complete' : ''
+                                        }`}
+                                        style={{ '--progress': `${displayPercent}%` }}
+                                        aria-label={`${t('tasks.percent_complete')} — ${task.text}`}
+                                        aria-valuemin={0}
+                                        aria-valuemax={100}
+                                        aria-valuenow={displayPercent}
                                     />
-                                    <span className="text-[11px] text-gray-500">%</span>
+                                    {percentEditing ? (
+                                        <span className="flex items-center gap-0.5 shrink-0">
+                                            <input
+                                                ref={percentInputRef}
+                                                type="number"
+                                                inputMode="numeric"
+                                                min={0}
+                                                max={100}
+                                                value={percentText}
+                                                onClick={stop}
+                                                onMouseDown={suppressRowDrag}
+                                                onTouchStart={suppressRowDrag}
+                                                onChange={(e) => setPercentText(e.target.value)}
+                                                onBlur={commitPercentText}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        commitPercentText();
+                                                    } else if (e.key === 'Escape') {
+                                                        e.preventDefault();
+                                                        cancelPercentText();
+                                                    }
+                                                }}
+                                                className="w-9 rounded border border-blue-300 bg-white px-0.5 py-0.5 text-right text-[11px] font-semibold tabular-nums text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                                aria-label={t('tasks.percent_complete_exact', {
+                                                    defaultValue: 'Exact percent complete',
+                                                })}
+                                            />
+                                            <span className="text-[11px] font-semibold text-gray-500">%</span>
+                                        </span>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={openPercentEdit}
+                                            onMouseDown={suppressRowDrag}
+                                            onTouchStart={suppressRowDrag}
+                                            className="tabular-nums text-[11px] font-semibold text-gray-700 w-8 shrink-0 text-right rounded px-0.5 hover:bg-gray-100 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                            title={t('tasks.percent_complete_exact_hint', {
+                                                defaultValue: 'Click to type exact %',
+                                            })}
+                                            aria-label={t('tasks.percent_complete_exact_hint', {
+                                                defaultValue: 'Click to type exact %',
+                                            })}
+                                        >
+                                            {displayPercent}%
+                                        </button>
+                                    )}
                                 </label>
                             </PermissionGuard>
                         </div>
@@ -460,8 +649,37 @@ const TaskItem = memo(function TaskItem({
                         </PermissionGuard>
                     </div>
 
-                    {/* Right: priority badge */}
+                    {/* Right: idle signals + priority */}
                     <div className="mt-0.5 shrink-0 flex items-center gap-1.5">
+                        {showStatusSignals && (
+                            <div className="task-row-status-signals" aria-hidden={isActionCoachRow || Boolean(panel)}>
+                                {photoCount > 0 && (
+                                    <span
+                                        className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold text-white"
+                                        title={t('tasks.photos')}
+                                    >
+                                        {photoCount > 9 ? '9+' : photoCount}
+                                    </span>
+                                )}
+                                {depWarningCount > 0 && (
+                                    <span
+                                        className="inline-flex h-5 items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-800"
+                                        title={depTooltip || t('tasks.dependencies')}
+                                    >
+                                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                        {t('tasks.deps')}
+                                    </span>
+                                )}
+                                {assigneeDisplay && (
+                                    <span
+                                        className="inline-flex max-w-[88px] items-center rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] text-gray-600"
+                                        title={t('tasks.assigned_to', { name: assigneeDisplay })}
+                                    >
+                                        <span className="ui-ellipsis-1">{assigneeDisplay}</span>
+                                    </span>
+                                )}
+                            </div>
+                        )}
                         <span
                             className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
                                 priorityClasses[task.priority] || priorityClasses.Medium
@@ -472,14 +690,16 @@ const TaskItem = memo(function TaskItem({
                     </div>
                 </div>
 
-                {/* ── Row 2: When & Actions ── */}
+                {/* ── Details: dates + actions (collapsed to one-line rows until hover) ── */}
+                <div className="task-row-details">
+                    <div className="task-row-details-inner">
                 <div className="mt-1.5 ml-1 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:ml-2">
-                    <div className="min-w-0 flex-1">
+                    <div className="task-row-meta min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
                         <PermissionGuard
                             permission="can_edit_tasks"
                             fallback={
-                                <span className={`tabular-nums ${isComplete ? 'text-gray-400' : 'text-gray-500'}`}>
+                                <span className={`tabular-nums ${isComplete ? 'text-gray-400' : 'text-gray-600'}`}>
                                     {dateLine()}
                                 </span>
                             }
@@ -488,7 +708,7 @@ const TaskItem = memo(function TaskItem({
                                 type="button"
                                 onClick={openPanel('dates')}
                                 className={`tabular-nums rounded px-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
-                                    isComplete ? 'text-gray-400' : 'text-gray-500 hover:text-blue-600 hover:underline underline-offset-2'
+                                    isComplete ? 'text-gray-400' : 'text-gray-600 hover:text-blue-600 hover:underline underline-offset-2'
                                 }`}
                                 title={t('tasks.set_dates')}
                             >
@@ -540,12 +760,15 @@ const TaskItem = memo(function TaskItem({
                     </div>
 
                     {/* Right: action buttons */}
-                    <div className="flex shrink-0 flex-wrap items-center gap-0.5 sm:justify-end sm:gap-1">
+                    <div className="task-row-actions flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-2.5">
                         {/* Photos */}
                         <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); onOpenPhotos?.(task.id); }}
-                            className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenPhotos?.(task.id);
+                            }}
+                            className="task-row-action"
                             title={t('tasks.photos')}
                             aria-label={`${t('tasks.photos')} — ${task.text}`}
                         >
@@ -570,8 +793,8 @@ const TaskItem = memo(function TaskItem({
                             permission="can_edit_tasks"
                             fallback={
                                 <span
-                                    className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs ${
-                                        depWarningCount > 0 ? 'text-amber-600' : 'text-gray-400'
+                                    className={`task-row-action ${
+                                        depWarningCount > 0 ? 'task-row-action--warn' : 'task-row-action--muted'
                                     }`}
                                     title={depTooltip || t('tasks.dependencies')}
                                 >
@@ -591,10 +814,8 @@ const TaskItem = memo(function TaskItem({
                                     event.stopPropagation();
                                     onOpenDependencyDrawer?.(task.id);
                                 }}
-                                className={`relative flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs hover:bg-gray-100 ${
-                                    depWarningCount > 0
-                                        ? 'text-amber-600 hover:text-amber-800'
-                                        : 'text-gray-500 hover:text-gray-800'
+                                className={`task-row-action relative ${
+                                    depWarningCount > 0 ? 'task-row-action--warn' : ''
                                 }`}
                                 title={depTooltip || t('tasks.dependencies')}
                                 aria-label={t('tasks.task_dependencies_aria')}
@@ -620,7 +841,7 @@ const TaskItem = memo(function TaskItem({
                                     e.stopPropagation();
                                     onOpenDiscussion(task.id);
                                 }}
-                                className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                                className="task-row-action"
                                 title={t('tasks.discussion')}
                                 aria-label={`${t('tasks.discussion')} — ${task.text}`}
                             >
@@ -637,8 +858,8 @@ const TaskItem = memo(function TaskItem({
                             permission="can_edit_tasks"
                             fallback={
                                 <span
-                                    className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs ${
-                                        assigneeDisplay ? 'text-gray-600' : 'text-gray-400'
+                                    className={`task-row-action ${
+                                        assigneeDisplay ? '' : 'task-row-action--muted'
                                     }`}
                                     title={assigneeDisplay ? t('tasks.assigned_to', { name: assigneeDisplay }) : t('tasks.unassigned')}
                                 >
@@ -653,10 +874,8 @@ const TaskItem = memo(function TaskItem({
                             <button
                                 type="button"
                                 onClick={openPanel('assign')}
-                                className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs hover:bg-gray-100 ${
-                                    assigneeName
-                                        ? 'text-gray-600 hover:text-gray-900'
-                                        : 'text-gray-400 hover:text-gray-600'
+                                className={`task-row-action ${
+                                    assigneeName ? '' : 'task-row-action--muted'
                                 }`}
                                 title={assigneeDisplay ? t('tasks.assigned_to_change', { name: assigneeDisplay }) : t('tasks.assign_task')}
                                 aria-label={t('tasks.assignment_aria')}
@@ -677,7 +896,7 @@ const TaskItem = memo(function TaskItem({
                                         event.stopPropagation();
                                         onCopyGuestLink(task);
                                     }}
-                                    className="flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-500 shadow-xs hover:border-blue-200 hover:text-blue-600"
+                                    className="task-row-action task-row-action--bordered"
                                     title={t('tasks.guest_link_title', {
                                         defaultValue: 'Copy guest link (no account needed)',
                                     })}
@@ -699,7 +918,7 @@ const TaskItem = memo(function TaskItem({
 
                         {onPingAssignee && (
                                 <PermissionGuard permission="can_assign_tasks">
-                                    <div className="flex shrink-0 items-center gap-0.5">
+                                    <div className="flex shrink-0 items-center gap-1.5">
                                         <button
                                             type="button"
                                             onClick={(event) => {
@@ -707,7 +926,7 @@ const TaskItem = memo(function TaskItem({
                                                 onPingAssignee(task);
                                             }}
                                             disabled={pingingTaskId === task.id}
-                                            className="relative flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-1.5 py-1 text-xs text-gray-500 shadow-xs hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                            className="task-row-action task-row-action--bordered disabled:cursor-not-allowed disabled:opacity-50"
                                             title={t('tasks.ping_title_email')}
                                             aria-label={t('tasks.ping_assignee_aria', { task: task.text })}
                                         >
@@ -781,8 +1000,11 @@ const TaskItem = memo(function TaskItem({
                         <PermissionGuard permission="can_delete_tasks">
                             <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
-                                className="rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDelete(task.id);
+                                }}
+                                className="task-row-action task-row-action--danger"
                                 title={t('tasks.delete_task')}
                                 aria-label={`${t('tasks.delete_task')}: ${task.text}`}
                             >
@@ -792,6 +1014,8 @@ const TaskItem = memo(function TaskItem({
                                 />
                             </button>
                         </PermissionGuard>
+                    </div>
+                </div>
                     </div>
                 </div>
 

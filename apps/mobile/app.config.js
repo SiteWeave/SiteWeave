@@ -69,7 +69,10 @@ module.exports = function(env) {
         },
         eas: {
           projectId: "0e8aedb2-5084-4046-a750-5032e61afd9a",
-        }
+        },
+        // Optional: set EXPO_PUBLIC_SENTRY_DSN or override here
+        sentryDsn: process.env.EXPO_PUBLIC_SENTRY_DSN || null,
+        sentryEnvironment: process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT || null,
       }
     }
   };

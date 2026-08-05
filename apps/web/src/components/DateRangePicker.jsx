@@ -188,6 +188,7 @@ function DateRangePicker({
       className={popoverClassName}
       role="dialog"
       aria-label="Choose date range"
+      data-siteweave-date-range-popover
       style={{ ...pickerStyle, ...popoverStyle }}
     >
       {presets ? (

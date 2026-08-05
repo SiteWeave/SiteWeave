@@ -143,6 +143,25 @@ function pickTaskInsertPayload(taskData) {
   }, {});
 }
 
+const ACTIVITY_TRACKED_TASK_FIELDS = [
+  'text',
+  'assignee_id',
+  'due_date',
+  'start_date',
+  'priority',
+  'duration_days',
+  'project_phase_id',
+];
+
+async function recordTaskActivity(supabase, params) {
+  try {
+    const { recordActivity } = await import('./activityService.js');
+    await recordActivity(supabase, params);
+  } catch (err) {
+    console.warn('[activity] task activity failed:', err);
+  }
+}
+
 /**
  * Create a new task
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
@@ -162,6 +181,32 @@ export async function createTask(supabase, taskData) {
     .single();
   
   if (error) throw error;
+
+  await recordTaskActivity(supabase, {
+    action: 'created',
+    entityType: 'task',
+    entityId: data.id,
+    entityName: data.text || 'Task',
+    projectId: data.project_id || null,
+    organizationId: data.organization_id || null,
+    details: {
+      priority: data.priority || null,
+      due_date: data.due_date || null,
+      assignee_id: data.assignee_id || null,
+    },
+  });
+
+  if (data.completed) {
+    await recordTaskActivity(supabase, {
+      action: 'completed',
+      entityType: 'task',
+      entityId: data.id,
+      entityName: data.text || 'Task',
+      projectId: data.project_id || null,
+      organizationId: data.organization_id || null,
+    });
+  }
+
   return data;
 }
 
@@ -218,16 +263,25 @@ export async function updateTask(supabase, taskId, updates) {
   const normalized = normalizeTaskProgressUpdate(updates);
   const affectsCompletion =
     normalized.completed !== undefined || normalized.percent_complete !== undefined;
+  const trackedKeysPresent = ACTIVITY_TRACKED_TASK_FIELDS.some((key) =>
+    Object.prototype.hasOwnProperty.call(normalized, key),
+  );
 
   let payload = normalized;
-  if (affectsCompletion) {
+  let previous = null;
+  if (affectsCompletion || trackedKeysPresent) {
     const { data: current, error: currentError } = await supabase
       .from('tasks')
-      .select('completed')
+      .select(
+        'id, text, completed, project_id, organization_id, assignee_id, due_date, start_date, priority, duration_days, project_phase_id',
+      )
       .eq('id', taskId)
       .maybeSingle();
     if (currentError) throw currentError;
-    payload = applyCompletedAtUpdate(normalized, current);
+    previous = current;
+    if (affectsCompletion) {
+      payload = applyCompletedAtUpdate(normalized, current);
+    }
   }
 
   const { data, error } = await supabase
@@ -240,7 +294,56 @@ export async function updateTask(supabase, taskId, updates) {
   if (!data || data.length === 0) {
     throw new Error('Task not found or update failed');
   }
-  return data[0];
+
+  const updatedRow = data[0];
+  const previousCompleted = Boolean(previous?.completed);
+  const nowCompleted = Boolean(updatedRow.completed);
+  const becameComplete = affectsCompletion && nowCompleted && !previousCompleted;
+  const becameIncomplete = affectsCompletion && !nowCompleted && previousCompleted;
+
+  if (becameComplete) {
+    await recordTaskActivity(supabase, {
+      action: 'completed',
+      entityType: 'task',
+      entityId: updatedRow.id,
+      entityName: updatedRow.text || 'Task',
+      projectId: updatedRow.project_id || null,
+      organizationId: updatedRow.organization_id || null,
+    });
+  } else if (becameIncomplete) {
+    await recordTaskActivity(supabase, {
+      action: 'uncompleted',
+      entityType: 'task',
+      entityId: updatedRow.id,
+      entityName: updatedRow.text || 'Task',
+      projectId: updatedRow.project_id || null,
+      organizationId: updatedRow.organization_id || null,
+    });
+  }
+
+  if (previous && trackedKeysPresent) {
+    const changes = {};
+    for (const key of ACTIVITY_TRACKED_TASK_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(normalized, key)) continue;
+      const before = previous[key] ?? null;
+      const after = updatedRow[key] ?? null;
+      if (before !== after) changes[key] = after;
+    }
+    // Don't emit a redundant "updated" when the only transition was complete/uncomplete.
+    if (Object.keys(changes).length > 0) {
+      await recordTaskActivity(supabase, {
+        action: 'updated',
+        entityType: 'task',
+        entityId: updatedRow.id,
+        entityName: updatedRow.text || previous.text || 'Task',
+        projectId: updatedRow.project_id || null,
+        organizationId: updatedRow.organization_id || null,
+        details: { changes },
+      });
+    }
+  }
+
+  return updatedRow;
 }
 
 /**
@@ -299,12 +402,29 @@ export async function completeTask(supabase, taskId) {
  * @returns {Promise<void>}
  */
 export async function deleteTask(supabase, taskId) {
+  const { data: existing } = await supabase
+    .from('tasks')
+    .select('id, text, project_id, organization_id')
+    .eq('id', taskId)
+    .maybeSingle();
+
   const { error } = await supabase
     .from('tasks')
     .delete()
     .eq('id', taskId);
   
   if (error) throw error;
+
+  if (existing) {
+    await recordTaskActivity(supabase, {
+      action: 'deleted',
+      entityType: 'task',
+      entityId: existing.id,
+      entityName: existing.text || 'Task',
+      projectId: existing.project_id || null,
+      organizationId: existing.organization_id || null,
+    });
+  }
 }
 
 function scopedProjectIds(projectIds) {

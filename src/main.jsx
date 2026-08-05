@@ -7,7 +7,12 @@ import RouteErrorElement from './components/RouteErrorElement.jsx'
 import { AppProvider } from './context/AppContext'
 import { ToastProvider } from './context/ToastContext'
 import { i18nReady } from './i18n/config'
+import { initSentry } from './utils/sentry'
+import { initPostHog } from './utils/posthog'
 import './index.css'
+
+initSentry()
+initPostHog()
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'dev'
 const BUILD_VERSION_KEY = 'siteweave_build_version'

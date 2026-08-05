@@ -10,6 +10,7 @@ import {
   sendProjectPings,
   type PingRecipientInput,
 } from '../_shared/projectPing.ts'
+import { reportEdgeOperationFailure } from '../_shared/sentry.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -189,6 +190,16 @@ serve(async (req) => {
             .update({ status: 'failed', error: sendResult.error || 'Send failed' })
             .eq('id', ping.id)
           errors.push({ id: ping.id, error: sendResult.error })
+          await reportEdgeOperationFailure(supabase, {
+            error: new Error(sendResult.error || 'Send failed'),
+            feature: 'scheduled_pings',
+            operation: 'send',
+            organizationId: ping.organization_id,
+            projectId: ping.project_id,
+            entityType: entityType,
+            entityId: ping.entity_id,
+            context: { ping_id: ping.id },
+          })
         } else {
           await supabase
             .from('scheduled_project_pings')
@@ -211,6 +222,16 @@ serve(async (req) => {
           .update({ status: 'failed', error: message })
           .eq('id', ping.id)
         errors.push({ id: ping.id, error: message })
+        await reportEdgeOperationFailure(supabase, {
+          error: err,
+          feature: 'scheduled_pings',
+          operation: 'process',
+          organizationId: ping.organization_id,
+          projectId: ping.project_id,
+          entityType: ping.entity_type,
+          entityId: ping.entity_id,
+          context: { ping_id: ping.id },
+        })
       }
     }
 
@@ -226,6 +247,16 @@ serve(async (req) => {
     )
   } catch (error) {
     console.error('Error in process-scheduled-pings:', error)
+    try {
+      const supabase = createServiceClient()
+      await reportEdgeOperationFailure(supabase, {
+        error,
+        feature: 'scheduled_pings',
+        operation: 'handler',
+      })
+    } catch {
+      // ignore secondary reporting failures
+    }
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unexpected error' }),
       { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } },

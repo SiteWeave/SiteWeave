@@ -26,6 +26,9 @@ import {
 } from '../utils/onboarding';
 import { needsProfileCompletion, hasPendingSignupProfileSetup } from '../utils/authProfile';
 import { getLastNotificationRoute } from '../utils/notifications';
+import { initSentry, setSentryUser } from '../utils/sentry';
+
+initSentry();
 
 function RootLayoutNav() {
   const {
@@ -45,6 +48,14 @@ function RootLayoutNav() {
   const onOnboardingScreen = inAuthGroup && isOnboardingScreen(authScreen);
   const onCompleteProfile = inAuthGroup && isAuthSetupScreen(authScreen);
   const handledColdStartNav = useRef(false);
+
+  useEffect(() => {
+    if (user?.id) {
+      setSentryUser({ id: user.id, email: user.email });
+    } else {
+      setSentryUser(null);
+    }
+  }, [user?.id, user?.email]);
 
   useEffect(() => {
     if (!user) {

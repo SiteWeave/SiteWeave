@@ -157,6 +157,7 @@ export * from './services/weatherImpactsService.js';
 export * from './services/scheduleAdjustmentsService.js';
 export * from './services/profilePhotosService.js';
 export * from './services/workStatusService.js';
+export * from './services/operationFailuresService.js';
 
 export {
   getTaskEndDate,

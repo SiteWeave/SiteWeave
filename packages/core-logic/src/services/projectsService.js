@@ -197,6 +197,22 @@ export async function createProject(supabase, { userId, organizationId, fields }
   }
   const { data, error } = await supabase.from('projects').insert(payload).select().single();
   if (error) throw error;
+
+  try {
+    const { recordActivity } = await import('./activityService.js');
+    await recordActivity(supabase, {
+      action: 'created',
+      entityType: 'project',
+      entityId: data.id,
+      entityName: data.name || 'Project',
+      projectId: data.id,
+      organizationId: data.organization_id || organizationId,
+      userId,
+    });
+  } catch (activityError) {
+    console.warn('[activity] project create log failed:', activityError);
+  }
+
   return data;
 }
 
@@ -228,5 +244,28 @@ export async function updateProject(supabase, projectId, { userId, fields }) {
     .select()
     .single();
   if (error) throw error;
+
+  try {
+    const { recordActivity } = await import('./activityService.js');
+    const changes = {};
+    for (const key of ['name', 'address', 'project_number', 'project_type', 'status', 'start_date', 'due_date']) {
+      if (fields[key] !== undefined) changes[key] = data[key] ?? null;
+    }
+    if (Object.keys(changes).length > 0) {
+      await recordActivity(supabase, {
+        action: 'updated',
+        entityType: 'project',
+        entityId: data.id,
+        entityName: data.name || 'Project',
+        projectId: data.id,
+        organizationId: data.organization_id || null,
+        userId,
+        details: { changes },
+      });
+    }
+  } catch (activityError) {
+    console.warn('[activity] project update log failed:', activityError);
+  }
+
   return data;
 }

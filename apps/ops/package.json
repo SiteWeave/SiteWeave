@@ -1,0 +1,21 @@
+{
+  "name": "@siteweave/ops",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Localhost-only ops dashboard for operation failures and failed jobs. Do not deploy.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5179",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 5179"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.103.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^6.4.2"
+  }
+}

@@ -148,16 +148,412 @@ textarea:focus-visible {
   }
 }
 
+/* Task row: expand details (dates + actions) on hover — desktop fine pointer.
+   TaskItem keeps each row open for 320ms after mouseleave. Using a real per-row
+   state (instead of transition-delay) makes overlap reliable as rows reflow. */
+.task-row-details {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition-property: grid-template-rows, opacity;
+  transition-duration: 380ms, 280ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1), ease;
+  transition-delay: 0ms;
+}
+
+.task-row-details-inner {
+  overflow: hidden;
+  min-height: 0;
+  opacity: 1;
+  transform: translateY(0);
+  transition-property: opacity, transform;
+  transition-duration: 240ms, 240ms;
+  transition-timing-function: ease, cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.task-row-meta,
+.task-row-actions {
+  opacity: 1;
+  transform: translateY(0);
+  transition-property: opacity, transform;
+  transition-duration: 240ms, 240ms;
+  transition-timing-function: ease, cubic-bezier(0.4, 0, 0.2, 1);
+  transition-delay: 0ms;
+}
+
+.task-row-actions > * {
+  opacity: 1;
+  transform: translateY(0);
+  transition-property: opacity, transform, background-color, color, border-color;
+  transition-duration: 200ms, 200ms, 150ms, 150ms, 150ms;
+  transition-timing-function: ease, cubic-bezier(0.4, 0, 0.2, 1), ease, ease, ease;
+  transition-delay: 0ms;
+}
+
+.task-row-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: #6b7280;
+  transition-property: transform, background-color, color, border-color, opacity;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+.task-row-action:hover {
+  background-color: rgba(243, 244, 246, 0.8);
+  color: #111827;
+}
+
+.task-row-action--danger:hover {
+  background-color: #fef2f2;
+  color: #dc2626;
+}
+
+.task-row-action--muted {
+  color: #9ca3af;
+}
+
+.task-row-action--muted:hover {
+  color: #4b5563;
+}
+
+.task-row-action--warn {
+  color: #d97706;
+}
+
+.task-row-action--warn:hover {
+  color: #92400e;
+}
+
+.task-row-action--bordered {
+  border: 1px solid #e5e7eb;
+  background-color: #ffffff;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04);
+}
+
+.task-row-action--bordered:hover {
+  border-color: #bfdbfe;
+  background-color: #ffffff;
+  color: #2563eb;
+}
+
+.task-row-status-signals {
+  display: none;
+  align-items: center;
+  gap: 0.375rem;
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 0;
+  opacity: 0;
+  visibility: hidden;
+  overflow: hidden;
+  pointer-events: none;
+  margin-inline-end: 0;
+  transition-property: opacity, visibility, max-width, margin-inline-end;
+  transition-duration: 200ms, 200ms, 240ms, 240ms;
+  transition-timing-function: ease, ease, cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0.4, 0, 0.2, 1);
+  transition-delay: 0ms;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  /* Keep display:flex on desktop so chips can fade — never snap via display:none */
+  .task-row-status-signals:not(:empty) {
+    display: flex;
+  }
+
+  .task-row:not(.task-row--coach):not(.task-row--panel-open):not(.task-row--hover-open):not(:focus-within)
+    .task-row-details {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .task-row:not(.task-row--coach):not(.task-row--panel-open):not(.task-row--hover-open):not(:focus-within)
+    .task-row-details-inner {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  .task-row:not(.task-row--coach):not(.task-row--panel-open):not(.task-row--hover-open):not(:focus-within)
+    .task-row-meta {
+    opacity: 0;
+    transform: translateY(-5px);
+    transition-delay: 50ms;
+  }
+
+  .task-row:not(.task-row--coach):not(.task-row--panel-open):not(.task-row--hover-open):not(:focus-within)
+    .task-row-actions {
+    opacity: 0;
+    transform: translateY(-5px);
+    transition-delay: 0ms;
+  }
+
+  .task-row:not(.task-row--coach):not(.task-row--panel-open):not(.task-row--hover-open):not(:focus-within)
+    .task-row-actions > * {
+    opacity: 0;
+    transform: translateY(3px);
+    transition-delay: 0ms;
+  }
+
+  .task-row:not(.task-row--coach):not(.task-row--panel-open):not(.task-row--hover-open):not(:focus-within)
+    .task-row-status-signals:not(:empty) {
+    opacity: 1;
+    visibility: visible;
+    max-width: 14rem;
+    margin-inline-end: 0;
+    /* Reappear after collapse starts so chips fade in, not pop */
+    transition-delay: 240ms, 240ms, 200ms, 200ms;
+  }
+
+  .task-row--hover-open .task-row-details,
+  .task-row:focus-within .task-row-details,
+  .task-row--coach .task-row-details,
+  .task-row--panel-open .task-row-details {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    pointer-events: auto;
+    transition-duration: 180ms, 140ms;
+    transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1), ease;
+    transition-delay: 0ms, 0ms;
+  }
+
+  .task-row--hover-open .task-row-details-inner,
+  .task-row:focus-within .task-row-details-inner,
+  .task-row--coach .task-row-details-inner,
+  .task-row--panel-open .task-row-details-inner {
+    opacity: 1;
+    transform: translateY(0);
+    transition-duration: 160ms, 160ms;
+    transition-timing-function: ease, cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .task-row--hover-open .task-row-meta,
+  .task-row:focus-within .task-row-meta,
+  .task-row--coach .task-row-meta,
+  .task-row--panel-open .task-row-meta {
+    opacity: 1;
+    transform: translateY(0);
+    transition-duration: 160ms, 160ms;
+    transition-timing-function: ease, cubic-bezier(0.23, 1, 0.32, 1);
+    transition-delay: 0ms;
+  }
+
+  .task-row--hover-open .task-row-actions,
+  .task-row:focus-within .task-row-actions,
+  .task-row--coach .task-row-actions,
+  .task-row--panel-open .task-row-actions {
+    opacity: 1;
+    transform: translateY(0);
+    transition-duration: 160ms, 160ms;
+    transition-timing-function: ease, cubic-bezier(0.23, 1, 0.32, 1);
+    transition-delay: 45ms;
+  }
+
+  .task-row--hover-open .task-row-actions > *:nth-child(1),
+  .task-row:focus-within .task-row-actions > *:nth-child(1),
+  .task-row--coach .task-row-actions > *:nth-child(1),
+  .task-row--panel-open .task-row-actions > *:nth-child(1) {
+    opacity: 1;
+    transform: translateY(0);
+    transition-delay: 45ms;
+  }
+
+  .task-row--hover-open .task-row-actions > *:nth-child(2),
+  .task-row:focus-within .task-row-actions > *:nth-child(2),
+  .task-row--coach .task-row-actions > *:nth-child(2),
+  .task-row--panel-open .task-row-actions > *:nth-child(2) {
+    opacity: 1;
+    transform: translateY(0);
+    transition-delay: 70ms;
+  }
+
+  .task-row--hover-open .task-row-actions > *:nth-child(3),
+  .task-row:focus-within .task-row-actions > *:nth-child(3),
+  .task-row--coach .task-row-actions > *:nth-child(3),
+  .task-row--panel-open .task-row-actions > *:nth-child(3) {
+    opacity: 1;
+    transform: translateY(0);
+    transition-delay: 95ms;
+  }
+
+  .task-row--hover-open .task-row-actions > *:nth-child(n + 4),
+  .task-row:focus-within .task-row-actions > *:nth-child(n + 4),
+  .task-row--coach .task-row-actions > *:nth-child(n + 4),
+  .task-row--panel-open .task-row-actions > *:nth-child(n + 4) {
+    opacity: 1;
+    transform: translateY(0);
+    transition-delay: 120ms;
+  }
+
+  .task-row--hover-open .task-row-status-signals,
+  .task-row:focus-within .task-row-status-signals,
+  .task-row--coach .task-row-status-signals,
+  .task-row--panel-open .task-row-status-signals {
+    opacity: 0;
+    visibility: hidden;
+    max-width: 0;
+    /* Cancel parent gap-1.5 once width collapses */
+    margin-inline-end: -0.375rem;
+    transition-delay: 0ms, 0ms, 60ms, 60ms;
+  }
+
+  .task-row-actions .task-row-action:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+}
+
+.task-row--coach .task-row-details-inner {
+  border-radius: 0.5rem;
+}
+
+/* Blocked-by predecessor: subtle status accent (intentional, not decorative) */
+.task-row--blocked > div {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+/* Compact task progress slider (also acts as the fill bar) */
+.task-progress-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+.task-progress-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    #3b82f6 0%,
+    #3b82f6 var(--progress, 0%),
+    #e2e8f0 var(--progress, 0%),
+    #e2e8f0 100%
+  );
+}
+
+.task-progress-slider--complete::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    #10b981 0%,
+    #10b981 var(--progress, 0%),
+    #e2e8f0 var(--progress, 0%),
+    #e2e8f0 100%
+  );
+}
+
+.task-progress-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -3px;
+  border-radius: 9999px;
+  background: #2563eb;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+}
+
+.task-progress-slider--complete::-webkit-slider-thumb {
+  background: #059669;
+}
+
+.task-progress-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: #e2e8f0;
+}
+
+.task-progress-slider::-moz-range-progress {
+  height: 8px;
+  border-radius: 9999px;
+  background: #3b82f6;
+}
+
+.task-progress-slider--complete::-moz-range-progress {
+  background: #10b981;
+}
+
+.task-progress-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #2563eb;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+}
+
+.task-progress-slider--complete::-moz-range-thumb {
+  background: #059669;
+}
+
+/* Completion confetti burst (no library) */
+.task-confetti-burst {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  z-index: 2;
+}
+
+.task-confetti-piece {
+  position: absolute;
+  top: 28%;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  opacity: 0;
+  animation: taskConfettiFall 780ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+@keyframes taskConfettiFall {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx, 20px), var(--ty, -36px)) rotate(var(--rot, 120deg)) scale(0.6);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .app-action-primary:active:not(:disabled),
   .app-action-secondary:active:not(:disabled),
-  .btn-smooth:active:not(:disabled) {
+  .btn-smooth:active:not(:disabled),
+  .task-row-action:active:not(:disabled) {
     transform: none;
   }
 
   .view-fade-in,
   .animate-slide-in {
     animation: none;
+  }
+
+  .task-confetti-piece {
+    animation: none;
+    opacity: 0;
+  }
+
+  .task-row-details {
+    transition-duration: 0.01ms;
+    transition-delay: 0ms;
+  }
+
+  .task-row-status-signals {
+    transition: none;
+  }
+
+  .task-row-details-inner,
+  .task-row-meta,
+  .task-row-actions,
+  .task-row-actions > * {
+    transition: none;
+    transform: none;
   }
 
   .hover-lift:hover {

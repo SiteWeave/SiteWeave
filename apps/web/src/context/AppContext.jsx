@@ -18,6 +18,8 @@ import {
   logSemanticTaskDuplicateReport,
   logTaskDuplicateReport,
 } from '../utils/taskDuplicateDiagnostics';
+import { setSentryUser } from '../utils/sentry';
+import { identifyUser } from '../utils/posthog';
 
 // --- SUPABASE CLIENT (single instance — must match useSession / LoginForm) ---
 import { supabase as supabaseClient } from '../supabaseClient';
@@ -401,6 +403,21 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     currentOrganizationIdRef.current = state.currentOrganization?.id ?? null;
   }, [state.currentOrganization?.id]);
+
+  useEffect(() => {
+    if (state.user?.id) {
+      setSentryUser({ id: state.user.id, email: state.user.email });
+      identifyUser(
+        { id: state.user.id, email: state.user.email },
+        state.currentOrganization
+          ? { id: state.currentOrganization.id, name: state.currentOrganization.name }
+          : null,
+      );
+    } else {
+      setSentryUser(null);
+      identifyUser(null);
+    }
+  }, [state.user?.id, state.user?.email, state.currentOrganization?.id, state.currentOrganization?.name]);
 
   // Keep ref in sync with state
   useEffect(() => {

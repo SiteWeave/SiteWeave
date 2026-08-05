@@ -38,6 +38,7 @@ import { useBranding } from '../../../context/BrandingContext';
 import ProjectTeamModal from '../../../components/ProjectTeamModal';
 import PressableWithFade from '../../../components/PressableWithFade';
 import { enqueueOfflineAction, processOfflineQueue, getOfflineQueueSize } from '../../../utils/offlineQueue';
+import { reportFeatureFailure } from '../../../utils/reportFailure';
 import { buildOfflineHandlers } from '../../../utils/offlineHandlers';
 import ProjectStreamPanel from '../../../components/ProjectStreamPanel';
 import FieldIssuesPanel from '../../../components/FieldIssuesPanel';
@@ -746,6 +747,16 @@ export default function ProjectDetailScreen() {
       await loadProjectData();
     } catch (error) {
       console.error('Error updating task:', error);
+      reportFeatureFailure(supabase, error, {
+        feature: 'tasks',
+        operation: 'update',
+        userId: user?.id,
+        organizationId: project?.organization_id || scopeOrganizationId,
+        projectId: project?.id,
+        entityType: 'task',
+        entityId: detailTask?.id,
+        context: { offline_queued: true },
+      });
       await enqueueOfflineAction({
         type: 'update_task',
         payload: { taskId: detailTask.id, updates },
@@ -770,6 +781,15 @@ export default function ProjectDetailScreen() {
       await loadProjectData();
     } catch (error) {
       console.error('Error creating task:', error);
+      reportFeatureFailure(supabase, error, {
+        feature: 'tasks',
+        operation: 'create',
+        userId: user?.id,
+        organizationId: project?.organization_id || scopeOrganizationId,
+        projectId: project?.id,
+        entityType: 'task',
+        context: { offline_queued: true },
+      });
       await enqueueOfflineAction({
         type: 'create_task',
         payload: {

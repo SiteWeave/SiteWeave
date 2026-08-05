@@ -4,7 +4,12 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './AppStandalone.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { i18nReady } from './i18n/config.js'
+import { initSentry } from './utils/sentry.js'
+import { initPostHog } from './utils/posthog.js'
 import './index.css'
+
+initSentry()
+initPostHog()
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'dev'
 const BUILD_VERSION_KEY = 'siteweave_build_version'

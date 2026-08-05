@@ -21,7 +21,7 @@ import {
     TASK_LIST_COLUMNS,
     getEffectiveProjectPermissions,
     resolveCollaboratorAccessLevel,
-    createGuestTaskShareLink,
+    runOptimistic,
 } from '@siteweave/core-logic';
 import TaskItem from '../components/TaskItem';
 import TaskPingModal from '../components/TaskPingModal';
@@ -41,6 +41,7 @@ import {
     computeProjectProgressPercent,
     derivePhaseDatesFromTasks,
     formatPhaseDateRange,
+    phaseCollapseStorageKey,
 } from '../utils/projectPhasesUtils';
 import ProjectSidebar from '../components/ProjectSidebar';
 import ProjectSidebarPhases from '../components/phases/ProjectSidebarPhases';
@@ -63,7 +64,7 @@ import TaskBulkActions from '../components/TaskBulkActions';
 import ProjectCollaborationView from '../components/collaboration/ProjectCollaborationView';
 import Avatar from '../components/Avatar';
 import { useTaskShortcuts } from '../hooks/useKeyboardShortcuts';
-import { handleApiError } from '../utils/errorHandling';
+import { handleApiError, reportFeatureFailure } from '../utils/errorHandling';
 import { parseRecurrence } from '../utils/recurrenceService';
 import { buildTaskPhotoDraft, buildTaskCompletionPhotoDetails, revokeTaskPhotoDraftUrls, sortTaskPhotos, canManageTaskPhotos } from '../utils/taskPhotoUtils';
 import { getProjectMemberContacts } from '../utils/projectMemberContacts';
@@ -147,7 +148,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
     const [bulkDeleteTaskIds, setBulkDeleteTaskIds] = useState([]);
     const [taskFilter, setTaskFilter] = useState('all'); // all, completed, pending
-    const [taskSort, setTaskSort] = useState('due_date'); // due_date, priority
+    const [taskSort, setTaskSort] = useState('due_date'); // schedule (start→end), priority, name
     const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, updates, activity
     const [collabPanel, setCollabPanel] = useState('stream');
 
@@ -781,22 +782,36 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         return true; // 'all'
     });
     
-    // Sort tasks based on selected sort option
+    // Sort tasks based on selected sort option.
+    // Default "schedule" order: start ascending, then end ascending (site chronology).
     const tasks = useMemo(() => {
+        const compareIsoDateAsc = (left, right) => {
+            if (!left && !right) return 0;
+            if (!left) return 1;
+            if (!right) return -1;
+            if (left < right) return -1;
+            if (left > right) return 1;
+            return 0;
+        };
+
         return [...filteredTasks].sort((a, b) => {
             switch (taskSort) {
                 case 'name':
                     return (a.text || '').localeCompare(b.text || '', undefined, { sensitivity: 'base' });
                 case 'priority': {
                     const priorityOrder = { High: 3, Medium: 2, Low: 1 };
-                    return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+                    const byPriority = (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+                    if (byPriority !== 0) return byPriority;
+                    return (a.text || '').localeCompare(b.text || '', undefined, { sensitivity: 'base' });
                 }
                 case 'due_date':
-                default:
-                    if (!a.due_date && !b.due_date) return 0;
-                    if (!a.due_date) return 1;
-                    if (!b.due_date) return -1;
-                    return new Date(a.due_date) - new Date(b.due_date);
+                default: {
+                    const byStart = compareIsoDateAsc(a.start_date, b.start_date);
+                    if (byStart !== 0) return byStart;
+                    const byEnd = compareIsoDateAsc(a.due_date, b.due_date);
+                    if (byEnd !== 0) return byEnd;
+                    return (a.text || '').localeCompare(b.text || '', undefined, { sensitivity: 'base' });
+                }
             }
         });
     }, [filteredTasks, taskSort]);
@@ -819,6 +834,39 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         });
         setToolbarMenu(null);
     };
+
+    const handleToggleSmartNotifications = useCallback(async (nextEnabled) => {
+        if (!project?.id) return;
+        try {
+            const leadDays = Array.isArray(project.task_start_notification_lead_days)
+                && project.task_start_notification_lead_days.length > 0
+                ? project.task_start_notification_lead_days
+                : [14, 7];
+            const payload = {
+                task_notifications_use_org_defaults: false,
+                task_start_notifications_enabled: nextEnabled,
+                task_start_notification_lead_days: leadDays,
+                updated_by_user_id: state.user?.id,
+                updated_at: new Date().toISOString(),
+            };
+            const { data: updatedProject, error } = await supabaseClient
+                .from('projects')
+                .update(payload)
+                .eq('id', project.id)
+                .select()
+                .single();
+            if (error) throw error;
+            dispatch({ type: 'UPDATE_PROJECT', payload: updatedProject });
+            addToast(
+                nextEnabled
+                    ? t('projectDetail.smart_notifications_enabled_toast')
+                    : t('projectDetail.smart_notifications_disabled_toast'),
+                'success',
+            );
+        } catch (error) {
+            addToast(handleApiError(error, t('toast.error_updating_project', { message: error.message })), 'error');
+        }
+    }, [project, state.user?.id, dispatch, addToast, t]);
 
     const handleSaveProject = async (projectData) => {
         if (!project?.id) return;
@@ -938,6 +986,33 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         }
         return { tasksByPhaseId: byPhase, unassignedTasks: unassigned };
     }, [tasks]);
+
+    const pinnedExpandedTaskId = useMemo(() => {
+        if (!project?.id) return null;
+
+        const isExpanded = (phaseKey) => {
+            try {
+                const raw = window.localStorage.getItem(phaseCollapseStorageKey(project.id, phaseKey));
+                if (raw === '0') return false;
+                if (raw === '1') return true;
+            } catch {
+                /* ignore */
+            }
+            return true;
+        };
+
+        for (const phase of projectPhases) {
+            if (!isExpanded(phase.id)) continue;
+            const phaseTasks = tasksByPhaseId.get(phase.id) || [];
+            if (phaseTasks.length > 0) return phaseTasks[0].id;
+        }
+        if (unassignedTasks.length > 0) return unassignedTasks[0].id;
+        for (const phase of projectPhases) {
+            const phaseTasks = tasksByPhaseId.get(phase.id) || [];
+            if (phaseTasks.length > 0) return phaseTasks[0].id;
+        }
+        return null;
+    }, [project?.id, projectPhases, tasksByPhaseId, unassignedTasks]);
 
     const phasesForSummary = useMemo(() => (
         projectPhases.map((phase) => {
@@ -1169,6 +1244,13 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 );
             }
         } catch (e) {
+            reportFeatureFailure(e, {
+                feature: 'sms_consent',
+                operation: 'send',
+                userId: state.user?.id,
+                organizationId: project?.organization_id,
+                projectId: project?.id,
+            });
             addToast(handleApiError(e, t('toast.could_not_send_consent_sms')), 'error');
         } finally {
             setPingingTaskId(null);
@@ -1347,6 +1429,13 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 addToast(res.error || t('toast.could_not_send_reminder'), 'error');
             }
         } catch (e) {
+            reportFeatureFailure(e, {
+                feature: 'project_pings',
+                operation: 'send',
+                userId: state.user?.id,
+                organizationId: project?.organization_id,
+                projectId: project?.id,
+            });
             addToast(handleApiError(e, t('toast.could_not_send_ping')), 'error');
         } finally {
             setPingingTaskId(null);
@@ -1659,6 +1748,14 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 }
             }
         } catch (error) {
+            reportFeatureFailure(error, {
+                feature: 'tasks',
+                operation: 'create',
+                userId: state.user?.id,
+                organizationId: project?.organization_id,
+                projectId: project?.id,
+                entityType: 'task',
+            });
             addToast(handleApiError(error, t('errors.could_not_add_task')), 'error');
         } finally {
             setCreateTaskPhotoUploadProgress(null);
@@ -1708,6 +1805,15 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             });
             addToast('Task photos uploaded.', 'success');
         } catch (error) {
+            reportFeatureFailure(error, {
+                feature: 'task_photos',
+                operation: 'upload',
+                userId: state.user?.id,
+                organizationId: project?.organization_id,
+                projectId: project?.id,
+                entityType: 'task',
+                entityId: taskId,
+            });
             addToast(error.message || 'Could not upload task photos.', 'error');
         } finally {
             revokeTaskPhotoDraftUrls(preparedPhotos);
@@ -1899,192 +2005,234 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
 
     const handleEditTask = async (taskId, updatedData) => {
         const prev = allTasks.find((x) => x.id === taskId);
+        if (!prev) return;
+
         const payload = { ...updatedData };
+        const touchesAssignee =
+            Object.prototype.hasOwnProperty.call(payload, 'assignee_id') ||
+            Object.prototype.hasOwnProperty.call(payload, 'assignee_email') ||
+            Object.prototype.hasOwnProperty.call(payload, 'assignee_phone');
         const assigneeEmailInput = String(payload.assignee_email || '').trim().toLowerCase();
         const assigneePhoneRaw = String(payload.assignee_phone || '').trim();
         delete payload.assignee_email;
         delete payload.assignee_phone;
 
-        try {
-            const resolvedAssignee = await resolveAssigneeContact({
-                assigneeId: payload.assignee_id,
-                assigneeEmailInput,
-                assigneePhoneRaw,
-            });
-            if (resolvedAssignee.invalidPhone) {
-                addToast(t('toast.invalid_assignee_phone'), 'warning');
+        if (touchesAssignee) {
+            try {
+                const resolvedAssignee = await resolveAssigneeContact({
+                    assigneeId: payload.assignee_id,
+                    assigneeEmailInput,
+                    assigneePhoneRaw,
+                });
+                if (resolvedAssignee.invalidPhone) {
+                    addToast(t('toast.invalid_assignee_phone'), 'warning');
+                }
+                if (resolvedAssignee.notProjectMember || resolvedAssignee.contactNotFound) {
+                    addToast(t('toast.cannot_assign_non_member'), 'warning');
+                }
+                payload.assignee_id = resolvedAssignee.assigneeId;
+            } catch (resolveError) {
+                addToast(t('toast.error_updating_task', { message: resolveError.message }), 'error');
+                return;
             }
-            if (resolvedAssignee.notProjectMember || resolvedAssignee.contactNotFound) {
-                addToast(t('toast.cannot_assign_non_member'), 'warning');
-            }
-            payload.assignee_id = resolvedAssignee.assigneeId;
-        } catch (resolveError) {
-            addToast(t('toast.error_updating_task', { message: resolveError.message }), 'error');
-            return;
         }
 
         const normalizedUpdates = normalizeTaskProgressUpdate(prev, payload);
-        const { error } = await supabaseClient.from('tasks').update(normalizedUpdates).eq('id', taskId);
-        if (error) {
-            addToast(t('toast.error_updating_task', { message: error.message }), 'error');
-        } else {
-            const existingTask = allTasks.find((task) => task.id === taskId) || tasksState.find((task) => task.id === taskId);
-            const baseTask = state.tasks.find((task) => task.id === taskId) || existingTask;
-            const shouldRefetchTaskRow =
-                Boolean(assigneeEmailInput || assigneePhoneRaw) ||
-                (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'assignee_id') &&
-                    normalizedUpdates.assignee_id !== prev?.assignee_id);
+        const existingTask = allTasks.find((task) => task.id === taskId) || tasksState.find((task) => task.id === taskId);
+        const baseTask = state.tasks.find((task) => task.id === taskId) || existingTask || prev;
+        const optimisticTask = { ...baseTask, ...normalizedUpdates };
 
-            let updatedTask = { ...baseTask, ...normalizedUpdates };
-            if (shouldRefetchTaskRow) {
-                const { data: fresh, error: freshErr } = await supabaseClient
-                    .from('tasks')
-                    .select('*, contacts(name, avatar_url, email, phone), task_photos(*)')
-                    .eq('id', taskId)
-                    .maybeSingle();
-                if (!freshErr && fresh) {
-                    updatedTask = { ...updatedTask, ...fresh };
-                }
+        const applyLocalTask = (task) => {
+            dispatch({ type: 'UPDATE_TASK', payload: task });
+            setProjectTasksList((rows) => rows.map((row) => (row.id === task.id ? { ...row, ...task } : row)));
+        };
+
+        const updateKeys = Object.keys(normalizedUpdates);
+        const percentOnlyUpdate =
+            updateKeys.length > 0 &&
+            updateKeys.every((key) => key === 'percent_complete' || key === 'completed');
+
+        try {
+            await runOptimistic(
+                () => {
+                    applyLocalTask(optimisticTask);
+                },
+                async () => {
+                    const { error } = await supabaseClient
+                        .from('tasks')
+                        .update(normalizedUpdates)
+                        .eq('id', taskId);
+                    if (error) throw error;
+                },
+                () => {
+                    applyLocalTask(prev);
+                },
+            );
+        } catch (error) {
+            addToast(t('toast.error_updating_task', { message: error.message }), 'error');
+            return;
+        }
+
+        let updatedTask = optimisticTask;
+        const shouldRefetchTaskRow =
+            Boolean(assigneeEmailInput || assigneePhoneRaw) ||
+            (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'assignee_id') &&
+                normalizedUpdates.assignee_id !== prev?.assignee_id);
+
+        if (shouldRefetchTaskRow) {
+            const { data: fresh, error: freshErr } = await supabaseClient
+                .from('tasks')
+                .select('*, contacts(name, avatar_url, email, phone), task_photos(*)')
+                .eq('id', taskId)
+                .maybeSingle();
+            if (!freshErr && fresh) {
+                updatedTask = { ...updatedTask, ...fresh };
             }
+        }
+        if (shouldRefetchTaskRow || touchesAssignee) {
             const [withConsent] = await attachAssigneeSmsConsent(
                 supabaseClient,
                 [updatedTask],
                 project?.organization_id || state.currentOrganization?.id || null,
             );
             updatedTask = withConsent || updatedTask;
-            dispatch({ type: 'UPDATE_TASK', payload: updatedTask });
-            setProjectTasksList((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updatedTask } : t)));
+            applyLocalTask(updatedTask);
+        }
 
-            const dateFieldChanged = (
-                Object.prototype.hasOwnProperty.call(normalizedUpdates, 'start_date') ||
-                Object.prototype.hasOwnProperty.call(normalizedUpdates, 'due_date') ||
-                Object.prototype.hasOwnProperty.call(normalizedUpdates, 'duration_days')
-            );
-            if (dateFieldChanged && projectDependencyMode === 'auto') {
-                const taskGraph = allTasks.map((task) => (task.id === taskId ? updatedTask : task));
-                const cascaded = calculateAutoShiftUpdates(taskGraph, taskDependencies, [taskId]);
-                for (const shift of cascaded) {
-                    const shiftPayload = {
-                        start_date: shift.start_date || null,
-                        due_date: shift.due_date || null,
-                    };
-                    const { error: shiftError } = await supabaseClient
-                        .from('tasks')
-                        .update(shiftPayload)
-                        .eq('id', shift.taskId);
-                    if (shiftError) {
-                        console.error('Failed to apply auto-shift update:', shiftError);
-                        continue;
-                    }
-                    const sourceTask = allTasks.find((task) => task.id === shift.taskId) || tasksState.find((task) => task.id === shift.taskId);
-                    if (!sourceTask) continue;
-                    const shiftedTask = { ...sourceTask, ...shiftPayload };
-                    dispatch({ type: 'UPDATE_TASK', payload: shiftedTask });
-                    setProjectTasksList(prevRows => prevRows.map((row) => row.id === shift.taskId ? shiftedTask : row));
+        const dateFieldChanged = (
+            Object.prototype.hasOwnProperty.call(normalizedUpdates, 'start_date') ||
+            Object.prototype.hasOwnProperty.call(normalizedUpdates, 'due_date') ||
+            Object.prototype.hasOwnProperty.call(normalizedUpdates, 'duration_days')
+        );
+        if (dateFieldChanged && projectDependencyMode === 'auto') {
+            const taskGraph = allTasks.map((task) => (task.id === taskId ? updatedTask : task));
+            const cascaded = calculateAutoShiftUpdates(taskGraph, taskDependencies, [taskId]);
+            for (const shift of cascaded) {
+                const shiftPayload = {
+                    start_date: shift.start_date || null,
+                    due_date: shift.due_date || null,
+                };
+                const { error: shiftError } = await supabaseClient
+                    .from('tasks')
+                    .update(shiftPayload)
+                    .eq('id', shift.taskId);
+                if (shiftError) {
+                    console.error('Failed to apply auto-shift update:', shiftError);
+                    continue;
                 }
-                if (cascaded.length > 0) {
-                    addToast(`Updated ${cascaded.length} dependent task date${cascaded.length === 1 ? '' : 's'}.`, 'success');
-                }
-            } else if (dateFieldChanged && projectDependencyMode === 'manual') {
-                const earliestAllowed = getEarliestAllowedStartDate(taskId, allTasks.map((task) => (
-                    task.id === taskId ? updatedTask : task
-                )), taskDependencies);
-                if (
-                    earliestAllowed &&
-                    normalizedUpdates.start_date &&
-                    new Date(`${normalizedUpdates.start_date}T00:00:00`) < new Date(`${earliestAllowed}T00:00:00`)
-                ) {
-                    addToast(`Dependency warning: this task should start on or after ${earliestAllowed}.`, 'warning');
-                }
+                const sourceTask = allTasks.find((task) => task.id === shift.taskId) || tasksState.find((task) => task.id === shift.taskId);
+                if (!sourceTask) continue;
+                const shiftedTask = { ...sourceTask, ...shiftPayload };
+                applyLocalTask(shiftedTask);
             }
+            if (cascaded.length > 0) {
+                addToast(`Updated ${cascaded.length} dependent task date${cascaded.length === 1 ? '' : 's'}.`, 'success');
+            }
+        } else if (dateFieldChanged && projectDependencyMode === 'manual') {
+            const earliestAllowed = getEarliestAllowedStartDate(taskId, allTasks.map((task) => (
+                task.id === taskId ? updatedTask : task
+            )), taskDependencies);
+            if (
+                earliestAllowed &&
+                normalizedUpdates.start_date &&
+                new Date(`${normalizedUpdates.start_date}T00:00:00`) < new Date(`${earliestAllowed}T00:00:00`)
+            ) {
+                addToast(`Dependency warning: this task should start on or after ${earliestAllowed}.`, 'warning');
+            }
+        }
+        if (!percentOnlyUpdate) {
             addToast(t('toast.task_updated_successfully'), 'success');
+        }
 
-            const wasPrevComplete = prev
-                ? Boolean(prev.completed) || (Number(prev.percent_complete ?? 0) || 0) >= 100
-                : false;
-            const nowComplete =
-                Boolean(updatedTask.completed) || (Number(updatedTask.percent_complete ?? 0) || 0) >= 100;
-            const transitionToComplete = Boolean(prev) && nowComplete && !wasPrevComplete;
-            const transitionFromComplete = Boolean(prev) && !nowComplete && wasPrevComplete;
+        const wasPrevComplete = prev
+            ? Boolean(prev.completed) || (Number(prev.percent_complete ?? 0) || 0) >= 100
+            : false;
+        const nowComplete =
+            Boolean(updatedTask.completed) || (Number(updatedTask.percent_complete ?? 0) || 0) >= 100;
+        const transitionToComplete = Boolean(prev) && nowComplete && !wasPrevComplete;
+        const transitionFromComplete = Boolean(prev) && !nowComplete && wasPrevComplete;
 
-            if (transitionToComplete) {
-                const taskWarning = dependencyWarnings[taskId];
-                if (taskWarning?.unmetPredecessors?.length) {
-                    addToast(`Dependency warning: waiting on ${taskWarning.unmetPredecessors.map((row) => row.text).join(', ')}.`, 'warning');
-                }
+        if (transitionToComplete) {
+            const taskWarning = dependencyWarnings[taskId];
+            if (taskWarning?.unmetPredecessors?.length) {
+                addToast(`Dependency warning: waiting on ${taskWarning.unmetPredecessors.map((row) => row.text).join(', ')}.`, 'warning');
             }
+        }
 
-            if (prev && project && state.user) {
-                const changes = {};
-                Object.keys(normalizedUpdates).forEach((key) => {
-                    if (prev[key] !== normalizedUpdates[key]) changes[key] = normalizedUpdates[key];
-                });
-                if (transitionToComplete || transitionFromComplete) {
-                    delete changes.completed;
-                    delete changes.percent_complete;
-                }
-                if (Object.keys(changes).length > 0) {
-                    logTaskUpdated(
-                        { ...prev, ...normalizedUpdates, organization_id: prev.organization_id ?? project.organization_id },
-                        state.user,
-                        project.id,
-                        changes
-                    );
-                }
+        if (prev && project && state.user) {
+            const changes = {};
+            Object.keys(normalizedUpdates).forEach((key) => {
+                if (prev[key] !== normalizedUpdates[key]) changes[key] = normalizedUpdates[key];
+            });
+            if (transitionToComplete || transitionFromComplete) {
+                delete changes.completed;
+                delete changes.percent_complete;
             }
-
-            if (transitionToComplete && state.user && prev) {
-                const completedTask = { ...prev, ...normalizedUpdates, completed: true, percent_complete: 100 };
-                logTaskCompleted(
-                    completedTask,
+            // Percent-only edits are noisy (and completion already logs "completed").
+            const changeKeys = Object.keys(changes);
+            const percentOnly =
+                changeKeys.length === 1 && changeKeys[0] === 'percent_complete';
+            if (changeKeys.length > 0 && !percentOnly) {
+                logTaskUpdated(
+                    { ...prev, ...normalizedUpdates, organization_id: prev.organization_id ?? project.organization_id },
                     state.user,
                     project.id,
-                    buildTaskCompletionPhotoDetails(completedTask)
+                    changes
                 );
-                await notifySuccessorAssignees(completedTask);
-                await maybeSuggestScheduleGain(completedTask);
-            } else if (transitionFromComplete && state.user && prev) {
-                logTaskUncompleted(prev, state.user, prev.project_id);
-                const { error: clearHistoryError } = await supabaseClient
-                    .from('task_dependency_notification_history')
-                    .delete()
-                    .eq('trigger_task_id', prev.id);
-                if (clearHistoryError) {
-                    console.error('Failed to clear dependency notification history:', clearHistoryError);
-                }
             }
+        }
 
-            if (transitionToComplete && prev && prev.recurrence && !prev.is_recurring_instance) {
-                try {
-                    const recurrence = parseRecurrence(prev.recurrence);
-                    if (recurrence) {
-                        const currentDueDate = prev.due_date ? new Date(prev.due_date) : new Date();
-                        const nextDueDate = calculateNextTaskDueDate(currentDueDate, recurrence);
-                        const nextInstance = {
-                            project_id: prev.project_id,
-                            text: prev.text,
-                            due_date: nextDueDate.toISOString().split('T')[0],
-                            priority: prev.priority,
-                            assignee_id: prev.assignee_id,
-                            recurrence: prev.recurrence,
-                            parent_task_id: prev.id,
-                            is_recurring_instance: true,
-                            completed: false,
-                            percent_complete: 0,
-                        };
-                        const { data: newInstance, error: instanceError } = await supabaseClient
-                            .from('tasks')
-                            .insert(nextInstance)
-                            .select()
-                            .single();
-                        if (!instanceError && newInstance) {
-                            dispatch({ type: 'ADD_TASK', payload: newInstance });
-                            addToast(t('toast.next_task_instance_created'), 'success');
-                        }
+        if (transitionToComplete && state.user && prev) {
+            const completedTask = { ...prev, ...normalizedUpdates, completed: true, percent_complete: 100 };
+            logTaskCompleted(
+                completedTask,
+                state.user,
+                project.id,
+                buildTaskCompletionPhotoDetails(completedTask)
+            );
+            await notifySuccessorAssignees(completedTask);
+            await maybeSuggestScheduleGain(completedTask);
+        } else if (transitionFromComplete && state.user && prev) {
+            logTaskUncompleted(prev, state.user, prev.project_id);
+            const { error: clearHistoryError } = await supabaseClient
+                .from('task_dependency_notification_history')
+                .delete()
+                .eq('trigger_task_id', prev.id);
+            if (clearHistoryError) {
+                console.error('Failed to clear dependency notification history:', clearHistoryError);
+            }
+        }
+
+        if (transitionToComplete && prev && prev.recurrence && !prev.is_recurring_instance) {
+            try {
+                const recurrence = parseRecurrence(prev.recurrence);
+                if (recurrence) {
+                    const currentDueDate = prev.due_date ? new Date(prev.due_date) : new Date();
+                    const nextDueDate = calculateNextTaskDueDate(currentDueDate, recurrence);
+                    const nextInstance = {
+                        project_id: prev.project_id,
+                        text: prev.text,
+                        due_date: nextDueDate.toISOString().split('T')[0],
+                        priority: prev.priority,
+                        assignee_id: prev.assignee_id,
+                        recurrence: prev.recurrence,
+                        parent_task_id: prev.id,
+                        is_recurring_instance: true,
+                        completed: false,
+                        percent_complete: 0,
+                    };
+                    const { data: newInstance, error: instanceError } = await supabaseClient
+                        .from('tasks')
+                        .insert(nextInstance)
+                        .select()
+                        .single();
+                    if (!instanceError && newInstance) {
+                        dispatch({ type: 'ADD_TASK', payload: newInstance });
+                        addToast(t('toast.next_task_instance_created'), 'success');
                     }
-                } catch (recurError) {
-                    console.error('Error generating next task instance:', recurError);
                 }
+            } catch (recurError) {
+                console.error('Error generating next task instance:', recurError);
             }
         }
     };
@@ -2223,6 +2371,15 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             const { error } = await supabaseClient.from('tasks').delete().eq('id', taskToDelete.id);
             
             if (error) {
+                reportFeatureFailure(error, {
+                    feature: 'tasks',
+                    operation: 'delete',
+                    userId: state.user?.id,
+                    organizationId: project?.organization_id,
+                    projectId: project?.id,
+                    entityType: 'task',
+                    entityId: taskToDelete.id,
+                });
                 addToast(t('toast.error_deleting_task', { message: error.message }), 'error');
             } else {
                 const deletedRow =
@@ -2246,6 +2403,15 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             }
         } catch (error) {
             console.error('Error deleting task:', error);
+            reportFeatureFailure(error, {
+                feature: 'tasks',
+                operation: 'delete',
+                userId: state.user?.id,
+                organizationId: project?.organization_id,
+                projectId: project?.id,
+                entityType: 'task',
+                entityId: taskToDelete?.id,
+            });
             addToast(t('toast.error_deleting_task', { message: error.message }), 'error');
         } finally {
             setShowDeleteConfirm(false);
@@ -2268,6 +2434,15 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             .update({ completed: true, percent_complete: 100, completed_at: completedAt })
             .in('id', taskIds);
         if (error) {
+            reportFeatureFailure(error, {
+                feature: 'tasks',
+                operation: 'bulk_complete',
+                userId: state.user?.id,
+                organizationId: project?.organization_id,
+                projectId: project?.id,
+                entityType: 'task',
+                context: { taskIds },
+            });
             addToast(t('toast.error_completing_tasks', { message: error.message }), 'error');
         } else {
             // Update each task in the state
@@ -2383,6 +2558,14 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             }
         } catch (error) {
             console.error('Error in bulk delete:', error);
+            reportFeatureFailure(error, {
+                feature: 'tasks',
+                operation: 'bulk_delete',
+                userId: state.user?.id,
+                organizationId: project?.organization_id,
+                projectId: project?.id,
+                entityType: 'task',
+            });
             addToast(t('toast.error_deleting_tasks', { message: error.message }), 'error');
         }
     };
@@ -2585,15 +2768,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             {t('projectDetail.edit_project')}
                         </button>
                     </PermissionGuard>
-                    {canManageContacts && (
-                    <button type="button" 
-                        onClick={() => setShowShare(true)}
-                        className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-xs hover:bg-blue-700 transition-colors"
-                        title={t('projectDetail.manage_crew_title')}
-                    >
-                        {t('projectDetail.manage_crew')}
-                    </button>
-                    )}
                     {canCreateProjects && (
                         <button type="button" 
                             onClick={() => setShowSaveAsTemplateModal(true)}
@@ -2602,6 +2776,15 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         >
                             {t('projectDetail.save_as_template')}
                         </button>
+                    )}
+                    {canManageContacts && (
+                    <button type="button" 
+                        onClick={() => setShowShare(true)}
+                        className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
+                        title={t('projectDetail.manage_crew_title')}
+                    >
+                        {t('projectDetail.manage_crew')}
+                    </button>
                     )}
                     {canManageProgressReports && (
                         <button type="button" 
@@ -2816,6 +2999,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             project={project}
                             organization={state.currentOrganization}
                             canEdit={canEditProjects}
+                            onToggleEnabled={handleToggleSmartNotifications}
                             onConfigure={({ activate } = {}) => {
                                 setSmartNotifActivateOnOpen(Boolean(activate));
                                 setShowSmartNotificationsModal(true);
@@ -3032,10 +3216,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                     <>
                                         <PhasesHintBanner />
                                         <PhasesSummaryStrip
-                                            projectId={project.id}
                                             phases={phasesForSummary}
                                             overallProgress={summaryOverallProgress}
-                                            includeUnassigned={unassignedTasks.length > 0}
                                         />
                                     </>
                                 )}
@@ -3146,6 +3328,9 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                                     onShareSmsConsentLink={handleShareSmsConsentLink}
                                                                                     pingingTaskId={pingingTaskId}
                                                                                     project={project}
+                                                                                    isActionCoachRow={
+                                                                                        pinnedExpandedTaskId === row.task.id
+                                                                                    }
                                                                                 />
                                                                             ),
                                                                         )}
@@ -3223,6 +3408,9 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                             onShareSmsConsentLink={handleShareSmsConsentLink}
                                                                                     pingingTaskId={pingingTaskId}
                                                                                     project={project}
+                                                                                    isActionCoachRow={
+                                                                                        pinnedExpandedTaskId === row.task.id
+                                                                                    }
                                                                                 />
                                                                     ),
                                                                 )}

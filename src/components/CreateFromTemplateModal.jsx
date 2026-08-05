@@ -6,6 +6,7 @@ import DateDropdown from './DateDropdown';
 import { createProjectFromTemplate } from '../utils/projectTemplateService';
 import { ensureOrganizationForWrites } from '../utils/organizationContext';
 import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
+import { logProjectCreated } from '../utils/activityLogger';
 
 export default function CreateFromTemplateModal({ onClose, onCreated }) {
   const { t } = useTranslation();
@@ -62,7 +63,10 @@ export default function CreateFromTemplateModal({ onClose, onCreated }) {
       if (result.success) {
         addToast(t('templates.created_success'), 'success');
         const { data: newProject } = await supabaseClient.from('projects').select('*').eq('id', result.projectId).single();
-        if (newProject) dispatch({ type: 'ADD_PROJECT', payload: newProject });
+        if (newProject) {
+          dispatch({ type: 'ADD_PROJECT', payload: newProject });
+          if (state.user) logProjectCreated(newProject, state.user);
+        }
         onCreated?.(result.projectId);
         onClose();
       } else if (result.error === 'PROJECT_LIMIT_REACHED') {

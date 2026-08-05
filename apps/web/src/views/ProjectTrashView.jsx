@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
@@ -20,7 +20,6 @@ function ProjectTrashView() {
   const { addToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState([]);
-  const [search, setSearch] = useState('');
   const [restoringId, setRestoringId] = useState(null);
   const [purgeTarget, setPurgeTarget] = useState(null);
   const [purging, setPurging] = useState(false);
@@ -41,12 +40,6 @@ function ProjectTrashView() {
   useEffect(() => {
     loadTrash();
   }, [loadTrash]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter((p) => (p.name || '').toLowerCase().includes(q));
-  }, [projects, search]);
 
   const handleRestore = async (project) => {
     setRestoringId(project.id);
@@ -93,26 +86,19 @@ function ProjectTrashView() {
   return (
     <div className="view-fade-in max-w-5xl mx-auto">
       <header className="mb-6 app-card p-5">
-        <div className="flex flex-wrap items-start gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <Link
-              to={ROUTE_PATHS.projects}
-              className="text-sm font-medium text-blue-600 hover:text-blue-700 mb-2 inline-block"
-            >
-              ← {t('projectTrash.back_to_projects')}
-            </Link>
             <h1 className="app-section-title text-2xl mb-1">{t('projectTrash.title')}</h1>
             <p className="app-section-subtitle text-sm">
               {t('projectTrash.subtitle', { days: PROJECT_TRASH_RETENTION_DAYS })}
             </p>
           </div>
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('projectTrash.search_placeholder')}
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-full sm:w-64"
-          />
+          <Link
+            to={ROUTE_PATHS.projects}
+            className="shrink-0 text-sm font-medium text-blue-600 hover:text-blue-700 pt-1"
+          >
+            ← {t('projectTrash.back_to_projects')}
+          </Link>
         </div>
       </header>
 
@@ -120,7 +106,7 @@ function ProjectTrashView() {
         <div className="flex justify-center py-16">
           <LoadingSpinner size="lg" text={t('common.loading')} />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : projects.length === 0 ? (
         <div className="app-card p-10 text-center">
           <h2 className="text-lg font-semibold text-gray-900 mb-2">{t('projectTrash.empty_title')}</h2>
           <p className="text-sm text-gray-500 mb-6">{t('projectTrash.empty_description')}</p>
@@ -131,7 +117,7 @@ function ProjectTrashView() {
       ) : (
         <div className="app-card overflow-hidden">
           <ul className="divide-y divide-gray-100">
-            {filtered.map((project) => (
+            {projects.map((project) => (
               <li key={project.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-gray-900 truncate">{project.name}</p>
