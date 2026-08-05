@@ -477,7 +477,7 @@ const TaskItem = memo(function TaskItem({
                 }
             }}
         >
-            <div className="px-2 py-3.5 sm:px-3 relative">
+            <div className="relative px-2 pt-3.5 pb-2 sm:px-3">
                 {showConfetti && (
                     <div className="task-confetti-burst" aria-hidden>
                         {Array.from({ length: 12 }, (_, i) => (
@@ -693,7 +693,7 @@ const TaskItem = memo(function TaskItem({
                 {/* ── Details: dates + actions (collapsed to one-line rows until hover) ── */}
                 <div className="task-row-details">
                     <div className="task-row-details-inner">
-                <div className="mt-1.5 ml-1 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:ml-2">
+                <div className="mt-2.5 ml-1 flex flex-col gap-2 sm:mt-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:ml-2">
                     <div className="task-row-meta min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
                         <PermissionGuard
@@ -759,8 +759,9 @@ const TaskItem = memo(function TaskItem({
                         </div>
                     </div>
 
-                    {/* Right: action buttons */}
+                    {/* Right: action buttons — tight primary cluster, wider gap before share/delete */}
                     <div className="task-row-actions flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-2.5">
+                        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
                         {/* Photos */}
                         <button
                             type="button"
@@ -887,6 +888,7 @@ const TaskItem = memo(function TaskItem({
                                 <span className="hidden sm:inline max-w-[96px] ui-ellipsis-1">{assigneeLabel}</span>
                             </button>
                         </PermissionGuard>
+                        </div>
 
                         {onCopyGuestLink && (
                             <PermissionGuard permission="can_assign_tasks">

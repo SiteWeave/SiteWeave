@@ -315,6 +315,7 @@
   },
   "dashboard": {
     "title": "Project Dashboard",
+    "title_short": "Dashboard",
     "subtitle": "Manage your construction projects",
     "no_projects_yet": "No projects yet",
     "no_projects_description": "Get started by creating your first construction project. Track progress, manage tasks, and collaborate with your team.",

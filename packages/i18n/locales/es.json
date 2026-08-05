@@ -315,6 +315,7 @@
   },
   "dashboard": {
     "title": "Panel de proyectos",
+    "title_short": "Panel",
     "subtitle": "Administra tus proyectos de construcción",
     "no_projects_yet": "Aún no hay proyectos",
     "no_projects_description": "Comienza creando tu primer proyecto de construcción. Haz seguimiento del progreso, administra tareas y colabora con tu equipo.",
