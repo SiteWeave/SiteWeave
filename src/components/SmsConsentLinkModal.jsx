@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import QRCode from 'qrcode';
 import LoadingSpinner from './LoadingSpinner';
+import ModalOverlay from './ModalOverlay';
 
 export default function SmsConsentLinkModal({
   open,
@@ -55,16 +56,13 @@ export default function SmsConsentLinkModal({
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-8 bg-black/30 p-4 backdrop-blur-[1px]"
+    <ModalOverlay
+      onClose={onClose}
       role="dialog"
       aria-modal="true"
-      onClick={onClose}
+      aria-labelledby="sms-consent-link-title"
     >
-      <div
-        className="mx-auto w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="mx-auto w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
         <h2 id="sms-consent-link-title" className="text-lg font-semibold text-slate-900">
           {t('sms.web_consent.link_modal_title')}
         </h2>
@@ -121,6 +119,6 @@ export default function SmsConsentLinkModal({
           </>
         )}
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

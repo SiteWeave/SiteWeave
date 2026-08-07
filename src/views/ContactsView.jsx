@@ -15,9 +15,12 @@ import {
   defaultProjectCrewRoleForContact,
   ensureContactIdForProjectAssignment,
   isTradePartnerContact,
+  listCustomTradeNames,
   normalizeAssigneePhone,
 } from '@siteweave/core-logic';
 import ProjectCrewRoleSelect from '../components/ProjectCrewRoleSelect';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from '../components/ModalOverlay';
+import ManageCustomTradesModal from '../components/ManageCustomTradesModal';
 
 function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const { t } = useTranslation();
@@ -44,6 +47,8 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
     const [assignRoleExpanded, setAssignRoleExpanded] = useState(false);
     const [isAssigningContact, setIsAssigningContact] = useState(false);
     const [smsConsentMap, setSmsConsentMap] = useState(() => new Map());
+    const [showManageTradesModal, setShowManageTradesModal] = useState(false);
+    const [isDeletingCustomTrade, setIsDeletingCustomTrade] = useState(false);
 
     useEffect(() => {
         if (defaultProjectFilter) {
@@ -89,6 +94,11 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             ...Array.from(trades).sort().map(tr => ({ value: tr, label: tr })),
         ];
     }, [tradePartners, t]);
+
+    const customTradeNames = useMemo(
+        () => listCustomTradeNames(tradePartners),
+        [tradePartners],
+    );
 
     const filteredContacts = useMemo(() => {
         let list = tradePartners;
@@ -202,6 +212,54 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                 setShowAddModal(false);
             }
             setIsCreatingContact(false);
+        }
+    };
+
+    const handleDeleteCustomTrade = async (tradeName) => {
+        const orgId = state.currentOrganization?.id;
+        const trade = typeof tradeName === 'string' ? tradeName.trim() : '';
+        if (!orgId || !trade) return;
+
+        setIsDeletingCustomTrade(true);
+        try {
+            const { data, error } = await supabaseClient
+                .from('contacts')
+                .update({ trade: null })
+                .eq('organization_id', orgId)
+                .eq('trade', trade)
+                .select('id');
+
+            if (error) {
+                addToast(t('contacts.delete_custom_trade_error', { message: error.message }), 'error');
+                return;
+            }
+
+            const clearedIds = new Set((data || []).map((row) => row.id));
+            const nextContacts = (state.contacts || []).map((contact) => (
+                clearedIds.has(contact.id) || contact.trade === trade
+                    ? { ...contact, trade: null }
+                    : contact
+            ));
+            dispatch({ type: 'SET_CONTACTS', payload: nextContacts });
+
+            if (tradeFilter === trade) {
+                setTradeFilter('All Trades');
+            }
+
+            addToast(
+                t('contacts.delete_custom_trade_success', {
+                    trade,
+                    count: clearedIds.size || data?.length || 0,
+                }),
+                'success',
+            );
+        } catch (error) {
+            addToast(
+                t('contacts.delete_custom_trade_error', { message: error.message || String(error) }),
+                'error',
+            );
+        } finally {
+            setIsDeletingCustomTrade(false);
         }
     };
 
@@ -365,6 +423,15 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     >
                         {t('contacts.export')}
                     </button>
+                    {customTradeNames.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => setShowManageTradesModal(true)}
+                            className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                        >
+                            {t('contacts.manage_custom_trades')}
+                        </button>
+                    )}
                     <button type="button"
                         onClick={() => setShowAddModal(true)}
                         data-onboarding="add-contact-btn"
@@ -444,6 +511,15 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                 )}
             </div>
 
+            {showManageTradesModal && (
+                <ManageCustomTradesModal
+                    contacts={tradePartners}
+                    onClose={() => setShowManageTradesModal(false)}
+                    onDeleteTrade={handleDeleteCustomTrade}
+                    isDeleting={isDeletingCustomTrade}
+                />
+            )}
+
             {showAddModal && (
                 <AddContactModal
                     onClose={() => {
@@ -455,6 +531,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                     isLoading={isCreatingContact || isUpdatingContact}
                     currentOrganization={state.currentOrganization}
                     contactMode="trade_partner"
+                    existingTrades={tradePartners.map((c) => c.trade).filter(Boolean)}
                 />
             )}
 
@@ -482,7 +559,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
             )}
 
             {showExportModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-start justify-center overflow-y-auto py-8 z-50">
+                <ModalOverlay onClose={() => setShowExportModal(false)}>
                     <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
                         <h2 className="text-2xl font-bold mb-6">{t('contacts.export_title')}</h2>
                         <p className="text-gray-600 mb-6">{t('contacts.export_description_trade')}</p>
@@ -495,7 +572,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                             </button>
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
 
             {showAssignModal && assignContact && (() => {
@@ -504,8 +581,8 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                 const unassignedProjects = projects.filter(p => !assignedProjectIds.includes(String(p.id)));
 
                 return (
-                    <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-start justify-center overflow-y-auto py-8 z-50 p-4">
-                        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[min(90dvh,90vh)] overflow-y-auto">
+                    <ModalOverlay onClose={closeAssignModal}>
+                        <div className={`bg-white rounded-xl shadow-2xl w-full max-w-md p-6 ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
                             <h2 className="text-2xl font-bold mb-2">{t('contacts.assign_title')}</h2>
                             <p className="text-gray-600 text-sm mb-4">
                                 {t('contacts.assign_description', { name: assignContact.name })}
@@ -575,7 +652,7 @@ function ContactsView({ embedded = false, defaultProjectFilter = null }) {
                                 </button>
                             </div>
                         </div>
-                    </div>
+                    </ModalOverlay>
                 );
             })()}
 

@@ -15,6 +15,7 @@ import Icon from './Icon';
 import AddContactModal from './AddContactModal';
 import ConfirmDialog from './ConfirmDialog';
 import PermissionGuard from './PermissionGuard';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 const STAFF_FILTER_OPTIONS = ['All', 'On a project', 'Unassigned', 'Has work today'];
 
@@ -659,8 +660,8 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
       />
 
       {showAssignModal && assignMember && (
-        <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-start justify-center overflow-y-auto py-8 z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[min(90dvh,90vh)] overflow-y-auto">
+        <ModalOverlay onClose={closeAssignModal}>
+          <div className={`bg-white rounded-xl shadow-2xl w-full max-w-md p-6 ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
             <h2 className="text-2xl font-bold mb-2">{t('contacts.assign_title')}</h2>
             <p className="text-gray-600 text-sm mb-4">
               {t('contacts.assign_description', { name: assignMember.name })}
@@ -737,7 +738,7 @@ function TeamDirectory({ refreshKey = 0, onStaffChanged }) {
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
 
       {showAddModal && (

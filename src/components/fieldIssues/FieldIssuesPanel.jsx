@@ -18,6 +18,7 @@ import DateDropdown from '../DateDropdown';
 import UpgradeRequiredModal from '../UpgradeRequiredModal';
 import { logFieldIssueCreated } from '../../utils/activityLogger';
 import { markIssuesRead } from '../../utils/issuesReadState';
+import ModalOverlay from '../ModalOverlay';
 import { savePunchListPdf } from '../../utils/savePunchListPdf';
 import {
   buildIssueAssigneeOptionsFromContacts,
@@ -477,7 +478,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
       </div>
 
       {showCreate ? (
-        <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/20 flex items-start justify-center overflow-y-auto py-8 z-50 p-4">
+        <ModalOverlay onClose={() => setShowCreate(false)}>
           <div className="app-card max-w-md w-full shadow-2xl">
             <div className="p-4 border-b border-slate-200 flex justify-between items-center">
               <h3 className="font-bold text-slate-900">{t('fieldIssues.new_issue')}</h3>
@@ -592,11 +593,11 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       ) : null}
 
       {showWalkthrough ? (
-        <div className="fixed inset-0 backdrop-blur-sm bg-slate-900/20 flex items-start justify-center overflow-y-auto py-8 z-50 p-4">
+        <ModalOverlay onClose={() => setShowWalkthrough(false)}>
           <div className="app-card max-w-xl w-full shadow-2xl">
             <div className="px-6 py-5 border-b border-slate-200 flex justify-between items-center">
               <h3 className="text-xl font-bold text-slate-900">{t('punchList.walkthrough_title')}</h3>
@@ -711,7 +712,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       ) : null}
 
       <UpgradeRequiredModal

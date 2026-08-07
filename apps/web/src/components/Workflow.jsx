@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 const Workflow = ({ projectId }) => {
     const { i18n } = useTranslation();
@@ -480,8 +481,8 @@ const Workflow = ({ projectId }) => {
 
             {/* Create Workflow Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-start justify-center overflow-y-auto py-8 z-50">
-                    <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[min(90dvh,90vh)] overflow-y-auto">
+                <ModalOverlay onClose={() => setShowCreateModal(false)}>
+                    <div className={`bg-white rounded-xl shadow-xl max-w-4xl w-full ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
                         <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-xl font-bold">Create New Workflow</h3>
@@ -636,7 +637,7 @@ const Workflow = ({ projectId }) => {
                             </button>
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
         </div>
     );

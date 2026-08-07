@@ -125,7 +125,14 @@ export {
   resolveCollaboratorAccessLevel,
 } from './utils/effectiveProjectPermissions.js';
 
-export { TRADE_OPTIONS, isKnownTradeOption } from './constants/tradeOptions.js';
+export {
+  TRADE_OPTIONS,
+  CUSTOM_TRADE_VALUE,
+  isKnownTradeOption,
+  isCustomTradeOption,
+  listCustomTradeNames,
+  buildTradeSelectOptions,
+} from './constants/tradeOptions.js';
 
 export {
   SMS_NOTIFICATIONS_ENABLED,

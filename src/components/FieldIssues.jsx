@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import Icon from './Icon';
 import DateDropdown from './DateDropdown';
 import { getFieldIssueDisplayStatus } from '../utils/fieldIssueStatus';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 const FieldIssues = ({ projectId }) => {
     const { i18n } = useTranslation();
@@ -420,8 +421,15 @@ const FieldIssues = ({ projectId }) => {
 
             {/* Create Issue Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-start justify-center overflow-y-auto py-8 z-50">
-                    <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[min(90dvh,90vh)] overflow-y-auto">
+                <ModalOverlay
+                    onClose={() => {
+                        setShowCreateModal(false);
+                        setEditingIssue(null);
+                        setIsEditing(false);
+                        setNewIssue({ title: '', description: '', priority: 'Medium', dueDate: '' });
+                    }}
+                >
+                    <div className={`bg-white rounded-xl shadow-xl max-w-4xl w-full ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
                         <div className="p-6 border-b border-gray-200">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-xl font-bold">{isEditing ? 'Edit Issue' : 'Create New Issue'}</h3>
@@ -520,13 +528,13 @@ const FieldIssues = ({ projectId }) => {
                             </button>
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
 
             {/* Delete Confirmation Modal */}
             {issueToDelete && (
-                <div className="fixed inset-0 backdrop-blur-[2px] bg-white/20 flex items-start justify-center overflow-y-auto py-8 z-50">
-                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+                <ModalOverlay onClose={() => setIssueToDelete(null)}>
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
                         <h3 className="text-lg font-bold text-gray-900 mb-4">Delete Issue</h3>
                         <p className="text-gray-600 mb-6">
                             Are you sure you want to delete this issue? This action cannot be undone.
@@ -548,7 +556,7 @@ const FieldIssues = ({ projectId }) => {
                             </button>
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
         </div>
     );

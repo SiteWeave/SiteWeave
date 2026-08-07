@@ -1,11 +1,15 @@
+import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
 /** Cap panel height so short viewports never clip the top. */
 export const MODAL_PANEL_MAX_H = 'max-h-[min(90dvh,90vh)]';
 
+const DEFAULT_BACKDROP = 'backdrop-blur-[2px] bg-black/20';
+
 /**
- * Scrollable centered overlay. Tall content scrolls the overlay instead of
- * clipping equally from top/bottom (classic flex items-center bug).
+ * Scrollable centered overlay portaled to document.body.
+ * Avoids position:fixed breaking inside AppShell's overflow scroll container
+ * (modal opens off-screen on short viewports until the user scrolls).
  */
 export default function ModalOverlay({
   children,
@@ -18,6 +22,15 @@ export default function ModalOverlay({
   'aria-modal': ariaModal,
   'aria-labelledby': ariaLabelledBy,
 }) {
+  useEffect(() => {
+    if (!onClose) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   const handleBackdropClick = (e) => {
     if (!onClose) return;
     if (e.target === e.currentTarget) onClose();
@@ -34,9 +47,11 @@ export default function ModalOverlay({
       ? 'min-h-full flex items-start justify-center p-4 pt-8 sm:pt-12'
       : 'min-h-full flex items-center justify-center p-4';
 
+  const backdrop = backdropClassName.trim() || DEFAULT_BACKDROP;
+
   const node = (
     <div
-      className={`fixed inset-0 overflow-y-auto backdrop-blur-[2px] bg-black/20 ${zIndexClass} ${backdropClassName} ${className}`.trim()}
+      className={`fixed inset-0 overflow-y-auto ${backdrop} ${zIndexClass} ${className}`.trim()}
       onClick={handleBackdropClick}
       onMouseDown={handleBackdropMouseDown}
       role={role}

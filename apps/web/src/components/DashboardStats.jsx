@@ -9,6 +9,7 @@ import {
     loadWithFallback,
 } from '@siteweave/core-logic';
 import { useAppContext, supabaseClient } from '../context/AppContext';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 function formatOverdueDueDate(value) {
     if (value == null || value === '') return '';
@@ -287,8 +288,8 @@ const DashboardStats = memo(function DashboardStats() {
             ))}
         </div>
         {showOverdueModal && (
-            <div className="fixed inset-0 z-50 bg-black/30 flex items-start justify-center overflow-y-auto py-8 p-4">
-                <div className="w-full max-w-3xl bg-white rounded-xl shadow-xl border border-gray-200 max-h-[min(90dvh,90vh)] overflow-hidden">
+            <ModalOverlay onClose={() => setShowOverdueModal(false)}>
+                <div className={`w-full max-w-3xl bg-white rounded-xl shadow-xl border border-gray-200 ${MODAL_PANEL_MAX_H} overflow-hidden`}>
                     <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                         <h3 className="text-lg font-semibold text-gray-900">{t('dashboard.overdue_tasks_by_project')}</h3>
                         <button
@@ -365,11 +366,11 @@ const DashboardStats = memo(function DashboardStats() {
                         })}
                     </div>
                 </div>
-            </div>
+            </ModalOverlay>
         )}
         {showCompletedModal && (
-            <div className="fixed inset-0 z-50 bg-black/30 flex items-start justify-center overflow-y-auto py-8 p-4">
-                <div className="w-full max-w-3xl bg-white rounded-xl shadow-xl border border-gray-200 max-h-[min(90dvh,90vh)] overflow-hidden">
+            <ModalOverlay onClose={() => setShowCompletedModal(false)}>
+                <div className={`w-full max-w-3xl bg-white rounded-xl shadow-xl border border-gray-200 ${MODAL_PANEL_MAX_H} overflow-hidden`}>
                     <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                         <h3 className="text-lg font-semibold text-gray-900">{t('dashboard.completed_tasks_by_project')}</h3>
                         <button
@@ -450,7 +451,7 @@ const DashboardStats = memo(function DashboardStats() {
                         })}
                     </div>
                 </div>
-            </div>
+            </ModalOverlay>
         )}
         </>
     );

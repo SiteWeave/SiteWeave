@@ -15,6 +15,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import BlockedUsersPanel from '../components/moderation/BlockedUsersPanel';
 import ContentReportsPanel from '../components/moderation/ContentReportsPanel';
 import FeedbackModal from '../components/FeedbackModal';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from '../components/ModalOverlay';
 import {
   SettingsSection,
   SettingsField,
@@ -578,8 +579,8 @@ function SettingsView() {
       />
 
       {showRoleManagement && (
-        <div className="fixed inset-0 bg-black/50 flex items-start justify-center overflow-y-auto py-8 z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[min(90dvh,90vh)] overflow-y-auto">
+        <ModalOverlay onClose={() => setShowRoleManagement(false)}>
+          <div className={`bg-white rounded-xl shadow-2xl max-w-4xl w-full ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-gray-900">{t('settings.role_management')}</h2>
               <button type="button"
@@ -596,7 +597,7 @@ function SettingsView() {
               <RoleManagement />
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 import React from 'react';
 import TaskPhotoManager from './TaskPhotoManager';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 function TaskPhotosModal({
     task,
@@ -27,17 +28,14 @@ function TaskPhotosModal({
     };
 
     return (
-        <div
-            className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto py-8 p-4 bg-black/40 backdrop-blur-[1px]"
+        <ModalOverlay
+            onClose={onClose}
+            zIndexClass="z-[60]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="task-photos-modal-title"
-            onClick={onClose}
         >
-            <div
-                className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[min(90dvh,90vh)] overflow-y-auto p-5"
-                onClick={(e) => e.stopPropagation()}
-            >
+            <div className={`bg-white rounded-xl shadow-2xl max-w-lg w-full ${MODAL_PANEL_MAX_H} overflow-y-auto p-5`}>
                 <div className="flex items-start justify-between gap-3 mb-4">
                     <h2 id="task-photos-modal-title" className="text-lg font-bold text-gray-900 pr-2">
                         Task photos
@@ -56,7 +54,7 @@ function TaskPhotosModal({
                 <p className="text-sm text-gray-700 mb-3 line-clamp-2">{task.text}</p>
                 <TaskPhotoManager {...photoProps} />
             </div>
-        </div>
+        </ModalOverlay>
     );
 }
 

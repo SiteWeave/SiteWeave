@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { isSmsNotificationsEnabled } from '@siteweave/core-logic';
 import Icon from './Icon';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 /**
  * Modal to ping one or more project members about a task.
@@ -71,8 +72,13 @@ export default function TaskPingModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/20 py-8 backdrop-blur-sm p-4">
-      <div className="app-card w-full max-w-md shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="task-ping-title">
+    <ModalOverlay
+      onClose={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="task-ping-title"
+    >
+      <div className={`app-card w-full max-w-md shadow-2xl ${MODAL_PANEL_MAX_H} overflow-y-auto`}>
         <div className="flex items-center justify-between border-b border-slate-200 p-4">
           <h3 id="task-ping-title" className="font-bold text-slate-900">
             {t('tasks.ping_modal_title')}
@@ -162,6 +168,6 @@ export default function TaskPingModal({
           </div>
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

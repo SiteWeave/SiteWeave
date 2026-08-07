@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchProjectPhotoRoll } from '@siteweave/core-logic';
 import { supabaseClient } from '../context/AppContext';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 const FILTERS = [
   { id: 'all', sources: null, labelKey: 'mobile.photo_roll_filter_all' },
@@ -84,17 +85,16 @@ export default function ProjectPhotoRollPanel({ projectId, t }) {
         </div>
       )}
       {viewer ? (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-start justify-center overflow-y-auto py-8 p-6"
-          onClick={() => setViewer(null)}
-          role="presentation"
+        <ModalOverlay
+          onClose={() => setViewer(null)}
+          backdropClassName="bg-black/90"
         >
           <img
             src={viewer.full_url || viewer.thumbnail_url}
             alt={viewer.caption || viewer.task_title || 'Project photo'}
-            className="max-h-[min(90dvh,90vh)] max-w-full object-contain"
+            className={`${MODAL_PANEL_MAX_H} max-w-full object-contain`}
           />
-        </div>
+        </ModalOverlay>
       ) : null}
     </div>
   );

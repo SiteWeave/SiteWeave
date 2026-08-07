@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import SmsConsentActions from './SmsConsentActions';
+import ModalOverlay from './ModalOverlay';
 
 export default function SmsConsentLinkPrompt({
   open,
@@ -16,16 +17,13 @@ export default function SmsConsentLinkPrompt({
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto py-8 bg-black/30 p-4 backdrop-blur-[1px]"
+    <ModalOverlay
+      onClose={onClose}
+      zIndexClass="z-[70]"
       role="dialog"
       aria-modal="true"
-      onClick={onClose}
     >
-      <div
-        className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
         <h2 className="text-lg font-semibold text-slate-900">{t('sms.web_consent.link_modal_title')}</h2>
         <p className="mt-1 text-sm text-slate-600">{t('sms.web_consent.link_modal_subtitle')}</p>
         <SmsConsentActions
@@ -44,6 +42,6 @@ export default function SmsConsentLinkPrompt({
           {t('common.close')}
         </button>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }

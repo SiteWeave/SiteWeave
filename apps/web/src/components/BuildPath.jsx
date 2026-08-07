@@ -11,6 +11,7 @@ import {
     computeProjectProgressPercent,
 } from '../utils/projectPhasesUtils';
 import { supabaseClient } from '../context/AppContext';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 const schedulePresetChipClass =
     'rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 shadow-xs transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
@@ -476,12 +477,11 @@ export function PhaseModal({ phase, onClose, onSave, isLoading }) {
     };
 
     return (
-        <div className="fixed inset-0 backdrop-blur-[2px] bg-black/40 flex items-start justify-center overflow-y-auto py-8 z-[60] p-4">
+        <ModalOverlay onClose={onClose} zIndexClass="z-[60]">
             <div
-                className="bg-white rounded-xl p-6 w-full max-w-md mx-4 max-h-[min(90dvh,90vh)] overflow-y-auto shadow-2xl"
+                className={`bg-white rounded-xl p-6 w-full max-w-md ${MODAL_PANEL_MAX_H} overflow-y-auto shadow-2xl`}
                 role="dialog"
                 aria-modal="true"
-                onClick={(e) => e.stopPropagation()}
             >
                 <h3 className="text-lg font-bold mb-4">
                     {phase ? t('build_path.edit_phase') : t('build_path.add_new_phase')}
@@ -527,7 +527,7 @@ export function PhaseModal({ phase, onClose, onSave, isLoading }) {
                     </div>
                 </form>
             </div>
-        </div>
+        </ModalOverlay>
     );
 }
 

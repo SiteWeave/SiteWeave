@@ -60,6 +60,7 @@ import ScheduleGainReviewModal from '../components/ScheduleGainReviewModal';
 import { applyScheduleToWeatherImpact } from '../utils/weatherScheduleApply';
 import PermissionGuard from '../components/PermissionGuard';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ModalOverlay, { MODAL_PANEL_MAX_H } from '../components/ModalOverlay';
 import TaskBulkActions from '../components/TaskBulkActions';
 import ProjectCollaborationView from '../components/collaboration/ProjectCollaborationView';
 import Avatar from '../components/Avatar';
@@ -3508,11 +3509,12 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 </div>
             </div>
             {dependencyDrawerTask && (
-                <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto py-8 bg-black/60 p-4 backdrop-blur-sm" onClick={() => setDependencyDrawerTaskId(null)}>
-                    <div
-                        className="w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-2xl"
-                        onClick={(event) => event.stopPropagation()}
-                    >
+                <ModalOverlay
+                    onClose={() => setDependencyDrawerTaskId(null)}
+                    zIndexClass="z-40"
+                    backdropClassName="bg-black/60 backdrop-blur-sm"
+                >
+                    <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-2xl">
                         <div className="border-b border-gray-200 px-5 py-4">
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -3702,7 +3704,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             )}
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
             {showTaskModal && (
                 <TaskModal
@@ -3769,26 +3771,16 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
             )}
 
             {showPhasesModal && project && (
-                <div
-                    className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-8 p-4 bg-black/40 backdrop-blur-[1px]"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="phases-modal-title"
-                    onClick={() => {
+                <ModalOverlay
+                    onClose={() => {
                         setShowPhasesModal(false);
                         setPhasesModalEditing(false);
                     }}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Escape') {
-                            setShowPhasesModal(false);
-                            setPhasesModalEditing(false);
-                        }
-                    }}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="phases-modal-title"
                 >
-                    <div
-                        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[min(90dvh,90vh)] flex flex-col overflow-hidden"
-                        onClick={(e) => e.stopPropagation()}
-                    >
+                    <div className={`bg-white rounded-xl shadow-2xl max-w-2xl w-full ${MODAL_PANEL_MAX_H} flex flex-col overflow-hidden`}>
                         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 bg-white">
                             <div className="min-w-0">
                                 <h2 id="phases-modal-title" className="text-lg font-bold text-gray-900">
@@ -3843,7 +3835,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             </button>
                         </div>
                     </div>
-                </div>
+                </ModalOverlay>
             )}
 
             <ConfirmDialog
