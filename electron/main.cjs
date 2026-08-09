@@ -1,8 +1,38 @@
-const { app, BrowserWindow, Menu, shell, protocol, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, shell, protocol, ipcMain, dialog, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { createServer } = require('http');
 const { parse } = require('url');
+
+// Cap Chromium HTTP disk cache; oversized/corrupt indexes log
+// "Invalid cache (current) size" from backend_impl.cc.
+app.commandLine.appendSwitch('disk-cache-size', String(100 * 1024 * 1024));
+
+async function recoverHttpDiskCache() {
+  const userData = app.getPath('userData');
+  const recoveryFlag = path.join(userData, '.http-cache-recovered-v1');
+
+  // One-time wipe of corrupt blockfile cache dirs (Chromium recreates them).
+  if (fs.existsSync(recoveryFlag)) return;
+
+  try {
+    for (const name of ['Cache', 'Code Cache']) {
+      const cachePath = path.join(userData, name);
+      if (fs.existsSync(cachePath)) {
+        fs.rmSync(cachePath, { recursive: true, force: true });
+      }
+    }
+    try {
+      await session.defaultSession.clearCache();
+    } catch {
+      /* ignore */
+    }
+    fs.writeFileSync(recoveryFlag, new Date().toISOString(), 'utf8');
+    console.log('Recovered HTTP disk cache directories');
+  } catch (err) {
+    console.warn('Disk cache folder cleanup skipped:', err?.message || err);
+  }
+}
 
 // Try to load electron-updater (may not be available in dev or if not installed)
 let autoUpdater = null;
@@ -509,8 +539,9 @@ function handleProtocolUrl(url) {
 registerProtocol();
 
 // App event handlers
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   console.log('App is ready');
+  await recoverHttpDiskCache();
   
   // Prevent multiple windows
   if (BrowserWindow.getAllWindows().length === 0) {

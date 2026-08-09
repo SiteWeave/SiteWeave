@@ -1,4 +1,11 @@
 import React, { useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import Icon from './Icon';
+
+const ICON_ARROW_UP = 'M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18';
+const ICON_ARROW_DOWN = 'M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3';
+const ICON_TRASH =
+  'M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0';
 
 function TaskPhotoManager({
   photos = [],
@@ -13,6 +20,7 @@ function TaskPhotoManager({
   emptyMessage = 'No task photos yet.',
   className = '',
 }) {
+  const { t } = useTranslation();
   const inputRef = useRef(null);
 
   const handleFileChange = async (event) => {
@@ -154,25 +162,31 @@ function TaskPhotoManager({
                           type="button"
                           onClick={() => onMovePhoto?.(key, -1)}
                           disabled={isBusy || index === 0}
-                          className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          title={t('common.move_up', { defaultValue: 'Move up' })}
+                          aria-label={t('common.move_up', { defaultValue: 'Move up' })}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          Move Up
+                          <Icon path={ICON_ARROW_UP} className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
                           onClick={() => onMovePhoto?.(key, 1)}
                           disabled={isBusy || index === photos.length - 1}
-                          className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          title={t('common.move_down', { defaultValue: 'Move down' })}
+                          aria-label={t('common.move_down', { defaultValue: 'Move down' })}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          Move Down
+                          <Icon path={ICON_ARROW_DOWN} className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
                           onClick={() => onDeletePhoto?.(key)}
                           disabled={isBusy}
-                          className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                          title={t('common.remove_photo', { defaultValue: 'Remove photo' })}
+                          aria-label={t('common.remove_photo', { defaultValue: 'Remove photo' })}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded border border-red-200 text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          Remove
+                          <Icon path={ICON_TRASH} className="h-4 w-4" />
                         </button>
                       </div>
                     )}

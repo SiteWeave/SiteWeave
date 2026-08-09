@@ -5,7 +5,7 @@
  */
 
 import { buildFederalHolidayMap, businessDaysBetween } from './usBusinessCalendar.js';
-import { parseLocalDateOnly, localDateOnlyIso, addDaysToDateOnly } from './dateOnly.js';
+import { parseLocalDateOnly, localDateOnlyIso, addDaysToDateOnly } from '@siteweave/core-logic';
 import { calculatePhaseProgressFromTasks } from './projectPhasesUtils.js';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -180,6 +180,8 @@ function scheduleTimelineFromBounds(minStart, maxEnd, now) {
     schedule_day_current: elapsedDays,
     schedule_day_total: totalDays,
     schedule_progress_pct,
+    schedule_start: localDateOnlyIso(minStart),
+    schedule_end: localDateOnlyIso(maxEnd),
   };
 }
 

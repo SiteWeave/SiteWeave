@@ -22,6 +22,7 @@ import {
     getEffectiveProjectPermissions,
     resolveCollaboratorAccessLevel,
     runOptimistic,
+    computeProjectScheduleTimeline,
 } from '@siteweave/core-logic';
 import TaskItem from '../components/TaskItem';
 import TaskPingModal from '../components/TaskPingModal';
@@ -48,6 +49,7 @@ import ProjectSidebarPhases from '../components/phases/ProjectSidebarPhases';
 import ProjectModal from '../components/ProjectModal';
 import ProjectSmartNotificationsCard from '../components/ProjectSmartNotificationsCard';
 import ProjectSmartNotificationsModal from '../components/ProjectSmartNotificationsModal';
+import TasksDispatchRail from '../components/TasksDispatchRail';
 import ShareModal from '../components/ShareModal';
 import SaveAsTemplateModal from '../components/SaveAsTemplateModal';
 import MsProjectImportModal from '../components/MsProjectImportModal';
@@ -148,7 +150,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [selectedTasks, setSelectedTasks] = useState([]);
     const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
     const [bulkDeleteTaskIds, setBulkDeleteTaskIds] = useState([]);
-    const [taskFilter, setTaskFilter] = useState('all'); // all, completed, pending
+    const [taskFilter, setTaskFilter] = useState('all'); // all | can_start | in_progress | waiting | done
     const [taskSort, setTaskSort] = useState('due_date'); // schedule (start→end), priority, name
     const [activeTab, setActiveTab] = useState('tasks'); // tasks, gantt, updates, activity
     const [collabPanel, setCollabPanel] = useState('stream');
@@ -173,6 +175,17 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     useEffect(() => {
         applyRouteTab(routeTab);
     }, [routeTab, applyRouteTab]);
+
+    useEffect(() => {
+        try {
+            const pending = sessionStorage.getItem('siteweave_pending_project_tab');
+            if (!pending) return;
+            sessionStorage.removeItem('siteweave_pending_project_tab');
+            applyRouteTab(pending);
+        } catch {
+            /* ignore */
+        }
+    }, [state.selectedProjectId, applyRouteTab]);
 
     useEffect(() => {
         if (!state.selectedProjectId || project || state.isLoading) {
@@ -273,6 +286,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [toolbarMenu, setToolbarMenu] = useState(null);
     const toolbarMenuRef = useRef(null);
     const dependencyPickerRef = useRef(null);
+    const taskFilterBarRef = useRef(null);
 
     const collaboratorAccessLevel = useMemo(
         () => resolveCollaboratorAccessLevel(state.collaborationProjects, project?.id),
@@ -776,13 +790,32 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         return next;
     };
     
+    const getTaskWorkflowKey = useCallback((task) => {
+        const pct = Math.max(
+            0,
+            Math.min(100, Number(task.percent_complete ?? (task.completed ? 100 : 0)) || 0),
+        );
+        if (task.completed || pct >= 100) return 'done';
+        const unmet = dependencyWarnings[task.id]?.unmetPredecessors?.length || 0;
+        if (unmet > 0) return 'waiting';
+        if (pct > 0) return 'in_progress';
+        return 'can_start';
+    }, [dependencyWarnings]);
+
     // Filter and sort tasks
-    const filteredTasks = allTasks.filter(task => {
-        if (taskFilter === 'completed') return task.completed;
-        if (taskFilter === 'pending') return !task.completed;
-        return true; // 'all'
-    });
-    
+    const filteredTasks = useMemo(
+        () =>
+            allTasks.filter((task) => {
+                if (taskFilter === 'all') return true;
+                const key = getTaskWorkflowKey(task);
+                // Legacy keys from older UI / onboarding hooks
+                if (taskFilter === 'completed') return key === 'done';
+                if (taskFilter === 'pending') return key !== 'done';
+                return key === taskFilter;
+            }),
+        [allTasks, taskFilter, getTaskWorkflowKey],
+    );
+
     // Sort tasks based on selected sort option.
     // Default "schedule" order: start ascending, then end ascending (site chronology).
     const tasks = useMemo(() => {
@@ -988,36 +1021,10 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         return { tasksByPhaseId: byPhase, unassignedTasks: unassigned };
     }, [tasks]);
 
-    const pinnedExpandedTaskId = useMemo(() => {
-        if (!project?.id) return null;
-
-        const isExpanded = (phaseKey) => {
-            try {
-                const raw = window.localStorage.getItem(phaseCollapseStorageKey(project.id, phaseKey));
-                if (raw === '0') return false;
-                if (raw === '1') return true;
-            } catch {
-                /* ignore */
-            }
-            return true;
-        };
-
-        for (const phase of projectPhases) {
-            if (!isExpanded(phase.id)) continue;
-            const phaseTasks = tasksByPhaseId.get(phase.id) || [];
-            if (phaseTasks.length > 0) return phaseTasks[0].id;
-        }
-        if (unassignedTasks.length > 0) return unassignedTasks[0].id;
-        for (const phase of projectPhases) {
-            const phaseTasks = tasksByPhaseId.get(phase.id) || [];
-            if (phaseTasks.length > 0) return phaseTasks[0].id;
-        }
-        return null;
-    }, [project?.id, projectPhases, tasksByPhaseId, unassignedTasks]);
-
+    // Health band uses all tasks (not the active list filter).
     const phasesForSummary = useMemo(() => (
         projectPhases.map((phase) => {
-            const phaseTasks = tasksByPhaseId.get(phase.id) || [];
+            const phaseTasks = allTasks.filter((task) => task.project_phase_id === phase.id);
             const progress = phaseTasks.length > 0
                 ? calculatePhaseProgressFromTasks(phaseTasks)
                 : (phase.progress ?? 0);
@@ -1028,7 +1035,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 phaseTasks.length > 0 ? derived.end_date : (derived.end_date ?? phase.end_date);
             return { ...phase, progress, start_date, end_date };
         })
-    ), [projectPhases, tasksByPhaseId]);
+    ), [projectPhases, allTasks]);
 
     const summaryOverallProgress = useMemo(
         () =>
@@ -1038,6 +1045,87 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 projectDueDate: project?.due_date,
             }),
         [allTasks, phasesForSummary, project?.due_date],
+    );
+
+    const taskWorkflowCounts = useMemo(() => {
+        let complete = 0;
+        let inProgress = 0;
+        let canStart = 0;
+        let waiting = 0;
+        for (const task of allTasks) {
+            const pct = Math.max(
+                0,
+                Math.min(100, Number(task.percent_complete ?? (task.completed ? 100 : 0)) || 0),
+            );
+            if (task.completed || pct >= 100) {
+                complete += 1;
+                continue;
+            }
+            const unmet = dependencyWarnings[task.id]?.unmetPredecessors?.length || 0;
+            if (unmet > 0) waiting += 1;
+            else if (pct > 0) inProgress += 1;
+            else canStart += 1;
+        }
+        return {
+            complete,
+            in_progress: inProgress,
+            can_start: canStart,
+            waiting,
+            total: allTasks.length,
+        };
+    }, [allTasks, dependencyWarnings]);
+
+    const scheduleTimeline = useMemo(
+        () =>
+            computeProjectScheduleTimeline(
+                phasesForSummary,
+                project?.due_date,
+                new Date(),
+                project?.start_date,
+                allTasks,
+            ),
+        [phasesForSummary, project?.due_date, project?.start_date, allTasks],
+    );
+
+    const scheduleSlipDays = useMemo(() => {
+        if (!scheduleTimeline?.schedule_day_total) return null;
+        const calendarPct = Number(scheduleTimeline.schedule_progress_pct) || 0;
+        const actualPct = summaryOverallProgress;
+        return Math.round(((calendarPct - actualPct) / 100) * scheduleTimeline.schedule_day_total);
+    }, [scheduleTimeline, summaryOverallProgress]);
+
+    const dispatchReadyTasks = useMemo(() => {
+        const compareIsoDateAsc = (left, right) => {
+            if (!left && !right) return 0;
+            if (!left) return 1;
+            if (!right) return -1;
+            if (left < right) return -1;
+            if (left > right) return 1;
+            return 0;
+        };
+        return allTasks
+            .filter((task) => getTaskWorkflowKey(task) === 'can_start')
+            .sort((a, b) => {
+                const byStart = compareIsoDateAsc(a.start_date, b.start_date);
+                if (byStart !== 0) return byStart;
+                return (a.text || '').localeCompare(b.text || '', undefined, { sensitivity: 'base' });
+            });
+    }, [allTasks, getTaskWorkflowKey]);
+
+    const dispatchWaitingTasks = useMemo(() => {
+        return allTasks
+            .filter((task) => getTaskWorkflowKey(task) === 'waiting')
+            .sort((a, b) => (a.text || '').localeCompare(b.text || '', undefined, { sensitivity: 'base' }));
+    }, [allTasks, getTaskWorkflowKey]);
+
+    const getDispatchBlockerLabel = useCallback(
+        (task) => {
+            const unmet = dependencyWarnings[task.id]?.unmetPredecessors || [];
+            if (!unmet.length) return null;
+            if (unmet.length === 1) return unmet[0].text;
+            return `${unmet[0].text} +${unmet.length - 1}`;
+        },
+        [dependencyWarnings],
     );
 
     const photoModalTask = useMemo(
@@ -2994,19 +3082,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             </button>
                             )}
                         </nav>
-                        {canEditProjects ? (
-                        <ProjectSmartNotificationsCard
-                            variant="inline"
-                            project={project}
-                            organization={state.currentOrganization}
-                            canEdit={canEditProjects}
-                            onToggleEnabled={handleToggleSmartNotifications}
-                            onConfigure={({ activate } = {}) => {
-                                setSmartNotifActivateOnOpen(Boolean(activate));
-                                setShowSmartNotificationsModal(true);
-                            }}
-                        />
-                        ) : null}
                     </div>
 
                     {/* Tab Content */}
@@ -3029,31 +3104,11 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             </div>
                         )}
                         {activeTab === 'tasks' && (
-                            <div className="p-4 lg:p-6 bg-white rounded-xl shadow-xs border border-gray-200" data-onboarding="tasks-section">
+                            <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_17.5rem]" data-onboarding="tasks-section">
+                            <div className="p-4 lg:p-6 bg-white rounded-xl shadow-xs border border-gray-200 min-w-0">
                                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3" ref={toolbarMenuRef}>
                                     <div className="flex min-w-0 flex-wrap items-center gap-3">
                                         <h2 className="text-xl font-bold">{t('projectTabs.tasks_heading', { count: Math.max(allTasks.length, ganttTasks.length) })}</h2>
-                                        <div className="inline-flex rounded-full border border-gray-200 bg-gray-50 p-1">
-                                            {[
-                                                { key: 'all', labelKey: 'projectTabs.filter_all' },
-                                                { key: 'pending', labelKey: 'projectTabs.filter_open' },
-                                                { key: 'completed', labelKey: 'projectTabs.filter_done' },
-                                            ].map((option) => (
-                                                <button
-                                                    key={option.key}
-                                                    type="button"
-                                                    onClick={() => setTaskFilter(option.key)}
-                                                    className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
-                                                        taskFilter === option.key
-                                                            ? 'bg-white text-gray-900 shadow-xs'
-                                                            : 'text-gray-500 hover:text-gray-800'
-                                                    }`}
-                                                    aria-pressed={taskFilter === option.key}
-                                                >
-                                                    {t(option.labelKey)}
-                                                </button>
-                                            ))}
-                                        </div>
                                         <div className="relative">
                                             <button
                                                 type="button"
@@ -3208,19 +3263,80 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                         onAddPhase={() => setShowAddPhaseModal(true)}
                                         onUseTemplate={seedDefaultPhases}
                                         isMutating={phasesMutating}
+                                        taskCount={allTasks.length}
                                     />
                                 )}
                                 {!phasesLoading && projectPhases.length === 0 && !canEditProjects && allTasks.length === 0 ? (
                                     <p className="py-6 text-center text-sm text-gray-500">{t('projectDetail.no_phases_yet', { defaultValue: 'No phases yet.' })}</p>
                                 ) : null}
                                 {!phasesLoading && projectPhases.length > 0 && (
-                                    <>
-                                        <PhasesHintBanner />
-                                        <PhasesSummaryStrip
-                                            phases={phasesForSummary}
-                                            overallProgress={summaryOverallProgress}
-                                        />
-                                    </>
+                                    <PhasesHintBanner />
+                                )}
+                                {!tasksLoading && allTasks.length > 0 && (
+                                    <PhasesSummaryStrip
+                                        overallProgress={summaryOverallProgress}
+                                        taskCount={taskWorkflowCounts.total}
+                                        statusCounts={taskWorkflowCounts}
+                                        scheduleTimeline={scheduleTimeline}
+                                        scheduleSlipDays={scheduleSlipDays}
+                                    />
+                                )}
+                                {!tasksLoading && allTasks.length > 0 && (
+                                    <div
+                                        ref={taskFilterBarRef}
+                                        className="mb-4 flex flex-wrap items-center gap-1.5"
+                                    >
+                                        {[
+                                            {
+                                                key: 'all',
+                                                label: t('projectTabs.filter_all'),
+                                                count: taskWorkflowCounts.total,
+                                            },
+                                            {
+                                                key: 'can_start',
+                                                label: t('projectDetail.health_can_start'),
+                                                count: taskWorkflowCounts.can_start,
+                                            },
+                                            {
+                                                key: 'in_progress',
+                                                label: t('projectDetail.health_in_progress'),
+                                                count: taskWorkflowCounts.in_progress,
+                                            },
+                                            {
+                                                key: 'waiting',
+                                                label: t('projectDetail.health_waiting'),
+                                                count: taskWorkflowCounts.waiting,
+                                            },
+                                            {
+                                                key: 'done',
+                                                label: t('projectTabs.filter_done'),
+                                                count: taskWorkflowCounts.complete,
+                                            },
+                                        ].map((option) => (
+                                            <button
+                                                key={option.key}
+                                                type="button"
+                                                onClick={() => setTaskFilter(option.key)}
+                                                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                                                    taskFilter === option.key
+                                                        ? 'border-gray-900 bg-gray-900 text-white'
+                                                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900'
+                                                }`}
+                                                aria-pressed={taskFilter === option.key}
+                                            >
+                                                <span>{option.label}</span>
+                                                <span
+                                                    className={`tabular-nums text-xs ${
+                                                        taskFilter === option.key
+                                                            ? 'text-white/80'
+                                                            : 'text-gray-400'
+                                                    }`}
+                                                >
+                                                    {option.count}
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
                                 )}
                                 {tasksLoading && allTasks.length === 0 ? (
                                     <SkeletonList count={6} rowClassName="h-16" className="py-4 space-y-3" />
@@ -3234,6 +3350,10 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                 <>
                                                     {projectPhases.map((phase) => {
                                                         const phaseTasks = tasksByPhaseId.get(phase.id) || [];
+                                                        // Hide phases with no matching tasks under a status filter
+                                                        if (taskFilter !== 'all' && phaseTasks.length === 0) {
+                                                            return null;
+                                                        }
                                                         const rows = mergeWeatherIntoPhaseTasks(phaseTasks, weatherImpacts);
                                                         const derivedDates = derivePhaseDatesFromTasks(phaseTasks);
                                                         const phaseStart =
@@ -3329,9 +3449,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                                     onShareSmsConsentLink={handleShareSmsConsentLink}
                                                                                     pingingTaskId={pingingTaskId}
                                                                                     project={project}
-                                                                                    isActionCoachRow={
-                                                                                        pinnedExpandedTaskId === row.task.id
-                                                                                    }
                                                                                 />
                                                                             ),
                                                                         )}
@@ -3409,16 +3526,13 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                             onShareSmsConsentLink={handleShareSmsConsentLink}
                                                                                     pingingTaskId={pingingTaskId}
                                                                                     project={project}
-                                                                                    isActionCoachRow={
-                                                                                        pinnedExpandedTaskId === row.task.id
-                                                                                    }
                                                                                 />
                                                                     ),
                                                                 )}
                                                             </ul>
                                                         </PhaseTaskSection>
                                                     )}
-                                                    {canEditProjects && projectPhases.length > 0 && (
+                                                    {canEditProjects && projectPhases.length > 0 && taskFilter === 'all' && (
                                                         <PhaseQuickAdd
                                                             isMutating={phasesMutating}
                                                             onAdd={async (name) => {
@@ -3427,6 +3541,13 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                             }}
                                                         />
                                                     )}
+                                                    {taskFilter !== 'all' && tasks.length === 0 ? (
+                                                        <p className="py-8 text-center text-sm text-gray-500">
+                                                            {t('projectDetail.no_tasks_match_filter', {
+                                                                defaultValue: 'No tasks match this filter.',
+                                                            })}
+                                                        </p>
+                                                    ) : null}
                                                 </>
                                             );
                                         })()}
@@ -3459,6 +3580,40 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                         </button>
                                     </div>
                                 ) : null}
+                            </div>
+                            {(allTasks.length > 0 || canEditProjects) ? (
+                                <div className="flex w-full max-w-[17.5rem] flex-col gap-3 xl:sticky xl:top-4 xl:justify-self-end">
+                                    {allTasks.length > 0 ? (
+                                        <TasksDispatchRail
+                                            readyTasks={dispatchReadyTasks}
+                                            waitingTasks={dispatchWaitingTasks}
+                                            getBlockerLabel={getDispatchBlockerLabel}
+                                            onSeeAllWaiting={() => {
+                                                setTaskFilter('waiting');
+                                                requestAnimationFrame(() => {
+                                                    taskFilterBarRef.current?.scrollIntoView({
+                                                        behavior: 'smooth',
+                                                        block: 'nearest',
+                                                    });
+                                                });
+                                            }}
+                                        />
+                                    ) : null}
+                                    {canEditProjects ? (
+                                        <ProjectSmartNotificationsCard
+                                            variant="rail"
+                                            project={project}
+                                            organization={state.currentOrganization}
+                                            canEdit={canEditProjects}
+                                            onToggleEnabled={handleToggleSmartNotifications}
+                                            onConfigure={({ activate } = {}) => {
+                                                setSmartNotifActivateOnOpen(Boolean(activate));
+                                                setShowSmartNotificationsModal(true);
+                                            }}
+                                        />
+                                    ) : null}
+                                </div>
+                            ) : null}
                             </div>
                         )}
 

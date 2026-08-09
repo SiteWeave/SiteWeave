@@ -134,8 +134,8 @@ function PhaseTaskSection({
         : isPhaseDropTarget
           ? 'bg-blue-50/60'
           : isUnassigned
-            ? 'bg-amber-50/80 hover:bg-amber-100/60'
-            : 'bg-gray-100 hover:bg-gray-200/80';
+            ? 'bg-amber-50/50 hover:bg-amber-50'
+            : 'bg-white hover:bg-gray-50/80';
 
     const canEditTitle = canManagePhases && !isUnassigned && phaseId && onRenamePhase;
     const showDelete = canManagePhases && !isUnassigned && phaseId && onDeletePhase;
@@ -147,7 +147,7 @@ function PhaseTaskSection({
             id={sectionDomId}
             role="region"
             aria-labelledby={titleId}
-            className={`rounded-lg border overflow-hidden bg-white transition-all duration-150 ${
+            className={`rounded-xl border overflow-hidden bg-white transition-all duration-150 ${
                 isTaskDragOver || isPhaseDropTarget
                     ? 'border-blue-400 ring-2 ring-blue-200 shadow-md'
                     : isUnassigned
@@ -163,7 +163,7 @@ function PhaseTaskSection({
                 <div className="h-1 bg-blue-400" aria-hidden />
             )}
             <div
-                className={`flex items-center gap-1 border-b border-gray-200 ${headerBg} transition-colors`}
+                className={`flex items-center gap-0.5 border-b border-gray-100 ${headerBg} transition-colors`}
             >
                 {phaseOrderDraggable && phaseId && (
                     <div
@@ -187,7 +187,7 @@ function PhaseTaskSection({
                     onClick={toggle}
                     aria-expanded={expanded}
                     aria-controls={`${sectionDomId}-body`}
-                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center text-gray-600 hover:bg-white/60 rounded-full ml-1"
+                    className="inline-flex h-10 w-9 shrink-0 items-center justify-center text-gray-500 hover:bg-gray-100/80 rounded-lg ml-1"
                 >
                     <Icon
                         path={expanded ? 'M19 9l-7 7-7-7' : 'M9 5l7 7-7 7'}
@@ -195,43 +195,45 @@ function PhaseTaskSection({
                         aria-hidden
                     />
                 </button>
-                <div className="flex flex-1 min-w-0 items-center gap-2 py-2 pr-1">
-                    <InlineEditableText
-                        ref={titleEditRef}
-                        value={title}
-                        canEdit={Boolean(canEditTitle)}
-                        onSave={(name) => onRenamePhase?.(phaseId, name)}
-                        className="font-semibold text-gray-900"
-                        inputClassName="font-semibold text-gray-900"
-                        ariaLabel={t('projectDetail.rename_phase')}
-                    />
-                    {!isUnassigned && (
-                        <span className="hidden sm:inline text-xs text-gray-500 tabular-nums shrink-0">
-                            {dateRangeLabel || t('projectDetail.phase_no_dates')}
-                        </span>
-                    )}
-                    {taskCount > 0 && (
-                        <span className="text-xs font-medium text-gray-500 bg-white/80 border border-gray-200 rounded-full px-2 py-0.5 shrink-0">
+                <div className="flex flex-1 min-w-0 items-center gap-2 py-2.5 pr-2">
+                    <div className="flex min-w-0 items-center gap-2" id={titleId}>
+                        <InlineEditableText
+                            ref={titleEditRef}
+                            value={title}
+                            canEdit={Boolean(canEditTitle)}
+                            onSave={(name) => onRenamePhase?.(phaseId, name)}
+                            className="font-semibold text-gray-900 text-[15px]"
+                            inputClassName="font-semibold text-gray-900 text-[15px]"
+                            ariaLabel={t('projectDetail.rename_phase')}
+                        />
+                        <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500 tabular-nums">
                             {taskCountLabel}
                         </span>
-                    )}
-                    {isTaskDragOver && (
-                        <span className="text-xs text-blue-600 font-medium shrink-0">
-                            {t('projectDetail.drop_here')}
-                        </span>
-                    )}
-                    <div className="h-2 w-24 rounded-full bg-gray-200 shrink-0 overflow-hidden ml-auto">
-                        <div
-                            className="h-2 transition-all duration-300"
-                            style={{
-                                width: `${pct}%`,
-                                backgroundColor: complete ? '#10B981' : '#3B82F6',
-                            }}
-                        />
+                        {isTaskDragOver && (
+                            <span className="text-xs text-blue-600 font-medium shrink-0">
+                                {t('projectDetail.drop_here')}
+                            </span>
+                        )}
                     </div>
-                    <span className="text-sm font-bold text-gray-900 shrink-0 tabular-nums w-10 text-right">
-                        {pct}%
-                    </span>
+                    <div className="ml-auto flex shrink-0 items-center gap-2.5 pl-2">
+                        {!isUnassigned && (
+                            <span className="hidden sm:inline text-xs text-gray-500 tabular-nums">
+                                {dateRangeLabel || t('projectDetail.phase_no_dates')}
+                            </span>
+                        )}
+                        <div className="h-[10px] w-28 rounded-full bg-gray-200 overflow-hidden">
+                            <div
+                                className="h-full transition-[width] duration-300"
+                                style={{
+                                    width: `${pct}%`,
+                                    backgroundColor: complete ? '#50C878' : '#3CEB7A',
+                                }}
+                            />
+                        </div>
+                        <span className="text-xs font-semibold text-gray-600 tabular-nums w-8 text-right">
+                            {pct}%
+                        </span>
+                    </div>
                 </div>
                 {showDelete && (
                     <button

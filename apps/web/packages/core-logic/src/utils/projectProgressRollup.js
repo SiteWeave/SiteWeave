@@ -180,6 +180,8 @@ function scheduleTimelineFromBounds(minStart, maxEnd, now) {
     schedule_day_current: elapsedDays,
     schedule_day_total: totalDays,
     schedule_progress_pct,
+    schedule_start: localDateOnlyIso(minStart),
+    schedule_end: localDateOnlyIso(maxEnd),
   };
 }
 

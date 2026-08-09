@@ -1,10 +1,35 @@
 // NOTE: Vite bundles electron/main.cjs as dist-electron/main.cjs (package.json "main"). Keep IPC handlers in sync with main.cjs.
-const { app, BrowserWindow, Menu, shell, protocol, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, shell, protocol, ipcMain, dialog, session } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const { createServer } = require('http');
 const fs = require('fs');
 const { parse } = require('url');
+
+app.commandLine.appendSwitch('disk-cache-size', String(100 * 1024 * 1024));
+
+async function recoverHttpDiskCache() {
+  const userData = app.getPath('userData');
+  const recoveryFlag = path.join(userData, '.http-cache-recovered-v1');
+  if (fs.existsSync(recoveryFlag)) return;
+  try {
+    for (const name of ['Cache', 'Code Cache']) {
+      const cachePath = path.join(userData, name);
+      if (fs.existsSync(cachePath)) {
+        fs.rmSync(cachePath, { recursive: true, force: true });
+      }
+    }
+    try {
+      await session.defaultSession.clearCache();
+    } catch {
+      /* ignore */
+    }
+    fs.writeFileSync(recoveryFlag, new Date().toISOString(), 'utf8');
+    console.log('Recovered HTTP disk cache directories');
+  } catch (err) {
+    console.warn('Disk cache folder cleanup skipped:', err?.message || err);
+  }
+}
 
 // Prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock();
@@ -395,8 +420,9 @@ function handleProtocolUrl(url) {
 registerProtocol();
 
 // App event handlers
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   console.log('App is ready');
+  await recoverHttpDiskCache();
   
   // Prevent multiple windows
   if (BrowserWindow.getAllWindows().length === 0) {

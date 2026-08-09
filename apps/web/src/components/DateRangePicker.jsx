@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, cloneElement, isValidElement } from 'react';
 import { createPortal } from 'react-dom';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/style.css';
@@ -47,13 +47,32 @@ function DateRangePicker({
   compact = false,
   size = 'default',
   elevated = false,
+  /** Custom trigger element (e.g. task date text). Opens the calendar on click. */
+  trigger = null,
+  /** Open the calendar as soon as this component mounts. */
+  defaultOpen = false,
+  onOpenChange = null,
+  /** Close the popover once both start and end are selected. */
+  closeOnComplete = false,
+  /** When set, shows a Save button that commits the current draft range. */
+  onSave = null,
+  /** Called after Clear dates (in addition to onChange with empty values). */
+  onClear = null,
+  clearLabel = 'Clear dates',
+  saveLabel = 'Save',
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(Boolean(defaultOpen));
   const [numberOfMonths, setNumberOfMonths] = useState(1);
   const [popoverStyle, setPopoverStyle] = useState(null);
+  const [month, setMonth] = useState(() => new Date());
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
   const popoverRef = useRef(null);
+
+  const setPickerOpen = useCallback((next) => {
+    setOpen(next);
+    onOpenChange?.(next);
+  }, [onOpenChange]);
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)');
@@ -71,7 +90,20 @@ function DateRangePicker({
     return { from: from || undefined, to: to || undefined };
   }, [startValue, endValue]);
 
-  const defaultMonth = selected?.from || selected?.to || new Date();
+  useEffect(() => {
+    if (!open) return;
+    setMonth(selected?.from || selected?.to || new Date());
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps -- only reset month when opening
+
+  const goToMonth = useCallback((date) => {
+    const next = date instanceof Date ? date : new Date();
+    setMonth(Number.isNaN(next.getTime()) ? new Date() : next);
+  }, []);
+
+  const presetContent =
+    typeof presets === 'function'
+      ? presets({ goToMonth, goToToday: () => goToMonth(new Date()) })
+      : presets;
 
   const updatePopoverPosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -130,12 +162,12 @@ function DateRangePicker({
     const onDoc = (e) => {
       if (rootRef.current?.contains(e.target)) return;
       if (popoverRef.current?.contains(e.target)) return;
-      setOpen(false);
+      setPickerOpen(false);
     };
     const onKey = (e) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        setOpen(false);
+        setPickerOpen(false);
       }
     };
     document.addEventListener('mousedown', onDoc);
@@ -144,7 +176,7 @@ function DateRangePicker({
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [open, setPickerOpen]);
 
   const handleSelect = (range) => {
     if (!range) {
@@ -160,6 +192,7 @@ function DateRangePicker({
         start: localDateIso(range.from),
         end: localDateIso(range.to),
       });
+      if (closeOnComplete) setPickerOpen(false);
     }
   };
 
@@ -191,7 +224,7 @@ function DateRangePicker({
       data-siteweave-date-range-popover
       style={{ ...pickerStyle, ...popoverStyle }}
     >
-      {presets ? (
+      {presetContent ? (
         <div
           className={
             sm
@@ -199,27 +232,30 @@ function DateRangePicker({
               : 'mb-3 flex flex-wrap gap-2 border-b border-gray-100 pb-3'
           }
         >
-          {presets}
+          {presetContent}
         </div>
       ) : null}
       <div
-        className={`overflow-visible ${compact && !sm ? 'overflow-x-auto pr-0.5' : ''} ${sm ? '' : 'overflow-x-auto'}`}
+        className={`relative z-0 ${
+          sm ? 'overflow-hidden' : `overflow-x-auto ${compact ? 'pr-0.5' : ''}`
+        }`}
       >
         {sm ? (
-          <div className="relative w-full" style={{ minHeight: '240px' }}>
+          // Clip scaled DayPicker so its pre-transform hit box cannot cover Clear/Save.
+          <div className="relative w-full overflow-hidden" style={{ height: 208 }}>
             <div
-              className="origin-top-left"
+              className="origin-top-left pointer-events-auto"
               style={{
                 transform: 'scale(0.82)',
                 width: '121.95%',
-                marginBottom: '-12%',
               }}
             >
               <DayPicker
                 mode="range"
                 selected={selected}
                 onSelect={handleSelect}
-                defaultMonth={defaultMonth}
+                month={month}
+                onMonthChange={setMonth}
                 numberOfMonths={numberOfMonths}
                 captionLayout="dropdown"
                 fromYear={year - 3}
@@ -232,7 +268,8 @@ function DateRangePicker({
             mode="range"
             selected={selected}
             onSelect={handleSelect}
-            defaultMonth={defaultMonth}
+            month={month}
+            onMonthChange={setMonth}
             numberOfMonths={numberOfMonths}
             captionLayout="dropdown"
             fromYear={year - 3}
@@ -243,31 +280,103 @@ function DateRangePicker({
       <div
         className={
           sm
-            ? 'mt-2 flex justify-end border-t border-gray-100 pt-2'
-            : 'mt-3 flex justify-end border-t border-gray-100 pt-3'
+            ? 'relative z-20 mt-2 flex items-center justify-between gap-2 border-t border-gray-100 pt-2'
+            : 'relative z-20 mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-3'
         }
+        data-siteweave-date-range-actions
+        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <button
           type="button"
-          onClick={() => {
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
             onChange({ start: '', end: '' });
-            setOpen(false);
+            onClear?.();
+            setPickerOpen(false);
           }}
           className={
             sm
-              ? 'text-[10px] font-medium text-gray-500 hover:text-gray-800'
-              : 'text-xs font-medium text-gray-500 hover:text-gray-800'
+              ? 'relative z-20 min-h-8 px-1 text-[10px] font-medium text-gray-500 hover:text-gray-800'
+              : 'relative z-20 min-h-9 px-1 text-xs font-medium text-gray-500 hover:text-gray-800'
           }
         >
-          Clear dates
+          {clearLabel}
         </button>
+        {typeof onSave === 'function' ? (
+          <button
+            type="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSave({ start: startValue || '', end: endValue || '' });
+              setPickerOpen(false);
+            }}
+            disabled={Boolean(startValue) !== Boolean(endValue)}
+            className={
+              sm
+                ? 'relative z-20 rounded-md bg-blue-600 px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40'
+                : 'relative z-20 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40'
+            }
+          >
+            {saveLabel}
+          </button>
+        ) : null}
       </div>
     </div>
   ) : null;
 
+  const setTriggerNode = useCallback((node) => {
+    triggerRef.current = node;
+  }, []);
+
+  const defaultTrigger = (
+    <button
+      ref={setTriggerNode}
+      type="button"
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-labelledby={label ? labelId : undefined}
+      onClick={() => setPickerOpen(!open)}
+      className={
+        sm
+          ? 'flex w-full items-center justify-between gap-1.5 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-left text-xs shadow-xs transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20'
+          : 'flex w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm shadow-xs transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20'
+      }
+    >
+      <span className={`min-w-0 truncate ${summary ? 'text-gray-900' : 'text-gray-400'}`}>
+        {summary || 'Select start and end dates'}
+      </span>
+      <svg
+        className={sm ? 'h-3 w-3 shrink-0 text-gray-400' : 'h-4 w-4 shrink-0 text-gray-400'}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        aria-hidden
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    </button>
+  );
+
+  const customTrigger =
+    trigger && isValidElement(trigger)
+      ? cloneElement(trigger, {
+          ref: setTriggerNode,
+          type: trigger.props.type || 'button',
+          'aria-haspopup': 'dialog',
+          'aria-expanded': open,
+          onClick: (e) => {
+            trigger.props.onClick?.(e);
+            if (!e.defaultPrevented) setPickerOpen(!open);
+          },
+        })
+      : null;
+
   return (
     <div className={`relative ${sm ? 'text-[11px]' : ''} ${className}`} ref={rootRef}>
-      {label ? (
+      {label && !trigger ? (
         <label
           id={labelId}
           className={
@@ -279,32 +388,7 @@ function DateRangePicker({
           {label}
         </label>
       ) : null}
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-labelledby={label ? labelId : undefined}
-        onClick={() => setOpen((o) => !o)}
-        className={
-          sm
-            ? 'flex w-full items-center justify-between gap-1.5 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-left text-xs shadow-xs transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20'
-            : 'flex w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm shadow-xs transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20'
-        }
-      >
-        <span className={`min-w-0 truncate ${summary ? 'text-gray-900' : 'text-gray-400'}`}>
-          {summary || 'Select start and end dates'}
-        </span>
-        <svg
-          className={sm ? 'h-3 w-3 shrink-0 text-gray-400' : 'h-4 w-4 shrink-0 text-gray-400'}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          aria-hidden
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
-      </button>
+      {customTrigger || defaultTrigger}
 
       {typeof document !== 'undefined' && popoverContent
         ? createPortal(popoverContent, document.body)

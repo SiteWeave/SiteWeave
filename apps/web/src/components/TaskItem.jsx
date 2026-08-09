@@ -1,13 +1,14 @@
 import React, { useState, memo, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import Icon from './Icon';
+import Avatar from './Avatar';
 import InlineEditableText from './InlineEditableText';
 import PermissionGuard from './PermissionGuard';
 import DateRangePicker from './DateRangePicker';
 import { addDaysIso, localDateIso, formatLocalDateOnly } from '../utils/dateHelpers';
 import { normalizeAssigneePhone, isSmsNotificationsEnabled } from '@siteweave/core-logic';
 
-/** @typedef {null | 'dates' | 'assign'} TaskPanel */
+/** @typedef {null | 'assign'} TaskPanel */
 
 
 const TaskItem = memo(function TaskItem({
@@ -29,7 +30,6 @@ const TaskItem = memo(function TaskItem({
     onCopyGuestLink = null,
     pingingTaskId = null,
     project = null,
-    isActionCoachRow = false,
 }) {
     const { i18n, t } = useTranslation();
     /** @type {[TaskPanel, (p: TaskPanel) => void]} */
@@ -41,7 +41,6 @@ const TaskItem = memo(function TaskItem({
     const [editAssigneeEmail, setEditAssigneeEmail] = useState(task.contacts?.email || '');
     const [editAssigneePhone, setEditAssigneePhone] = useState(String(task.contacts?.phone || '').trim());
     const [editPriority, setEditPriority] = useState(task.priority);
-    const [showAllPredecessors, setShowAllPredecessors] = useState(false);
     const [draftPercent, setDraftPercent] = useState(null);
     const [showConfetti, setShowConfetti] = useState(false);
     const [percentEditing, setPercentEditing] = useState(false);
@@ -106,18 +105,12 @@ const TaskItem = memo(function TaskItem({
         hoverCloseTimerRef.current = window.setTimeout(() => {
             setHoverExpanded(false);
             hoverCloseTimerRef.current = null;
-        }, 320);
+        }, 60);
     }, []);
 
     useEffect(() => () => {
         if (hoverCloseTimerRef.current) window.clearTimeout(hoverCloseTimerRef.current);
     }, []);
-
-    const priorityClasses = {
-        High: 'bg-red-100 text-red-700',
-        Medium: 'bg-yellow-100 text-yellow-700',
-        Low: 'bg-blue-100 text-blue-700',
-    };
 
     const formatDateShort = (dateString) =>
         formatLocalDateOnly(dateString, i18n.language, { month: 'short' });
@@ -208,23 +201,31 @@ const TaskItem = memo(function TaskItem({
         if (confettiTimerRef.current) window.clearTimeout(confettiTimerRef.current);
     }, []);
 
-    const daysSelected = () => {
-        if (!draftStart || !draftDue) return null;
-        const diff = Math.round(
-            (new Date(`${draftDue}T00:00:00`) - new Date(`${draftStart}T00:00:00`)) / (24 * 60 * 60 * 1000)
-        );
-        return diff >= 0 ? diff + 1 : null;
-    };
+    const skipScheduleSyncOnCloseRef = useRef(false);
 
-    const dateRangePresets = useMemo(
-        () => (
+    const saveScheduleDraft = useCallback(
+        (start, end) => {
+            skipScheduleSyncOnCloseRef.current = true;
+            setDraftStart(start);
+            setDraftDue(end);
+            onEdit(task.id, {
+                start_date: start || null,
+                due_date: end || null,
+            });
+        },
+        [onEdit, task.id],
+    );
+
+    const dateRangePresets = useCallback(
+        ({ goToToday }) => (
             <>
                 <button
                     type="button"
                     onClick={() => {
-                        const t = localDateIso();
-                        setDraftStart(t);
-                        setDraftDue(t);
+                        const today = localDateIso();
+                        setDraftStart(today);
+                        setDraftDue(today);
+                        goToToday();
                     }}
                     className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-700 hover:bg-gray-100"
                 >
@@ -233,9 +234,10 @@ const TaskItem = memo(function TaskItem({
                 <button
                     type="button"
                     onClick={() => {
-                        const t = localDateIso();
-                        setDraftStart((s) => s || t);
-                        setDraftDue(addDaysIso(t, 7) || t);
+                        const today = localDateIso();
+                        setDraftStart((s) => s || today);
+                        setDraftDue(addDaysIso(today, 7) || today);
+                        goToToday();
                     }}
                     className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-700 hover:bg-gray-100"
                 >
@@ -244,9 +246,10 @@ const TaskItem = memo(function TaskItem({
                 <button
                     type="button"
                     onClick={() => {
-                        const t = localDateIso();
-                        setDraftStart((s) => s || t);
-                        setDraftDue(addDaysIso(t, 14) || t);
+                        const today = localDateIso();
+                        setDraftStart((s) => s || today);
+                        setDraftDue(addDaysIso(today, 14) || today);
+                        goToToday();
                     }}
                     className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-700 hover:bg-gray-100"
                 >
@@ -254,7 +257,7 @@ const TaskItem = memo(function TaskItem({
                 </button>
             </>
         ),
-        []
+        [],
     );
 
     const photoCount = task.task_photos?.length || 0;
@@ -316,19 +319,6 @@ const TaskItem = memo(function TaskItem({
         e?.stopPropagation?.();
         syncDraftsFromTask();
         setPanel((prev) => (prev === which ? null : which));
-    };
-
-    const saveDates = () => {
-        onEdit(task.id, {
-            start_date: draftStart || null,
-            due_date: draftDue || null,
-        });
-        setPanel(null);
-    };
-
-    const clearDates = () => {
-        onEdit(task.id, { start_date: null, due_date: null });
-        setPanel(null);
     };
 
     const saveAssign = () => {
@@ -403,54 +393,209 @@ const TaskItem = memo(function TaskItem({
         /^assignee?\b/i.test(assigneeName) ||
         /^external assignee\b/i.test(assigneeName) ||
         /^asignado\s*\(/i.test(assigneeName);
+    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assigneeName);
+    const looksLikePhoneOrNumber =
+        /^[\d\s()+.-]+$/.test(assigneeName) ||
+        (/^\d{7,}$/.test(assigneeName.replace(/\D/g, '')) && !/[a-zA-Z]/.test(assigneeName));
     const assigneeDisplay = (
         assigneeName && !looksLikePlaceholderName ? assigneeName : ''
     ) || assigneeEmail || assigneePhoneDisplay || assigneeName || null;
-    const assigneeLabel = assigneeDisplay || t('tasks.assign');
+    // Avatar only for a linked contact with a real person name (not email/phone/empty).
+    const showAssigneeAvatar = Boolean(
+        task.assignee_id &&
+        assigneeName &&
+        !looksLikePlaceholderName &&
+        !looksLikeEmail &&
+        !looksLikePhoneOrNumber,
+    );
     const predecessors = dependencyMeta?.predecessors || [];
     const successors = dependencyMeta?.successors || [];
     const depCount = predecessors.length + successors.length;
     const unmetCount = dependencyMeta?.warning?.unmetPredecessors?.length || 0;
 
-    const visiblePredecessors = useMemo(() => (
-        showAllPredecessors ? predecessors : predecessors.slice(0, 3)
-    ), [predecessors, showAllPredecessors]);
+    const toggleComplete = useCallback(() => {
+        if (isComplete) {
+            onEdit(task.id, {
+                completed: false,
+                percent_complete: progressPercent >= 100 ? 0 : progressPercent,
+            });
+            return;
+        }
+        onEdit(task.id, { completed: true, percent_complete: 100 });
+    }, [isComplete, onEdit, progressPercent, task.id]);
 
-    const getInitials = (name) => {
-        if (!name) return '';
-        return name
-            .split(' ')
-            .filter(Boolean)
-            .slice(0, 2)
-            .map((word) => word[0]?.toUpperCase())
-            .join('');
-    };
+    // Completed tasks use checkbox + strikethrough only — no "Done" pill.
+    const workflowStatus = isComplete
+        ? null
+        : unmetCount > 0
+            ? 'waiting'
+            : displayPercent > 0
+                ? 'in_progress'
+                : null;
 
-    const dependencyChip = (linkedTask, tone) => {
-        const initials = getInitials(linkedTask.contacts?.name);
-        return (
-            <span
-                key={linkedTask.id}
-                className={`inline-flex max-w-[200px] items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ${
-                    tone === 'complete'
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : tone === 'blocked'
-                            ? 'border-amber-300 bg-amber-50 text-amber-800'
-                            : 'border-gray-200 bg-gray-50 text-gray-700'
-                }`}
-                title={linkedTask.text}
+    const workflowStatusLabel = workflowStatus === 'waiting'
+        ? t('tasks.workflow_waiting')
+        : workflowStatus === 'in_progress'
+            ? t('tasks.workflow_in_progress')
+            : null;
+
+    const workflowStatusClass = workflowStatus === 'waiting'
+        ? 'bg-[#f3e8d8] text-[#9a6b2f]'
+        : workflowStatus === 'in_progress'
+            ? 'bg-violet-50 text-violet-800'
+            : '';
+
+    const afterTaskName = unmetCount > 0
+        ? (dependencyMeta?.warning?.unmetPredecessors?.[0]?.text || null)
+        : (predecessors[0]?.predecessorTask?.text || null);
+
+    const idleDepLabel = afterTaskName
+        ? t('tasks.after_task', { name: afterTaskName })
+        : (predecessors.length === 0 && successors.length > 0
+            ? t('tasks.unlocks_count', { count: successors.length })
+            : null);
+
+    const assigneeAvatar = showAssigneeAvatar ? (
+        <Avatar
+            name={assigneeName}
+            avatarUrl={selectedAssigneeContact?.avatar_url || null}
+            size="sm"
+            className="!h-5 !w-5 !text-[9px] shrink-0"
+        />
+    ) : null;
+
+    const progressControl = (
+        <div className="task-row-progress flex shrink-0 items-center gap-2">
+            {assigneeAvatar}
+            <PermissionGuard
+                permission="can_edit_tasks"
+                fallback={
+                    <div className="flex items-center gap-2" title={t('tasks.percent_complete')}>
+                        <div
+                            className={`task-progress-track${
+                                progressPercent >= 100 ? ' task-progress-track--complete' : ''
+                            }`}
+                            style={{ '--progress': `${progressPercent}%` }}
+                            role="progressbar"
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={progressPercent}
+                            aria-label={`${t('tasks.percent_complete')} — ${task.text}`}
+                        />
+                        <span className="tabular-nums text-[11px] font-medium text-gray-500 w-8 text-right">
+                            {progressPercent}%
+                        </span>
+                    </div>
+                }
             >
-                {initials && (
-                    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white text-[9px] font-semibold text-gray-700">
-                        {initials}
-                    </span>
-                )}
-                <span className="min-w-0 truncate">{linkedTask.text}</span>
-            </span>
-        );
-    };
-
-    const showStatusSignals = photoCount > 0 || depWarningCount > 0 || Boolean(assigneeDisplay);
+                <label
+                    className="flex items-center gap-2"
+                    title={t('tasks.percent_complete_title')}
+                    onClick={stop}
+                    onMouseDown={suppressRowDrag}
+                    onTouchStart={suppressRowDrag}
+                    onDragStart={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                >
+                    <input
+                        type="range"
+                        draggable={false}
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={displayPercent}
+                        onChange={(e) => {
+                            if (percentEditing) setPercentEditing(false);
+                            const bounded = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                            setDraftPercent(bounded);
+                        }}
+                        onPointerUp={commitPercent}
+                        onKeyDown={(e) => {
+                            if (
+                                e.shiftKey &&
+                                (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+                            ) {
+                                e.preventDefault();
+                                const delta = e.key === 'ArrowRight' ? 1 : -1;
+                                const base = draftPercent === null ? progressPercent : draftPercent;
+                                setDraftPercent(Math.max(0, Math.min(100, base + delta)));
+                            }
+                        }}
+                        onKeyUp={(e) => {
+                            if (
+                                e.key === 'Enter' ||
+                                e.key === 'ArrowLeft' ||
+                                e.key === 'ArrowRight' ||
+                                e.key === 'Home' ||
+                                e.key === 'End'
+                            ) {
+                                commitPercent();
+                            } else if (e.key === 'Escape') {
+                                setDraftPercent(null);
+                            }
+                        }}
+                        className={`task-progress-slider h-3 w-28 cursor-pointer ${
+                            displayPercent >= 100 ? 'task-progress-slider--complete' : ''
+                        }`}
+                        style={{ '--progress': `${displayPercent}%` }}
+                        aria-label={`${t('tasks.percent_complete')} — ${task.text}`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={displayPercent}
+                    />
+                    {percentEditing ? (
+                        <span className="flex items-center gap-0.5 shrink-0">
+                            <input
+                                ref={percentInputRef}
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                max={100}
+                                value={percentText}
+                                onClick={stop}
+                                onMouseDown={suppressRowDrag}
+                                onTouchStart={suppressRowDrag}
+                                onChange={(e) => setPercentText(e.target.value)}
+                                onBlur={commitPercentText}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        commitPercentText();
+                                    } else if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        cancelPercentText();
+                                    }
+                                }}
+                                className="w-9 rounded border border-blue-300 bg-white px-0.5 py-0.5 text-right text-[11px] font-semibold tabular-nums text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                aria-label={t('tasks.percent_complete_exact', {
+                                    defaultValue: 'Exact percent complete',
+                                })}
+                            />
+                            <span className="text-[11px] font-medium text-gray-500">%</span>
+                        </span>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={openPercentEdit}
+                            onMouseDown={suppressRowDrag}
+                            onTouchStart={suppressRowDrag}
+                            className="tabular-nums text-[11px] font-medium text-gray-500 w-8 shrink-0 text-right rounded px-0.5 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            title={t('tasks.percent_complete_exact_hint', {
+                                defaultValue: 'Click to type exact %',
+                            })}
+                            aria-label={t('tasks.percent_complete_exact_hint', {
+                                defaultValue: 'Click to type exact %',
+                            })}
+                        >
+                            {displayPercent}%
+                        </button>
+                    )}
+                </label>
+            </PermissionGuard>
+        </div>
+    );
 
     return (
         <li
@@ -459,17 +604,13 @@ const TaskItem = memo(function TaskItem({
             onDragStart={handleTaskRowDragStart}
             onMouseEnter={handleRowMouseEnter}
             onMouseLeave={handleRowMouseLeave}
-            className={`task-row group relative transition-colors animate-slide-in border-b border-gray-100 last:border-b-0 ${
-                isSelected ? 'bg-blue-50/80' : ''
-            } ${isComplete ? 'bg-green-50/40' : 'bg-white hover:bg-gray-50/80'}${
-                isActionCoachRow ? ' task-row--coach' : ''
-            }${hoverExpanded ? ' task-row--hover-open' : ''}${
-                panel ? ' task-row--panel-open' : ''
-            }${
+            className={`task-row group relative border-b border-gray-100 last:border-b-0 bg-white${
+                hoverExpanded ? ' task-row--hover-open' : ''
+            }${panel ? ' task-row--panel-open' : ''}${
                 unmetCount > 0 && !isComplete ? ' task-row--blocked' : ''
             }`}
             role="listitem"
-            aria-label={`Task: ${task.text}, Priority: ${task.priority}, ${dateLine()}`}
+            aria-label={`Task: ${task.text}, ${workflowStatusLabel || task.priority}, ${dateLine()}`}
             onClick={(e) => {
                 if (e.ctrlKey || e.metaKey) {
                     e.preventDefault();
@@ -477,7 +618,11 @@ const TaskItem = memo(function TaskItem({
                 }
             }}
         >
-            <div className="relative px-2 pt-3.5 pb-2 sm:px-3">
+            <div
+                className={`task-row-surface relative mx-1 my-0.5 rounded-xl px-2 py-2.5 sm:mx-1.5 sm:px-3${
+                    isSelected ? ' task-row-surface--selected' : ''
+                }`}
+            >
                 {showConfetti && (
                     <div className="task-confetti-burst" aria-hidden>
                         {Array.from({ length: 12 }, (_, i) => (
@@ -497,430 +642,209 @@ const TaskItem = memo(function TaskItem({
                     </div>
                 )}
 
-                {/* ── Row 1: What ── */}
-                <div className="flex items-start justify-between gap-3">
-                    {/* Left: checkbox + task name */}
-                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                        <div className="flex items-center gap-1">
-                            {unmetCount > 0 && !isComplete && (
-                                <Icon
-                                    path="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 0h10.5A1.5 1.5 0 0118.75 12v7.5A1.5 1.5 0 0117.25 21h-10.5A1.5 1.5 0 015.25 19.5V12a1.5 1.5 0 011.5-1.5z"
-                                    className="h-3.5 w-3.5 shrink-0 text-amber-600"
-                                />
-                            )}
-                            <PermissionGuard
-                                permission="can_edit_tasks"
-                                fallback={
-                                    <span className="shrink-0 tabular-nums text-xs font-semibold text-gray-600 w-10 text-right" title={t('tasks.percent_complete')}>
-                                        {progressPercent}%
-                                    </span>
-                                }
-                            >
-                                <label
-                                    className="flex shrink-0 items-center gap-1.5 w-[8.5rem]"
-                                    title={t('tasks.percent_complete_title')}
-                                    onClick={stop}
-                                    onMouseDown={suppressRowDrag}
-                                    onTouchStart={suppressRowDrag}
-                                    onDragStart={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                    }}
-                                >
-                                    <input
-                                        type="range"
-                                        draggable={false}
-                                        min="0"
-                                        max="100"
-                                        step="5"
-                                        value={displayPercent}
-                                        onChange={(e) => {
-                                            if (percentEditing) setPercentEditing(false);
-                                            const bounded = Math.max(0, Math.min(100, Number(e.target.value) || 0));
-                                            setDraftPercent(bounded);
-                                        }}
-                                        onPointerUp={commitPercent}
-                                        onKeyDown={(e) => {
-                                            // Shift+arrow = 1% fine nudge while focused on the slider
-                                            if (
-                                                e.shiftKey &&
-                                                (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
-                                            ) {
-                                                e.preventDefault();
-                                                const delta = e.key === 'ArrowRight' ? 1 : -1;
-                                                const base = draftPercent === null ? progressPercent : draftPercent;
-                                                setDraftPercent(Math.max(0, Math.min(100, base + delta)));
-                                            }
-                                        }}
-                                        onKeyUp={(e) => {
-                                            if (
-                                                e.key === 'Enter' ||
-                                                e.key === 'ArrowLeft' ||
-                                                e.key === 'ArrowRight' ||
-                                                e.key === 'Home' ||
-                                                e.key === 'End'
-                                            ) {
-                                                commitPercent();
-                                            } else if (e.key === 'Escape') {
-                                                setDraftPercent(null);
-                                            }
-                                        }}
-                                        className={`task-progress-slider h-2 w-full cursor-pointer ${
-                                            displayPercent >= 100 ? 'task-progress-slider--complete' : ''
-                                        }`}
-                                        style={{ '--progress': `${displayPercent}%` }}
-                                        aria-label={`${t('tasks.percent_complete')} — ${task.text}`}
-                                        aria-valuemin={0}
-                                        aria-valuemax={100}
-                                        aria-valuenow={displayPercent}
-                                    />
-                                    {percentEditing ? (
-                                        <span className="flex items-center gap-0.5 shrink-0">
-                                            <input
-                                                ref={percentInputRef}
-                                                type="number"
-                                                inputMode="numeric"
-                                                min={0}
-                                                max={100}
-                                                value={percentText}
-                                                onClick={stop}
-                                                onMouseDown={suppressRowDrag}
-                                                onTouchStart={suppressRowDrag}
-                                                onChange={(e) => setPercentText(e.target.value)}
-                                                onBlur={commitPercentText}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        e.preventDefault();
-                                                        commitPercentText();
-                                                    } else if (e.key === 'Escape') {
-                                                        e.preventDefault();
-                                                        cancelPercentText();
-                                                    }
-                                                }}
-                                                className="w-9 rounded border border-blue-300 bg-white px-0.5 py-0.5 text-right text-[11px] font-semibold tabular-nums text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                                aria-label={t('tasks.percent_complete_exact', {
-                                                    defaultValue: 'Exact percent complete',
-                                                })}
-                                            />
-                                            <span className="text-[11px] font-semibold text-gray-500">%</span>
-                                        </span>
-                                    ) : (
-                                        <button
-                                            type="button"
-                                            onClick={openPercentEdit}
-                                            onMouseDown={suppressRowDrag}
-                                            onTouchStart={suppressRowDrag}
-                                            className="tabular-nums text-[11px] font-semibold text-gray-700 w-8 shrink-0 text-right rounded px-0.5 hover:bg-gray-100 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                            title={t('tasks.percent_complete_exact_hint', {
-                                                defaultValue: 'Click to type exact %',
-                                            })}
-                                            aria-label={t('tasks.percent_complete_exact_hint', {
-                                                defaultValue: 'Click to type exact %',
-                                            })}
-                                        >
-                                            {displayPercent}%
-                                        </button>
-                                    )}
-                                </label>
-                            </PermissionGuard>
-                        </div>
-                        <PermissionGuard
-                            permission="can_edit_tasks"
-                            fallback={
-                                <span
-                                    className={`ui-clamp-2 font-semibold text-sm sm:text-base leading-snug ${
-                                        isComplete ? 'line-through text-gray-400' : 'text-gray-900'
-                                    }`}
-                                >
-                                    {task.text}
-                                </span>
-                            }
-                        >
-                            <InlineEditableText
-                                value={task.text}
-                                canEdit
-                                onSave={(text) => onEdit(task.id, { text })}
-                                className={`ui-clamp-2 font-semibold text-sm sm:text-base leading-snug ${
-                                    isComplete ? 'line-through text-gray-400' : 'text-gray-900'
+                <div className="flex items-center gap-3">
+                    <PermissionGuard
+                        permission="can_edit_tasks"
+                        fallback={
+                            <span
+                                className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border ${
+                                    isComplete
+                                        ? 'border-[#50C878] bg-[#50C878] text-white'
+                                        : 'border-gray-300 bg-white'
                                 }`}
-                                inputClassName="font-semibold text-sm sm:text-base"
-                                ariaLabel={t('tasks.click_to_rename')}
-                            />
-                        </PermissionGuard>
-                    </div>
-
-                    {/* Right: idle signals + priority */}
-                    <div className="mt-0.5 shrink-0 flex items-center gap-1.5">
-                        {showStatusSignals && (
-                            <div className="task-row-status-signals" aria-hidden={isActionCoachRow || Boolean(panel)}>
-                                {photoCount > 0 && (
-                                    <span
-                                        className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold text-white"
-                                        title={t('tasks.photos')}
-                                    >
-                                        {photoCount > 9 ? '9+' : photoCount}
-                                    </span>
-                                )}
-                                {depWarningCount > 0 && (
-                                    <span
-                                        className="inline-flex h-5 items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-800"
-                                        title={depTooltip || t('tasks.dependencies')}
-                                    >
-                                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                                        {t('tasks.deps')}
-                                    </span>
-                                )}
-                                {assigneeDisplay && (
-                                    <span
-                                        className="inline-flex max-w-[88px] items-center rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] text-gray-600"
-                                        title={t('tasks.assigned_to', { name: assigneeDisplay })}
-                                    >
-                                        <span className="ui-ellipsis-1">{assigneeDisplay}</span>
-                                    </span>
-                                )}
-                            </div>
-                        )}
-                        <span
-                            className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
-                                priorityClasses[task.priority] || priorityClasses.Medium
-                            }`}
-                        >
-                            {task.priority}
-                        </span>
-                    </div>
-                </div>
-
-                {/* ── Details: dates + actions (collapsed to one-line rows until hover) ── */}
-                <div className="task-row-details">
-                    <div className="task-row-details-inner">
-                <div className="mt-2.5 ml-1 flex flex-col gap-2 sm:mt-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:ml-2">
-                    <div className="task-row-meta min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
-                        <PermissionGuard
-                            permission="can_edit_tasks"
-                            fallback={
-                                <span className={`tabular-nums ${isComplete ? 'text-gray-400' : 'text-gray-600'}`}>
-                                    {dateLine()}
-                                </span>
-                            }
-                        >
-                            <button
-                                type="button"
-                                onClick={openPanel('dates')}
-                                className={`tabular-nums rounded px-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
-                                    isComplete ? 'text-gray-400' : 'text-gray-600 hover:text-blue-600 hover:underline underline-offset-2'
-                                }`}
-                                title={t('tasks.set_dates')}
+                                aria-hidden
                             >
-                                {dateLine()}
-                            </button>
-                        </PermissionGuard>
-                            {predecessors.length > 0 && (
-                                <>
-                                    <span className="text-gray-300">|</span>
-                                    <span className={`font-medium ${unmetCount > 0 ? 'text-amber-700' : 'text-gray-600'}`}>{t('tasks.blocked_by')}</span>
-                                    <div className="flex min-w-0 flex-wrap items-center gap-1">
-                                        {visiblePredecessors.map((dep) => dependencyChip(
-                                            dep.predecessorTask || { id: dep.id, text: t('tasks.unknown_task'), contacts: null, completed: false },
-                                            dep.predecessorTask?.completed ? 'complete' : 'blocked'
-                                        ))}
-                                        {!showAllPredecessors && predecessors.length > 3 && (
-                                            <button
-                                                type="button"
-                                                onClick={(event) => {
-                                                    event.stopPropagation();
-                                                    setShowAllPredecessors(true);
-                                                }}
-                                                className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:bg-gray-50"
-                                            >
-                                                +{predecessors.length - 3} more
-                                            </button>
-                                        )}
-                                    </div>
-                                </>
-                            )}
-                            {predecessors.length === 0 && successors.length > 0 && (
-                                <>
-                                    <span className="text-gray-300">|</span>
-                                    <span className="font-medium text-gray-600">{t('tasks.unlocks')}</span>
-                                    <div className="flex min-w-0 flex-wrap items-center gap-1">
-                                        {successors.slice(0, 2).map((dep) => dependencyChip(
-                                            dep.successorTask || { id: dep.id, text: t('tasks.unknown_task'), contacts: null, completed: false },
-                                            dep.successorTask?.completed ? 'complete' : 'neutral'
-                                        ))}
-                                        {successors.length > 2 && (
-                                            <span className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600">
-                                                +{successors.length - 2} more
-                                            </span>
-                                        )}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Right: action buttons — tight primary cluster, wider gap before share/delete */}
-                    <div className="task-row-actions flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-2.5">
-                        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
-                        {/* Photos */}
+                                {isComplete && (
+                                    <Icon path="M4.5 12.75l6 6 9-13.5" className="h-2.5 w-2.5" stroke={2.5} />
+                                )}
+                            </span>
+                        }
+                    >
                         <button
                             type="button"
+                            role="checkbox"
+                            aria-checked={isComplete}
+                            aria-label={isComplete ? t('tasks.mark_incomplete') : t('tasks.mark_complete')}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                onOpenPhotos?.(task.id);
+                                toggleComplete();
                             }}
-                            className="task-row-action"
-                            title={t('tasks.photos')}
-                            aria-label={`${t('tasks.photos')} — ${task.text}`}
+                            onMouseDown={suppressRowDrag}
+                            onTouchStart={suppressRowDrag}
+                            className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400 ${
+                                isComplete
+                                    ? 'border-[#50C878] bg-[#50C878] text-white'
+                                    : 'border-gray-300 bg-white hover:border-gray-400'
+                            }`}
                         >
-                            <Icon
-                                path="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008H12V8.25Z"
-                                className="h-3.5 w-3.5 shrink-0"
-                            />
-                            <span className="hidden sm:inline">
-                                {photoCount > 0
-                                    ? (photoCount > 9 ? t('tasks.photos_count_overflow') : t('tasks.photos_count', { count: photoCount }))
-                                    : t('tasks.photos')}
-                            </span>
-                            {photoCount > 0 && (
-                                <span className="sm:hidden flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-blue-600 px-0.5 text-[9px] font-bold text-white">
-                                    {photoCount > 9 ? '9+' : photoCount}
-                                </span>
+                            {isComplete && (
+                                <Icon path="M4.5 12.75l6 6 9-13.5" className="h-2.5 w-2.5" stroke={2.5} />
                             )}
                         </button>
+                    </PermissionGuard>
 
-                        {/* Dependencies */}
-                        <PermissionGuard
-                            permission="can_edit_tasks"
-                            fallback={
-                                <span
-                                    className={`task-row-action ${
-                                        depWarningCount > 0 ? 'task-row-action--warn' : 'task-row-action--muted'
-                                    }`}
-                                    title={depTooltip || t('tasks.dependencies')}
-                                >
-                                    <Icon
-                                        path="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"
-                                        className="h-3.5 w-3.5 shrink-0"
-                                    />
-                                    <span className="hidden sm:inline">
-                                        {depCount > 0 ? t('tasks.deps_count', { count: depCount }) : t('tasks.deps')}
-                                    </span>
-                                </span>
-                            }
-                        >
-                            <button
-                                type="button"
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    onOpenDependencyDrawer?.(task.id);
-                                }}
-                                className={`task-row-action relative ${
-                                    depWarningCount > 0 ? 'task-row-action--warn' : ''
-                                }`}
-                                title={depTooltip || t('tasks.dependencies')}
-                                aria-label={t('tasks.task_dependencies_aria')}
-                            >
-                                <Icon
-                                    path="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"
-                                    className="h-3.5 w-3.5 shrink-0"
-                                />
-                                <span className="hidden sm:inline">
-                                    {depCount > 0 ? t('tasks.deps_count', { count: depCount }) : t('tasks.deps')}
-                                </span>
-                                {depWarningCount > 0 && (
-                                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
-                                )}
-                            </button>
-                        </PermissionGuard>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2 sm:gap-3">
+                            <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 items-center gap-x-2">
+                                    <div className="min-w-0 shrink">
+                                        <PermissionGuard
+                                            permission="can_edit_tasks"
+                                            fallback={
+                                                <span
+                                                    className={`block truncate font-semibold text-sm leading-snug ${
+                                                        isComplete ? 'line-through text-gray-400' : 'text-gray-900'
+                                                    }`}
+                                                >
+                                                    {task.text}
+                                                </span>
+                                            }
+                                        >
+                                            <InlineEditableText
+                                                value={task.text}
+                                                canEdit
+                                                onSave={(text) => onEdit(task.id, { text })}
+                                                className={`!flex-none block max-w-full truncate font-semibold text-sm leading-snug ${
+                                                    isComplete ? 'line-through text-gray-400' : 'text-gray-900'
+                                                }`}
+                                                inputClassName="font-semibold text-sm"
+                                                ariaLabel={t('tasks.click_to_rename')}
+                                            />
+                                        </PermissionGuard>
+                                    </div>
+                                    {workflowStatusLabel && (
+                                        <span
+                                            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${workflowStatusClass}`}
+                                        >
+                                            {workflowStatusLabel}
+                                        </span>
+                                    )}
+                                </div>
 
-                        {/* Discussion */}
-                        {onOpenDiscussion && project && (
-                            <button
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onOpenDiscussion(task.id);
-                                }}
-                                className="task-row-action"
-                                title={t('tasks.discussion')}
-                                aria-label={`${t('tasks.discussion')} — ${task.text}`}
-                            >
-                                <Icon
-                                    path="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                                    className="h-3.5 w-3.5 shrink-0"
-                                />
-                                <span className="hidden sm:inline">{t('tasks.discussion')}</span>
-                            </button>
-                        )}
+                                <div className="task-row-idle-meta mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12px] text-gray-500">
+                                    <PermissionGuard
+                                        permission="can_edit_tasks"
+                                        fallback={
+                                            <span className={`tabular-nums ${isComplete ? 'text-gray-400' : ''}`}>
+                                                {dateLine()}
+                                            </span>
+                                        }
+                                    >
+                                        <DateRangePicker
+                                            size="sm"
+                                            compact
+                                            label=""
+                                            startValue={draftStart}
+                                            endValue={draftDue}
+                                            presets={dateRangePresets}
+                                            clearLabel={t('tasks.clear_dates', { defaultValue: 'Clear dates' })}
+                                            saveLabel={t('common.save')}
+                                            onOpenChange={(next) => {
+                                                if (next) {
+                                                    skipScheduleSyncOnCloseRef.current = false;
+                                                    syncDraftsFromTask();
+                                                    setPanel(null);
+                                                    return;
+                                                }
+                                                if (skipScheduleSyncOnCloseRef.current) {
+                                                    skipScheduleSyncOnCloseRef.current = false;
+                                                    return;
+                                                }
+                                                // Discard unsaved draft when dismissing
+                                                syncDraftsFromTask();
+                                            }}
+                                            onChange={({ start, end }) => {
+                                                setDraftStart(start);
+                                                setDraftDue(end);
+                                            }}
+                                            onClear={() => saveScheduleDraft('', '')}
+                                            onSave={({ start, end }) => saveScheduleDraft(start, end)}
+                                            trigger={
+                                                <button
+                                                    type="button"
+                                                    className={`tabular-nums rounded px-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
+                                                        isComplete
+                                                            ? 'text-gray-400'
+                                                            : 'hover:text-gray-800 hover:underline underline-offset-2'
+                                                    }`}
+                                                    title={t('tasks.set_dates')}
+                                                    onMouseDown={suppressRowDrag}
+                                                    onTouchStart={suppressRowDrag}
+                                                >
+                                                    {dateLine()}
+                                                </button>
+                                            }
+                                        />
+                                    </PermissionGuard>
+                                    {idleDepLabel && (
+                                        <>
+                                            <span className="text-gray-300" aria-hidden>·</span>
+                                            <span
+                                                className={unmetCount > 0 && !isComplete ? 'text-orange-700/80' : ''}
+                                                title={depTooltip || idleDepLabel}
+                                            >
+                                                {idleDepLabel}
+                                            </span>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
 
-                        {/* Assignee */}
-                        <PermissionGuard
-                            permission="can_edit_tasks"
-                            fallback={
-                                <span
-                                    className={`task-row-action ${
-                                        assigneeDisplay ? '' : 'task-row-action--muted'
-                                    }`}
-                                    title={assigneeDisplay ? t('tasks.assigned_to', { name: assigneeDisplay }) : t('tasks.unassigned')}
-                                >
-                                    <Icon
-                                        path="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.433-3.059M4.318 18.318a9.38 9.38 0 01-.372-2.625 9.337 9.337 0 01.952-4.121 4.125 4.125 0 017.433 3.059M12 9.75a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z"
-                                        className="h-3.5 w-3.5 shrink-0"
-                                    />
-                                    <span className="hidden sm:inline max-w-[96px] ui-ellipsis-1">{assigneeDisplay || t('tasks.assign')}</span>
-                                </span>
-                            }
-                        >
-                            <button
-                                type="button"
-                                onClick={openPanel('assign')}
-                                className={`task-row-action ${
-                                    assigneeName ? '' : 'task-row-action--muted'
-                                }`}
-                                title={assigneeDisplay ? t('tasks.assigned_to_change', { name: assigneeDisplay }) : t('tasks.assign_task')}
-                                aria-label={t('tasks.assignment_aria')}
-                            >
-                                <Icon
-                                    path="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.433-3.059M4.318 18.318a9.38 9.38 0 01-.372-2.625 9.337 9.337 0 01.952-4.121 4.125 4.125 0 017.433 3.059M12 9.75a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z"
-                                    className="h-3.5 w-3.5 shrink-0"
-                                />
-                                <span className="hidden sm:inline max-w-[96px] ui-ellipsis-1">{assigneeLabel}</span>
-                            </button>
-                        </PermissionGuard>
-                        </div>
-
-                        {onCopyGuestLink && (
-                            <PermissionGuard permission="can_assign_tasks">
+                            <div className="task-row-hover-pills" aria-hidden={!hoverExpanded && !panel}>
                                 <button
                                     type="button"
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        onCopyGuestLink(task);
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenPhotos?.(task.id);
                                     }}
-                                    className="task-row-action task-row-action--bordered"
-                                    title={t('tasks.guest_link_title', {
-                                        defaultValue: 'Copy guest link (no account needed)',
-                                    })}
-                                    aria-label={t('tasks.guest_link_aria', {
-                                        defaultValue: 'Copy guest link for {{task}}',
-                                        task: task.text,
-                                    })}
+                                    className="task-row-pill"
+                                    title={t('tasks.photos')}
+                                    aria-label={`${t('tasks.photos')} — ${task.text}`}
                                 >
-                                    <Icon
-                                        path="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622a4.5 4.5 0 00-1.242-7.244l-4.5-4.5a4.5 4.5 0 00-6.364 6.364l1.757 1.757"
-                                        className="h-3.5 w-3.5 shrink-0"
-                                    />
-                                    <span className="hidden sm:inline">
-                                        {t('tasks.guest_link', { defaultValue: 'Guest link' })}
-                                    </span>
+                                    {t('tasks.photos')}
+                                    {photoCount > 0 && (
+                                        <span className="task-row-pill-count">
+                                            {photoCount > 9 ? '9+' : photoCount}
+                                        </span>
+                                    )}
                                 </button>
-                            </PermissionGuard>
-                        )}
-
-                        {onPingAssignee && (
-                                <PermissionGuard permission="can_assign_tasks">
-                                    <div className="flex shrink-0 items-center gap-1.5">
+                                {onOpenDiscussion && project && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onOpenDiscussion(task.id);
+                                        }}
+                                        className="task-row-pill"
+                                        title={t('tasks.discussion')}
+                                        aria-label={`${t('tasks.notes_action')} — ${task.text}`}
+                                    >
+                                        {t('tasks.notes_action')}
+                                    </button>
+                                )}
+                                <PermissionGuard
+                                    permission="can_edit_tasks"
+                                    fallback={
+                                        <span
+                                            className="task-row-pill task-row-pill--muted"
+                                            title={assigneeDisplay ? t('tasks.assigned_to', { name: assigneeDisplay }) : t('tasks.unassigned')}
+                                        >
+                                            {t('tasks.assign')}
+                                        </span>
+                                    }
+                                >
+                                    <button
+                                        type="button"
+                                        onClick={openPanel('assign')}
+                                        className="task-row-pill"
+                                        title={assigneeDisplay ? t('tasks.assigned_to_change', { name: assigneeDisplay }) : t('tasks.assign_task')}
+                                        aria-label={t('tasks.assignment_aria')}
+                                    >
+                                        {t('tasks.assign')}
+                                    </button>
+                                </PermissionGuard>
+                                {onPingAssignee && (
+                                    <PermissionGuard permission="can_assign_tasks">
                                         <button
                                             type="button"
                                             onClick={(event) => {
@@ -928,154 +852,145 @@ const TaskItem = memo(function TaskItem({
                                                 onPingAssignee(task);
                                             }}
                                             disabled={pingingTaskId === task.id}
-                                            className="task-row-action task-row-action--bordered disabled:cursor-not-allowed disabled:opacity-50"
+                                            className="task-row-pill disabled:cursor-not-allowed disabled:opacity-50"
                                             title={t('tasks.ping_title_email')}
                                             aria-label={t('tasks.ping_assignee_aria', { task: task.text })}
                                         >
-                                            <Icon
-                                                path="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405z"
-                                                className="h-3.5 w-3.5 shrink-0"
-                                            />
-                                            <span className="hidden sm:inline">{t('tasks.ping')}</span>
+                                            {t('tasks.ping')}
                                         </button>
-                                        {smsEnabled &&
-                                            task.assignee_id &&
-                                            onRequestAssigneeSmsConsent &&
-                                            assigneePhoneOkPing &&
-                                            !smsPingAllowed &&
-                                            !smsConsentBlocked &&
-                                            smsConsent !== 'pending' && (
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onRequestAssigneeSmsConsent(task, { forceResend: false });
-                                                    }}
-                                                    disabled={pingingTaskId === task.id}
-                                                    className="flex shrink-0 items-center rounded-md border border-amber-200 bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-                                                    title={t('tasks.send_sms_consent')}
-                                                >
-                                                    {t('tasks.sms_ok')}
-                                                </button>
-                                            )}
-                                        {smsEnabled &&
-                                            task.assignee_id &&
-                                            onRequestAssigneeSmsConsent &&
-                                            smsConsent === 'pending' &&
-                                            !smsConsentBlocked && (
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onRequestAssigneeSmsConsent(task, { forceResend: true });
-                                                    }}
-                                                    disabled={pingingTaskId === task.id}
-                                                    className="flex shrink-0 items-center rounded-md border border-gray-200 bg-white px-1 py-0.5 text-[10px] text-gray-600 hover:border-blue-200 disabled:opacity-50"
-                                                    title={t('tasks.resend_consent')}
-                                                >
-                                                    {t('tasks.resend_consent')}
-                                                </button>
-                                            )}
-                                        {onShareSmsConsentLink &&
-                                            task.assignee_id &&
-                                            assigneePhoneOkPing &&
-                                            smsConsent !== 'confirmed' &&
-                                            smsConsent !== 'opted_out' && (
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        onShareSmsConsentLink(task);
-                                                    }}
-                                                    disabled={pingingTaskId === task.id}
-                                                    className="flex shrink-0 items-center rounded-md border border-blue-200 bg-blue-50 px-1 py-0.5 text-[10px] font-medium text-blue-800 hover:bg-blue-100 disabled:opacity-50"
-                                                    title={t('sms.web_consent.get_consent_link')}
-                                                >
-                                                    {t('sms.web_consent.share_link')}
-                                                </button>
-                                            )}
-                                    </div>
-                                </PermissionGuard>
-                            )}
-
-                        {/* Delete */}
-                        <PermissionGuard permission="can_delete_tasks">
-                            <button
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDelete(task.id);
-                                }}
-                                className="task-row-action task-row-action--danger"
-                                title={t('tasks.delete_task')}
-                                aria-label={`${t('tasks.delete_task')}: ${task.text}`}
-                            >
-                                <Icon
-                                    path="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                                    className="h-3.5 w-3.5"
-                                />
-                            </button>
-                        </PermissionGuard>
-                    </div>
-                </div>
-                    </div>
-                </div>
-
-                {/* ── Date popover ── */}
-                {panel === 'dates' && (
-                    <PermissionGuard permission="can_edit_tasks">
-                        <div
-                            className="mt-2 overflow-visible rounded-xl border border-gray-200 bg-white px-3 py-3 shadow-md space-y-2"
-                            onClick={stop}
-                        >
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs font-semibold text-gray-700">{t('tasks.set_dates')}</span>
-                                {daysSelected() !== null && (
-                                    <span className="shrink-0 text-[10px] text-gray-400">
-                                        {daysSelected()} day{daysSelected() === 1 ? '' : 's'}
-                                    </span>
+                                    </PermissionGuard>
                                 )}
-                            </div>
-                            <DateRangePicker
-                                size="sm"
-                                compact
-                                label={t('tasks.schedule')}
-                                startValue={draftStart}
-                                endValue={draftDue}
-                                onChange={({ start, end }) => {
-                                    setDraftStart(start);
-                                    setDraftDue(end);
-                                }}
-                                presets={dateRangePresets}
-                            />
-                            <div className="flex items-center justify-between gap-2 pt-1">
-                                <button
-                                    type="button"
-                                    onClick={clearDates}
-                                    className="text-[10px] text-gray-400 hover:text-red-600 underline underline-offset-2"
+                                <PermissionGuard
+                                    permission="can_edit_tasks"
+                                    fallback={
+                                        <span
+                                            className={`task-row-pill ${
+                                                depWarningCount > 0 ? 'task-row-pill--warn' : 'task-row-pill--muted'
+                                            }`}
+                                            title={depTooltip || t('tasks.dependencies')}
+                                        >
+                                            {depCount > 0 ? t('tasks.deps_count', { count: depCount }) : t('tasks.deps')}
+                                        </span>
+                                    }
                                 >
-                                    Clear dates
-                                </button>
-                                <div className="flex gap-2">
                                     <button
                                         type="button"
-                                        onClick={saveDates}
-                                        className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            onOpenDependencyDrawer?.(task.id);
+                                        }}
+                                        className={`task-row-pill ${
+                                            depWarningCount > 0 ? 'task-row-pill--warn' : ''
+                                        }`}
+                                        title={depTooltip || t('tasks.dependencies')}
+                                        aria-label={t('tasks.task_dependencies_aria')}
                                     >
-                                        Apply
+                                        {depCount > 0 ? t('tasks.deps_count', { count: depCount }) : t('tasks.deps')}
                                     </button>
+                                </PermissionGuard>
+                                {onCopyGuestLink && (
+                                    <PermissionGuard permission="can_assign_tasks">
+                                        <button
+                                            type="button"
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                onCopyGuestLink(task);
+                                            }}
+                                            className="task-row-pill"
+                                            title={t('tasks.guest_link_title', {
+                                                defaultValue: 'Copy guest link (no account needed)',
+                                            })}
+                                            aria-label={t('tasks.guest_link_aria', {
+                                                defaultValue: 'Copy guest link for {{task}}',
+                                                task: task.text,
+                                            })}
+                                        >
+                                            {t('tasks.guest_link_short', { defaultValue: 'Guest' })}
+                                        </button>
+                                    </PermissionGuard>
+                                )}
+                                {(smsEnabled && task.assignee_id && (
+                                    onRequestAssigneeSmsConsent || onShareSmsConsentLink
+                                )) && (
+                                    <PermissionGuard permission="can_assign_tasks">
+                                        <>
+                                            {onRequestAssigneeSmsConsent &&
+                                                assigneePhoneOkPing &&
+                                                !smsPingAllowed &&
+                                                !smsConsentBlocked &&
+                                                smsConsent !== 'pending' && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onRequestAssigneeSmsConsent(task, { forceResend: false });
+                                                        }}
+                                                        disabled={pingingTaskId === task.id}
+                                                        className="task-row-pill task-row-pill--warn disabled:opacity-50"
+                                                        title={t('tasks.send_sms_consent')}
+                                                    >
+                                                        {t('tasks.sms_ok')}
+                                                    </button>
+                                                )}
+                                            {onRequestAssigneeSmsConsent &&
+                                                smsConsent === 'pending' &&
+                                                !smsConsentBlocked && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onRequestAssigneeSmsConsent(task, { forceResend: true });
+                                                        }}
+                                                        disabled={pingingTaskId === task.id}
+                                                        className="task-row-pill disabled:opacity-50"
+                                                        title={t('tasks.resend_consent')}
+                                                    >
+                                                        {t('tasks.resend_consent')}
+                                                    </button>
+                                                )}
+                                            {onShareSmsConsentLink &&
+                                                assigneePhoneOkPing &&
+                                                smsConsent !== 'confirmed' &&
+                                                smsConsent !== 'opted_out' && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onShareSmsConsentLink(task);
+                                                        }}
+                                                        disabled={pingingTaskId === task.id}
+                                                        className="task-row-pill disabled:opacity-50"
+                                                        title={t('sms.web_consent.get_consent_link')}
+                                                    >
+                                                        {t('sms.web_consent.share_link')}
+                                                    </button>
+                                                )}
+                                        </>
+                                    </PermissionGuard>
+                                )}
+                                <PermissionGuard permission="can_delete_tasks">
                                     <button
                                         type="button"
-                                        onClick={() => setPanel(null)}
-                                        className="rounded-md bg-gray-100 px-2.5 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-200"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onDelete(task.id);
+                                        }}
+                                        className="task-row-pill task-row-pill--icon task-row-pill--danger"
+                                        title={t('tasks.delete_task')}
+                                        aria-label={`${t('tasks.delete_task')}: ${task.text}`}
                                     >
-                                        Cancel
+                                        <Icon
+                                            path="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                                            className="h-3.5 w-3.5"
+                                        />
                                     </button>
-                                </div>
+                                </PermissionGuard>
                             </div>
+
+                            {progressControl}
                         </div>
-                    </PermissionGuard>
-                )}
+                    </div>
+                </div>
 
                 {/* ── Assign panel ── */}
                 {panel === 'assign' && (
