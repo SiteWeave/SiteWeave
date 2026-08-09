@@ -16,7 +16,7 @@ import {
   getStatusPillStyle,
 } from '../utils/projectScheduleHealth';
 
-export default function ProjectListCard({ project, onPress, testID }) {
+export default function ProjectListCard({ project, onPress, onPressIn, testID }) {
   const { t, i18n } = useTranslation();
 
   const pct = Math.round(project.progress_percent ?? project.progress ?? 0);
@@ -35,7 +35,13 @@ export default function ProjectListCard({ project, onPress, testID }) {
     .join(' · ');
 
   return (
-    <PressableWithFade onPress={onPress} testID={testID} static>
+    <PressableWithFade
+      onPress={onPress}
+      onPressIn={onPressIn}
+      testID={testID}
+      static
+      containerStyle={styles.wrap}
+    >
       <View style={styles.card}>
         <View style={[styles.accent, { backgroundColor: scheduleColor }]} />
         <View style={styles.body}>
@@ -89,6 +95,9 @@ export default function ProjectListCard({ project, onPress, testID }) {
 }
 
 const styles = StyleSheet.create({
+  wrap: {
+    marginBottom: spacing.md,
+  },
   card: {
     flexDirection: 'row',
     backgroundColor: colors.surface,

@@ -72,9 +72,24 @@ export function sanitizePdfText(text: string): string {
 
 function formatDate(dateString: unknown): string {
   if (!dateString) return ''
-  const date = new Date(String(dateString))
-  if (Number.isNaN(date.getTime())) return String(dateString)
+  const raw = String(dateString).trim()
+  const isoDay = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw)
+  const date = isoDay
+    ? new Date(Number(isoDay[1]), Number(isoDay[2]) - 1, Number(isoDay[3]))
+    : new Date(raw)
+  if (Number.isNaN(date.getTime())) return raw
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function formatReadableDate(dateString: unknown): string {
+  if (!dateString) return ''
+  const raw = String(dateString).trim()
+  const isoDay = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw)
+  const date = isoDay
+    ? new Date(Number(isoDay[1]), Number(isoDay[2]) - 1, Number(isoDay[3]))
+    : new Date(raw)
+  if (Number.isNaN(date.getTime())) return raw
+  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
 function formatPeriod(startDate: unknown, endDate: unknown): string {
@@ -122,6 +137,18 @@ function wrapText(text: string, font: PDFFont, fontSize: number, maxWidth: numbe
   }
   lines.push(current)
   return lines
+}
+
+/** Truncate to fit a single line (avoids pdf-lib text spilling into neighboring cards). */
+function fitSingleLine(text: string, font: PDFFont, fontSize: number, maxWidth: number): string {
+  const s = sanitizePdfText(text)
+  if (!s) return ''
+  if (font.widthOfTextAtSize(s, fontSize) <= maxWidth) return s
+  let out = s
+  while (out.length > 1 && font.widthOfTextAtSize(`${out}...`, fontSize) > maxWidth) {
+    out = out.slice(0, -1)
+  }
+  return `${out}...`
 }
 
 type DrawCtx = {
@@ -174,7 +201,7 @@ function drawTextLines(
 }
 
 function drawSectionHeading(ctx: DrawCtx, title: string) {
-  ensureRoom(ctx, 36)
+  ensureRoom(ctx, 28)
   ctx.cursorY -= 10
   ctx.page.drawText(sanitizePdfText(title), {
     x: MARGIN,
@@ -183,27 +210,20 @@ function drawSectionHeading(ctx: DrawCtx, title: string) {
     font: ctx.bold,
     color: ctx.primary,
   })
-  ctx.cursorY -= 6
-  ctx.page.drawRectangle({
-    x: MARGIN,
-    y: ctx.cursorY,
-    width: 48,
-    height: 2.5,
-    color: ctx.primary,
-  })
-  ctx.cursorY -= 16
+  ctx.cursorY -= 18
 }
 
 function drawBullet(ctx: DrawCtx, text: string, bullet = '-') {
-  ensureRoom(ctx, 16)
+  const lines = wrapText(text, ctx.regular, 11, CONTENT_WIDTH - 16)
+  const blockH = lines.length * 14 + 4
+  ensureRoom(ctx, Math.min(blockH, 40))
   ctx.page.drawText(bullet, {
     x: MARGIN,
     y: ctx.cursorY,
     size: 11,
-    font: ctx.bold,
-    color: ctx.secondary,
+    font: ctx.regular,
+    color: ctx.ink,
   })
-  const lines = wrapText(text, ctx.regular, 11, CONTENT_WIDTH - 16)
   for (let i = 0; i < lines.length; i += 1) {
     if (i > 0) ensureRoom(ctx, 14)
     ctx.page.drawText(lines[i], {
@@ -238,49 +258,83 @@ async function embedRemoteImage(
   }
 }
 
+async function embedPhotoImage(
+  pdfDoc: PDFDocument,
+  photo: { thumbnail_url?: string | null; full_url?: string | null },
+) {
+  // Prefer full JPEG originals; thumbnails are often missing or a less embeddable format.
+  const urls = [photo.full_url, photo.thumbnail_url].filter(
+    (u, i, arr): u is string => typeof u === 'string' && !!u.trim() && arr.indexOf(u) === i,
+  )
+  for (const url of urls) {
+    const img = await embedRemoteImage(pdfDoc, url)
+    if (img) return img
+  }
+  return null
+}
+
 async function drawPhotoStrip(ctx: DrawCtx, group: ProgressReportPhotoGroup) {
   const photos = group.photos || []
   if (photos.length === 0) return
 
   if (String(group.label || '').trim()) {
     drawTextLines(ctx, group.label, { font: ctx.bold, size: 10, color: ctx.ink })
-    ctx.cursorY -= 2
+    ctx.cursorY -= 4
   }
 
   const maxW = 150
   const maxH = 110
   let x = MARGIN
   let rowH = 0
+  const gapX = 12
+  const pageBottom = MARGIN + 28
+
+  const advanceRow = () => {
+    if (rowH <= 0) return
+    ctx.cursorY -= rowH + 12
+    x = MARGIN
+    rowH = 0
+  }
 
   for (const photo of photos) {
-    const url = photo.thumbnail_url || photo.full_url
-    const img = await embedRemoteImage(ctx.pdfDoc, url)
+    const img = await embedPhotoImage(ctx.pdfDoc, photo)
     if (!img) continue
     const scale = Math.min(maxW / img.width, maxH / img.height, 1)
     const w = img.width * scale
     const h = img.height * scale
     const caption = photo.caption ? sanitizePdfText(String(photo.caption)).slice(0, 42) : ''
-    const blockH = h + (caption ? 12 : 0) + (photo.is_completion_photo ? 10 : 0) + 6
+    const captionH = caption ? 12 : 0
+    const badgeH = photo.is_completion_photo ? 10 : 0
+    const blockH = h + captionH + badgeH + 8
 
-    if (x + w > PAGE_WIDTH - MARGIN && x > MARGIN) {
-      ctx.cursorY -= rowH + 10
+    // Wrap to next row when this photo would overflow the page width.
+    if (x > MARGIN && x + w > PAGE_WIDTH - MARGIN) {
+      advanceRow()
+    }
+
+    // Page break before drawing if the full photo block won't fit.
+    if (ctx.cursorY - blockH < pageBottom) {
+      advanceRow()
+      startNewPage(ctx)
       x = MARGIN
       rowH = 0
     }
-    ensureRoom(ctx, blockH + 4)
-    img.draw(ctx.page, x, ctx.cursorY - h, w, h)
-    // Border
+
+    const imgTop = ctx.cursorY
+    const imgBottom = imgTop - h
+    img.draw(ctx.page, x, imgBottom, w, h)
     ctx.page.drawRectangle({
       x,
-      y: ctx.cursorY - h,
+      y: imgBottom,
       width: w,
       height: h,
       borderColor: ctx.rule,
       borderWidth: 0.75,
     })
-    let labelY = ctx.cursorY - h - 10
+
+    let labelY = imgBottom - 10
     if (caption) {
-      ctx.page.drawText(caption, {
+      ctx.page.drawText(fitSingleLine(caption, ctx.regular, 8, w), {
         x,
         y: labelY,
         size: 8,
@@ -298,10 +352,12 @@ async function drawPhotoStrip(ctx: DrawCtx, group: ProgressReportPhotoGroup) {
         color: ctx.secondary,
       })
     }
+
     rowH = Math.max(rowH, blockH)
-    x += w + 12
+    x += w + gapX
   }
-  if (rowH > 0) ctx.cursorY -= rowH + 8
+
+  advanceRow()
 }
 
 export async function buildBrandedProgressReportPdf(opts: {
@@ -351,9 +407,10 @@ export async function buildBrandedProgressReportPdf(opts: {
     const scale = Math.min(160 / logo.width, maxH / logo.height, 1)
     const w = logo.width * scale
     const h = logo.height * scale
-    ensureRoom(ctx, h + 12)
+    ensureRoom(ctx, h + 28)
     logo.draw(ctx.page, MARGIN, ctx.cursorY - h, w, h)
-    ctx.cursorY -= h + 14
+    // Keep clear air between logo and title (was ~14pt — felt stuck to the heading).
+    ctx.cursorY -= h + 28
   }
 
   const data = opts.reportData || {}
@@ -384,31 +441,28 @@ export async function buildBrandedProgressReportPdf(opts: {
 
   const drawVitals = (vitals: Record<string, unknown> | null | undefined) => {
     if (!sections.vitals || !vitals) return
-    drawSectionHeading(ctx, 'Project vitals')
     const cards: { label: string; value: string }[] = []
     if (vitals.tasks_completed_count != null && vitals.open_tasks_count != null) {
       cards.push({
-        label: 'Done / Open',
+        label: 'Done vs open',
         value: `${vitals.tasks_completed_count} / ${vitals.open_tasks_count}`,
       })
     }
     if (vitals.project_end_date) {
-      cards.push({ label: 'Project end', value: formatDate(vitals.project_end_date) })
+      cards.push({ label: 'Latest task', value: formatReadableDate(vitals.project_end_date) })
     }
     if (vitals.schedule_day_current != null && vitals.schedule_day_total != null) {
-      const pct =
-        vitals.schedule_progress_pct != null ? ` (${vitals.schedule_progress_pct}%)` : ''
       cards.push({
-        label: 'Schedule',
-        value: `Day ${vitals.schedule_day_current} of ${vitals.schedule_day_total}${pct}`,
+        label: 'Progress',
+        value: `${vitals.schedule_day_current} / ${vitals.schedule_day_total} days`,
       })
     }
     if (cards.length === 0) return
 
     const gap = 10
     const cardW = (CONTENT_WIDTH - gap * (cards.length - 1)) / cards.length
-    const cardH = 52
-    ensureRoom(ctx, cardH + 12)
+    const cardH = 48
+    ensureRoom(ctx, cardH + 16)
     let x = MARGIN
     for (const card of cards) {
       ctx.page.drawRectangle({
@@ -420,24 +474,23 @@ export async function buildBrandedProgressReportPdf(opts: {
         borderColor: rule,
         borderWidth: 1,
       })
-      ctx.page.drawText(sanitizePdfText(card.label), {
-        x: x + 10,
-        y: ctx.cursorY - 18,
+      ctx.page.drawText(fitSingleLine(card.label, regular, 8, cardW - 16), {
+        x: x + 8,
+        y: ctx.cursorY - 16,
         size: 8,
         font: regular,
         color: muted,
       })
-      const valueLines = wrapText(card.value, bold, 12, cardW - 20)
-      ctx.page.drawText(valueLines[0] || '', {
-        x: x + 10,
-        y: ctx.cursorY - 36,
+      ctx.page.drawText(fitSingleLine(card.value, bold, 12, cardW - 16), {
+        x: x + 8,
+        y: ctx.cursorY - 34,
         size: 12,
         font: bold,
         color: ink,
       })
       x += cardW + gap
     }
-    ctx.cursorY -= cardH + 16
+    ctx.cursorY -= cardH + 18
   }
 
   const drawStandardBlock = async (block: Record<string, unknown>, heading?: string) => {
@@ -480,7 +533,7 @@ export async function buildBrandedProgressReportPdf(opts: {
           sections.show_dates && task.completed_at
             ? ` - ${formatDate(task.completed_at)}`
             : ''
-        drawBullet(ctx, `${task.text || task.title || 'Task'}${phase}${who}${when}`, '[x]')
+        drawBullet(ctx, `${task.text || task.title || 'Task'}${phase}${who}${when}`)
 
         if (sections.include_task_photos && Array.isArray(task.photos) && task.photos.length > 0) {
           await drawPhotoStrip(ctx, {
@@ -504,21 +557,65 @@ export async function buildBrandedProgressReportPdf(opts: {
     }
 
     if (sections.weekly_plan) {
-      const lastWeek = Array.isArray(block.last_week_done) ? block.last_week_done : []
+      let lastWeek = Array.isArray(block.last_week_done) ? block.last_week_done : []
       const thisWeek = Array.isArray(block.this_week_plan) ? block.this_week_plan : []
       const nextWeek = Array.isArray(block.next_week_plan) ? block.next_week_plan : []
+
+      // Weekly reports often put the same completions in "Completed this period", which
+      // empties last_week_done. Rebuild a last-week list for the PDF from period completions.
+      if (!lastWeek.length) {
+        const completed = Array.isArray(block.completed_tasks) ? block.completed_tasks : []
+        const weekAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000
+        lastWeek = completed
+          .filter((t: any) => {
+            const raw = t?.completed_at
+            if (!raw) return true
+            const ms = new Date(raw).getTime()
+            return Number.isFinite(ms) ? ms >= weekAgoMs : true
+          })
+          .slice(0, 12)
+          .map((t: any) => ({
+            text: t.text || t.title || 'Task',
+            title: t.title || t.text || 'Task',
+            // Photos already render under Completed this period — avoid duplicating them here.
+          }))
+      }
+
       if (lastWeek.length || thisWeek.length || nextWeek.length) {
         drawSectionHeading(ctx, 'Weekly plan')
-        const renderWeek = (label: string, rows: any[]) => {
-          if (!rows.length) return
-          drawTextLines(ctx, label, { font: bold, size: 10, color: muted, gap: 13 })
-          for (const t of rows.slice(0, 12)) {
-            drawBullet(ctx, String(t.text || t.title || 'Task'))
-          }
+        const emptyCopy: Record<string, string> = {
+          'Last week': 'No completed tasks in the last week.',
+          'This week': 'No tasks scheduled this week.',
+          'Next week': 'No tasks scheduled for next week.',
         }
-        renderWeek('Last week', lastWeek)
-        renderWeek('This week', thisWeek)
-        renderWeek('Next week', nextWeek)
+        const renderWeek = async (label: string, rows: any[]) => {
+          drawTextLines(ctx, label, { font: bold, size: 11, color: ink, gap: 15 })
+          ctx.cursorY -= 2
+          if (!rows.length) {
+            drawTextLines(ctx, emptyCopy[label] || 'None.', { size: 11, color: muted, gap: 14 })
+            ctx.cursorY -= 6
+            return
+          }
+          for (const t of rows.slice(0, 12)) {
+            const start =
+              t.start_date && (label === 'This week' || label === 'Next week')
+                ? ` (starts ${formatReadableDate(t.start_date)})`
+                : ''
+            drawBullet(ctx, `${String(t.text || t.title || 'Task')}${start}`)
+            if (
+              label === 'Last week' &&
+              sections.include_task_photos &&
+              Array.isArray(t.photos) &&
+              t.photos.length > 0
+            ) {
+              await drawPhotoStrip(ctx, { label: '', photos: t.photos })
+            }
+          }
+          ctx.cursorY -= 6
+        }
+        await renderWeek('Last week', lastWeek)
+        await renderWeek('This week', thisWeek)
+        await renderWeek('Next week', nextWeek)
       }
     }
 

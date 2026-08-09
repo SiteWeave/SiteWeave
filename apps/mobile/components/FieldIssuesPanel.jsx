@@ -1,14 +1,13 @@
 import {
   View,
   StyleSheet,
-  FlatList,
   ActivityIndicator,
   Alert,
   RefreshControl,
   Share,
-  Image,
 } from 'react-native';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { FlashList } from '@shopify/flash-list';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -23,20 +22,21 @@ import PanelEmptyState from './PanelEmptyState';
 import FieldIssueWalkthroughSheet from './FieldIssueWalkthroughSheet';
 import ProgressReportUpgradeSheet from './ProgressReportUpgradeSheet';
 import Button from './ui/Button';
+import { runAfterInteractionsAsync } from '../utils/runAfterSheetDismiss';
 import { Text } from './ui/Text';
+import RemoteImage from './RemoteImage';
 import { useHaptics } from '../hooks/useHaptics';
 import { useBranding } from '../context/BrandingContext';
 import { useTranslation } from 'react-i18next';
+import { useScrollPrefetch } from '../hooks/useScrollPrefetch';
+import { prefetchRemoteImages } from '../utils/prefetchIntent';
 import { colors, spacing, touch, radius } from '../theme';
 import { uploadIssueAfterPhotoFromUri } from '../utils/uploadIssuePhoto';
+import { IMAGE_MEDIA_TYPES } from '../utils/imagePickerMediaTypes';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PUNCH_LIST_COACH_KEY = 'siteweave_punch_list_coach_seen';
 const CLOSEOUT_BANNER_KEY_PREFIX = 'siteweave_closeout_banner_dismissed_';
-
-const IMAGE_MEDIA_TYPES = ImagePicker.MediaType?.Images
-  ? [ImagePicker.MediaType.Images]
-  : (ImagePicker.MediaTypeOptions?.Images ?? ['images']);
 
 function getPriorityColor(priority) {
   switch ((priority || '').toLowerCase()) {
@@ -115,6 +115,15 @@ export default function FieldIssuesPanel({
     [project?.id, supabase, statusFilter],
   );
 
+  const onIssuesScrollPrefetch = useScrollPrefetch(() => {
+    const urls = issues.flatMap((issue) => [
+      issue.before_photo_url,
+      issue.after_photo_url,
+      ...(issue.attachments || []).map((a) => a.file_url),
+    ]);
+    prefetchRemoteImages(urls);
+  });
+
   useEffect(() => {
     load();
     return subscribeProjectIssues(supabase, project.id, () => load({ silent: true }));
@@ -158,35 +167,55 @@ export default function FieldIssuesPanel({
 
   const promptAfterPhoto = (issue) =>
     new Promise((resolve) => {
+      let settled = false;
+      let cameraSelected = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
       Alert.alert(t('punchList.after_photo_title'), t('punchList.after_photo_prompt'), [
-        { text: t('common.cancel'), style: 'cancel', onPress: () => resolve(null) },
+        { text: t('common.cancel'), style: 'cancel', onPress: () => finish(null) },
         {
           text: t('punchList.take_after_photo'),
-          onPress: async () => {
-            const permission = await ImagePicker.requestCameraPermissionsAsync();
-            if (!permission.granted) {
-              resolve(null);
-              return;
-            }
-            const result = await ImagePicker.launchCameraAsync({
-              mediaTypes: IMAGE_MEDIA_TYPES,
-              quality: 0.8,
-              allowsEditing: false,
+          onPress: () => {
+            cameraSelected = true;
+            void runAfterInteractionsAsync(async () => {
+              try {
+                const permission = await ImagePicker.requestCameraPermissionsAsync();
+                if (!permission.granted) {
+                  finish(null);
+                  return;
+                }
+                const result = await ImagePicker.launchCameraAsync({
+                  mediaTypes: IMAGE_MEDIA_TYPES,
+                  quality: 0.8,
+                  allowsEditing: false,
+                });
+                finish(!result.canceled ? result.assets?.[0]?.uri || null : null);
+              } catch (error) {
+                console.error('After-photo camera failed:', error);
+                finish(null);
+              }
             });
-            if (!result.canceled && result.assets?.[0]?.uri) {
-              resolve(result.assets[0].uri);
-            } else {
-              resolve(null);
-            }
           },
         },
-      ]);
+      ], {
+        cancelable: true,
+        onDismiss: () => {
+          if (!cameraSelected) finish(null);
+        },
+      });
     });
 
   const handleToggleStatus = async (issue) => {
     const closed = isIssueClosed(issue);
     if (closed) {
+      const prevIssues = issues;
       setBusyId(issue.id);
+      setIssues((list) =>
+        list.map((row) => (row.id === issue.id ? { ...row, status: 'open' } : row)),
+      );
       try {
         await updateProjectIssue(
           supabase,
@@ -197,6 +226,7 @@ export default function FieldIssuesPanel({
         haptics.success();
         await load({ silent: true });
       } catch (e) {
+        setIssues(prevIssues);
         haptics.error();
         Alert.alert(t('common.error'), e.message || t('fieldIssues.status_error'));
       } finally {
@@ -210,7 +240,11 @@ export default function FieldIssuesPanel({
       afterUri = await promptAfterPhoto(issue);
     }
 
+    const prevIssues = issues;
     setBusyId(issue.id);
+    setIssues((list) =>
+      list.map((row) => (row.id === issue.id ? { ...row, status: 'closed' } : row)),
+    );
     try {
       if (afterUri) {
         await uploadIssueAfterPhotoFromUri(supabase, {
@@ -229,6 +263,7 @@ export default function FieldIssuesPanel({
       haptics.success();
       await load({ silent: true });
     } catch (e) {
+      setIssues(prevIssues);
       haptics.error();
       Alert.alert(t('common.error'), e.message || t('fieldIssues.status_error'));
     } finally {
@@ -317,10 +352,10 @@ export default function FieldIssuesPanel({
           {(item.before_photo_url || item.after_photo_url) ? (
             <View style={styles.photoPair}>
               {item.before_photo_url ? (
-                <Image source={{ uri: item.before_photo_url }} style={styles.thumb} />
+                <RemoteImage uri={item.before_photo_url} style={styles.thumb} recyclingKey={`issue-before-${item.id}`} />
               ) : null}
               {item.after_photo_url ? (
-                <Image source={{ uri: item.after_photo_url }} style={styles.thumb} />
+                <RemoteImage uri={item.after_photo_url} style={styles.thumb} recyclingKey={`issue-after-${item.id}`} />
               ) : null}
             </View>
           ) : null}
@@ -328,7 +363,12 @@ export default function FieldIssuesPanel({
           {attachmentPhotos.length > 0 ? (
             <View style={styles.photoPair}>
               {attachmentPhotos.map((file) => (
-                <Image key={String(file.id)} source={{ uri: file.file_url }} style={styles.thumb} />
+                <RemoteImage
+                  key={String(file.id)}
+                  uri={file.file_url}
+                  style={styles.thumb}
+                  recyclingKey={`issue-file-${file.id}`}
+                />
               ))}
             </View>
           ) : null}
@@ -487,7 +527,7 @@ export default function FieldIssuesPanel({
 
   return (
     <>
-      <FlatList
+      <FlashList
         style={styles.container}
         data={issues}
         keyExtractor={(item) => String(item.id)}
@@ -499,6 +539,8 @@ export default function FieldIssuesPanel({
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        onScroll={onIssuesScrollPrefetch}
+        scrollEventThrottle={400}
       />
 
       <FieldIssueWalkthroughSheet

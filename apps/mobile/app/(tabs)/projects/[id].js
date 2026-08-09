@@ -29,7 +29,8 @@ import PhaseAccordion from '../../../components/PhaseAccordion';
 import { useMobileExperience } from '../../../context/MobileExperienceContext';
 import ProgressBottomSheet from '../../../components/ProgressBottomSheet';
 import PhotoAttachSheet from '../../../components/PhotoAttachSheet';
-import { pickAndUploadTaskPhoto, resolveTaskOrganizationId } from '../../../utils/pickAndUploadTaskPhoto';
+import { resolveTaskOrganizationId } from '../../../utils/pickAndUploadTaskPhoto';
+import { useTaskPhotoAttach } from '../../../hooks/useTaskPhotoAttach';
 import { colors, spacing, touch } from '../../../theme';
 import { scrollBottomPadding, contentTopInset } from '../../../utils/layoutInsets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -43,6 +44,7 @@ import { buildOfflineHandlers } from '../../../utils/offlineHandlers';
 import ProjectStreamPanel from '../../../components/ProjectStreamPanel';
 import FieldIssuesPanel from '../../../components/FieldIssuesPanel';
 import { useWorkspaceTier } from '../../../hooks/useWorkspaceTier';
+import { useHaptics } from '../../../hooks/useHaptics';
 import ProjectSearchSheet from '../../../components/ProjectSearchSheet';
 import { markGettingStartedProjectOpened, markGettingStartedTaskCreated, markGettingStartedTaskUpdated } from '../../../utils/onboarding';
 import { signalReviewPromptOpportunity } from '../../../utils/reviewPromptEvents';
@@ -81,6 +83,7 @@ export default function ProjectDetailScreen() {
   const { isOnline } = useSyncStatus();
   const { canExport } = useWorkspaceTier();
   const { primaryColor } = useBranding();
+  const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   const tabScrollBottom = scrollBottomPadding(insets, spacing.lg);
   const [scopeOrganizationId, setScopeOrganizationId] = useState(null);
@@ -92,14 +95,13 @@ export default function ProjectDetailScreen() {
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [showProjectSearch, setShowProjectSearch] = useState(false);
   const [openTeamInvite, setOpenTeamInvite] = useState(false);
-  const [photoUploadTaskId, setPhotoUploadTaskId] = useState(null);
   const [userContactId, setUserContactId] = useState(null);
   const subscriptionRef = useRef(null);
+  const realtimeReloadTimerRef = useRef(null);
+  const previousOnlineRef = useRef(isOnline);
   const [progressTask, setProgressTask] = useState(null);
   const [showProgressSheet, setShowProgressSheet] = useState(false);
   const [isSavingProgress, setIsSavingProgress] = useState(false);
-  const [photoTask, setPhotoTask] = useState(null);
-  const [showPhotoSheet, setShowPhotoSheet] = useState(false);
   const [detailTask, setDetailTask] = useState(null);
   const [showTaskDetail, setShowTaskDetail] = useState(false);
   const [showCreateTask, setShowCreateTask] = useState(false);
@@ -110,8 +112,31 @@ export default function ProjectDetailScreen() {
   const [showFieldIssue, setShowFieldIssue] = useState(false);
   const [editingFieldIssue, setEditingFieldIssue] = useState(null);
   const [expandedPhases, setExpandedPhases] = useState({});
-  const [pendingCompletionPhoto, setPendingCompletionPhoto] = useState(false);
   const [taskPhotoRefreshKey, setTaskPhotoRefreshKey] = useState(0);
+  const loadProjectDataRef = useRef(async () => {});
+
+  const {
+    photoUploadTaskId,
+    photoStatusByTaskId,
+    openPhotoSheet: openPhotoSheetBase,
+    retryUpload,
+    photoSheetProps,
+  } = useTaskPhotoAttach({
+    supabase,
+    userId: user?.id,
+    resolveOrganizationId: (task) =>
+      resolveTaskOrganizationId(
+        task,
+        activeOrganization,
+        project ? [project] : collaborationProjects,
+      ),
+    onSuccess: async () => {
+      haptics.success();
+      setTaskPhotoRefreshKey((key) => key + 1);
+      // Silent refresh keeps task detail + scroll position; a full load remounts the screen.
+      await loadProjectDataRef.current?.({ silent: true });
+    },
+  });
 
   const refreshOfflineQueueCount = async () => {
     const size = await getOfflineQueueSize();
@@ -139,20 +164,16 @@ export default function ProjectDetailScreen() {
   }, [isManagerView, activeTab]);
 
   useEffect(() => {
-    if (activeTab === 'photos') {
-      setActiveTab('tasks');
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
     loadProjectData();
     flushOfflineProjectActions();
     refreshOfflineQueueCount();
   }, [projectId]);
 
   useEffect(() => {
-    if (isOnline && projectId) {
-      loadProjectData();
+    const cameOnline = isOnline && !previousOnlineRef.current;
+    previousOnlineRef.current = isOnline;
+    if (cameOnline && projectId) {
+      loadProjectData({ silent: true });
     }
   }, [isOnline, projectId]);
 
@@ -167,16 +188,23 @@ export default function ProjectDetailScreen() {
       subscriptionRef.current = null;
     }
 
+    const scheduleProjectReload = () => {
+      if (realtimeReloadTimerRef.current) {
+        clearTimeout(realtimeReloadTimerRef.current);
+      }
+      realtimeReloadTimerRef.current = setTimeout(() => {
+        realtimeReloadTimerRef.current = null;
+        void loadProjectDataRef.current?.({ silent: true });
+      }, 300);
+    };
+
     const channel = supabase
       .channel(`project_live_${projectId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `project_id=eq.${projectId}` }, () => {
-        loadProjectData();
+        scheduleProjectReload();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_phases', filter: `project_id=eq.${projectId}` }, () => {
-        loadProjectData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_issues', filter: `project_id=eq.${projectId}` }, () => {
-        if (activeTab === 'stream' || activeTab === 'fieldIssues') loadProjectData();
+        scheduleProjectReload();
       })
       .on(
         'postgres_changes',
@@ -201,18 +229,22 @@ export default function ProjectDetailScreen() {
 
     subscriptionRef.current = channel;
     return () => {
+      if (realtimeReloadTimerRef.current) {
+        clearTimeout(realtimeReloadTimerRef.current);
+        realtimeReloadTimerRef.current = null;
+      }
       if (subscriptionRef.current) {
         supabase.removeChannel(subscriptionRef.current);
         subscriptionRef.current = null;
       }
     };
-  }, [projectId, supabase, activeTab, router, t]);
+  }, [projectId, supabase, router, t]);
 
   const flushOfflineProjectActions = async () => {
     if (!supabase) return;
     await processOfflineQueue(buildOfflineHandlers(supabase), {
       onComplete: async () => {
-        await loadProjectData();
+        await loadProjectData({ silent: true });
         await refreshOfflineQueueCount();
       },
     });
@@ -232,13 +264,13 @@ export default function ProjectDetailScreen() {
       .catch(() => setUserContactId(null));
   }, [user?.id, supabase]);
 
-  const loadProjectData = async () => {
+  const loadProjectData = async ({ silent = false } = {}) => {
     if (!projectId || !supabase) {
-      setLoading(false);
+      if (!silent) setLoading(false);
       return;
     }
     if (!activeOrganization && !isProjectCollaborator) {
-      setLoading(false);
+      if (!silent) setLoading(false);
       return;
     }
 
@@ -248,7 +280,7 @@ export default function ProjectDetailScreen() {
       : null;
 
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
 
       // Offline / soft-fail: hydrate from last successful detail snapshot or projects list.
       if (!isOnline && user?.id) {
@@ -266,7 +298,7 @@ export default function ProjectDetailScreen() {
                 projectId,
               }),
           );
-          setLoading(false);
+          if (!silent) setLoading(false);
           return;
         }
         const list = projectsListCacheKey ? await getCached(user.id, projectsListCacheKey) : null;
@@ -287,7 +319,7 @@ export default function ProjectDetailScreen() {
               projectId,
             }),
           );
-          setLoading(false);
+          if (!silent) setLoading(false);
           return;
         }
       }
@@ -313,7 +345,7 @@ export default function ProjectDetailScreen() {
             setTasks(cachedDetail.tasks || []);
             setPhases(cachedDetail.phases || []);
             setScopeOrganizationId(cachedDetail.scopeOrganizationId || orgId);
-            setLoading(false);
+            if (!silent) setLoading(false);
             return;
           }
         }
@@ -336,13 +368,13 @@ export default function ProjectDetailScreen() {
                 projectId,
               }),
             );
-            setLoading(false);
+            if (!silent) setLoading(false);
             return;
           }
         }
         setProject(null);
         setScopeOrganizationId(null);
-        setLoading(false);
+        if (!silent) setLoading(false);
         if (isOnline && !projectData) {
           Alert.alert(
             t('projectTrash.project_unavailable_title'),
@@ -430,9 +462,10 @@ export default function ProjectDetailScreen() {
       }
       setProject(null);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
+  loadProjectDataRef.current = loadProjectData;
 
   const handleCompleteTask = async (taskId) => {
     const prevTasks = tasks;
@@ -472,56 +505,17 @@ export default function ProjectDetailScreen() {
           }
         }
       }
-      loadProjectData();
+      loadProjectData({ silent: true });
     } catch (error) {
       console.error('Error completing task:', error);
       setTasks(prevTasks);
+      haptics.error();
       await enqueueOfflineAction({ type: 'complete_task', payload: { taskId } });
       setTasks((list) =>
         list.map((t) => (t.id === taskId ? { ...t, completed: true, percent_complete: 100 } : t)),
       );
       await refreshOfflineQueueCount();
       alert('Task completion queued for sync.');
-    }
-  };
-
-  const runTaskPhotoUpload = async (mode) => {
-    const task = photoTask;
-    if (!task) return;
-
-    const orgId = resolveTaskOrganizationId(
-      task,
-      activeOrganization,
-      project ? [project] : collaborationProjects,
-    );
-    if (!orgId) {
-      Alert.alert(t('common.error'), t('mobile.task_photo_missing_org', { defaultValue: 'Could not resolve organization for this task.' }));
-      return;
-    }
-
-    try {
-      setPhotoUploadTaskId(task.id);
-      const uploaded = await pickAndUploadTaskPhoto({
-        supabase,
-        task,
-        organizationId: orgId,
-        userId: user?.id,
-        mode,
-        isCompletionPhoto: pendingCompletionPhoto,
-      });
-      if (uploaded) {
-        Alert.alert(t('common.success'), t('mobile.task_photo_attached', { defaultValue: 'Photo attached to task.' }));
-        setTaskPhotoRefreshKey((key) => key + 1);
-        await loadProjectData();
-      }
-    } catch (error) {
-      console.error('Error uploading task photo:', error);
-      Alert.alert(t('common.error'), error.message || t('mobile.task_photo_upload_failed', { defaultValue: 'Could not upload photo.' }));
-    } finally {
-      setPhotoUploadTaskId(null);
-      setPendingCompletionPhoto(false);
-      setShowPhotoSheet(false);
-      setPhotoTask(null);
     }
   };
 
@@ -636,7 +630,7 @@ export default function ProjectDetailScreen() {
         .eq('id', issue.id)
         .eq('organization_id', scopeOrganizationId);
       if (error) throw error;
-      await loadProjectData();
+      await loadProjectData({ silent: true });
     } catch (error) {
       console.error('Error updating issue status:', error);
       await enqueueOfflineAction({
@@ -654,15 +648,29 @@ export default function ProjectDetailScreen() {
   const handleProgressSave = async (updates) => {
     if (!progressTask?.id) return;
     const reachedComplete = updates.percent_complete >= 100;
+    const prevTasks = tasks;
+    const taskId = progressTask.id;
+    const completedAt = reachedComplete ? new Date().toISOString() : progressTask.completed_at;
+    setTasks((list) =>
+      list.map((t) =>
+        t.id === taskId
+          ? {
+              ...t,
+              ...updates,
+              completed: reachedComplete || Boolean(updates.completed),
+              completed_at: reachedComplete ? completedAt : t.completed_at,
+            }
+          : t,
+      ),
+    );
     try {
       setIsSavingProgress(true);
-      await updateTask(supabase, progressTask.id, updates);
+      await updateTask(supabase, taskId, updates);
       await markGettingStartedTaskUpdated(user?.id);
       if (reachedComplete) {
         signalReviewPromptOpportunity();
       }
       if (reachedComplete && project?.organization_id) {
-        const completedAt = new Date().toISOString();
         const completedTask = {
           ...progressTask,
           ...updates,
@@ -690,7 +698,7 @@ export default function ProjectDetailScreen() {
       setShowProgressSheet(false);
       const savedTask = progressTask;
       setProgressTask(null);
-      await loadProjectData();
+      await loadProjectData({ silent: true });
       if (reachedComplete && canUploadPhotosForTask(savedTask)) {
         Alert.alert(
           t('mobile.completion_photo_title'),
@@ -700,9 +708,7 @@ export default function ProjectDetailScreen() {
             {
               text: t('mobile.completion_photo_add'),
               onPress: () => {
-                setPhotoTask(savedTask);
-                setPendingCompletionPhoto(true);
-                setShowPhotoSheet(true);
+                openPhotoSheetBase(savedTask, { isCompletionPhoto: true });
               },
             },
           ],
@@ -710,9 +716,10 @@ export default function ProjectDetailScreen() {
       }
     } catch (error) {
       console.error('Error updating progress:', error);
+      setTasks(prevTasks);
       await enqueueOfflineAction({
         type: 'update_task',
-        payload: { taskId: progressTask.id, updates },
+        payload: { taskId, updates },
       });
       alert('Progress update queued for sync.');
     } finally {
@@ -728,8 +735,7 @@ export default function ProjectDetailScreen() {
       );
       return;
     }
-    setPhotoTask(task);
-    setShowPhotoSheet(true);
+    openPhotoSheetBase(task);
   };
 
   const openTaskDetail = (task) => {
@@ -739,14 +745,20 @@ export default function ProjectDetailScreen() {
 
   const handleTaskDetailSave = async (updates) => {
     if (!detailTask?.id) return;
+    const prevTasks = tasks;
+    const taskId = detailTask.id;
+    setTasks((list) =>
+      list.map((t) => (t.id === taskId ? { ...t, ...updates } : t)),
+    );
     try {
       setIsSavingTask(true);
-      await updateTask(supabase, detailTask.id, updates);
+      await updateTask(supabase, taskId, updates);
       setShowTaskDetail(false);
       setDetailTask(null);
-      await loadProjectData();
+      await loadProjectData({ silent: true });
     } catch (error) {
       console.error('Error updating task:', error);
+      setTasks(prevTasks);
       reportFeatureFailure(supabase, error, {
         feature: 'tasks',
         operation: 'update',
@@ -754,12 +766,12 @@ export default function ProjectDetailScreen() {
         organizationId: project?.organization_id || scopeOrganizationId,
         projectId: project?.id,
         entityType: 'task',
-        entityId: detailTask?.id,
+        entityId: taskId,
         context: { offline_queued: true },
       });
       await enqueueOfflineAction({
         type: 'update_task',
-        payload: { taskId: detailTask.id, updates },
+        payload: { taskId, updates },
       });
       alert('Task update queued for sync.');
     } finally {
@@ -778,7 +790,7 @@ export default function ProjectDetailScreen() {
       });
       await markGettingStartedTaskCreated(user?.id);
       setShowCreateTask(false);
-      await loadProjectData();
+      await loadProjectData({ silent: true });
     } catch (error) {
       console.error('Error creating task:', error);
       reportFeatureFailure(supabase, error, {
@@ -823,6 +835,8 @@ export default function ProjectDetailScreen() {
       onPhotoPress={openPhotoSheet}
       canManagePhotos={canUploadPhotosForTask(task)}
       photoUploading={photoUploadTaskId === task.id}
+      photoStatus={photoStatusByTaskId[task.id] || null}
+      onPhotoRetry={(selectedTask) => retryUpload(selectedTask)}
       testID={`task-card-${task.id}`}
     />
   );
@@ -1275,9 +1289,9 @@ export default function ProjectDetailScreen() {
         }}
         supabase={supabase}
         projectId={projectId}
-        organizationId={scopeOrganizationId}
+        organizationId={project?.organization_id || scopeOrganizationId}
         userId={user?.id}
-        onCreated={loadProjectData}
+        onCreated={() => loadProjectData({ silent: true })}
         issueToEdit={editingFieldIssue}
       />
       <ProgressBottomSheet
@@ -1290,16 +1304,7 @@ export default function ProjectDetailScreen() {
         onSave={handleProgressSave}
         saving={isSavingProgress}
       />
-      <PhotoAttachSheet
-        visible={showPhotoSheet}
-        onClose={() => {
-          setShowPhotoSheet(false);
-          setPhotoTask(null);
-        }}
-        uploading={!!photoUploadTaskId}
-        onCamera={() => runTaskPhotoUpload('camera')}
-        onLibrary={() => runTaskPhotoUpload('library')}
-      />
+      <PhotoAttachSheet {...photoSheetProps} />
     </View>
   );
 }

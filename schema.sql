@@ -517,7 +517,12 @@ CREATE TABLE IF NOT EXISTS project_issues (
     after_photo_path TEXT
 );
 
-COMMENT ON COLUMN public.project_issues.assigned_to_user_id IS 'Single triage owner for the issue';
+COMMENT ON COLUMN public.project_issues.assigned_to_user_id IS 'Auth user for the assignee when the contact has a linked profile (notifications / app)';
+
+ALTER TABLE public.project_issues
+  ADD COLUMN IF NOT EXISTS assigned_to_contact_id UUID REFERENCES public.contacts(id) ON DELETE SET NULL;
+
+COMMENT ON COLUMN public.project_issues.assigned_to_contact_id IS 'Primary assignee (any project contact)';
 COMMENT ON COLUMN public.project_issues.related_task_ids IS 'Optional UUID[] of related schedule tasks';
 COMMENT ON COLUMN public.project_issues.location IS 'Optional area/room for punch list grouping (e.g. Kitchen, Unit 2B)';
 COMMENT ON COLUMN public.project_issues.before_photo_path IS 'Storage path in message_files bucket for deficiency photo';

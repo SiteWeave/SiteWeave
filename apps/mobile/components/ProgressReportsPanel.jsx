@@ -24,6 +24,7 @@ import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import { useHaptics } from '../hooks/useHaptics';
 import { useBranding } from '../context/BrandingContext';
 import { colors, spacing, touch } from '../theme';
+import { useAfterSheetDismiss } from '../utils/runAfterSheetDismiss';
 
 function audienceLabel(schedule, t) {
   const map = {
@@ -69,6 +70,7 @@ export default function ProgressReportsPanel({
   const { canExport } = useWorkspaceTier();
   const haptics = useHaptics();
   const { primaryColor } = useBranding();
+  const { scheduleAfterDismiss, handleDismissed, clearPending } = useAfterSheetDismiss();
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -76,6 +78,7 @@ export default function ProgressReportsPanel({
   const [busyId, setBusyId] = useState(null);
   const [busyAction, setBusyAction] = useState(null);
   const [sheetView, setSheetView] = useState('list');
+  const [shareSuspended, setShareSuspended] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
   const [formScheduleId, setFormScheduleId] = useState(null);
   const [historySchedule, setHistorySchedule] = useState(null);
@@ -159,30 +162,43 @@ export default function ProgressReportsPanel({
       setSheetView('upgrade');
       return;
     }
-    setBusyId(scheduleId);
-    setBusyAction('export');
-    try {
-      const result = await exportReportToPDF(supabase, scheduleId);
-      if (!result?.html) {
-        throw new Error(t('mobile.progress_reports_export_empty'));
+
+    const runExport = async () => {
+      setBusyId(scheduleId);
+      setBusyAction('export');
+      try {
+        const result = await exportReportToPDF(supabase, scheduleId);
+        if (!result?.html) {
+          throw new Error(t('mobile.progress_reports_export_empty'));
+        }
+        const saveResult = await saveProgressReportPdf(result.html, {
+          defaultFilename: `${projectName || 'report'}-progress`,
+        });
+        if (!saveResult.ok && !saveResult.canceled) {
+          throw new Error(saveResult.error);
+        }
+        if (saveResult.ok) {
+          haptics.success();
+          showStatus(t('mobile.progress_reports_status_exported'));
+        }
+      } catch (error) {
+        haptics.error();
+        Alert.alert(t('common.error'), error.message || t('mobile.progress_reports_export_error'));
+      } finally {
+        setBusyId(null);
+        setBusyAction(null);
+        setShareSuspended(false);
       }
-      const saveResult = await saveProgressReportPdf(result.html, {
-        defaultFilename: `${projectName || 'report'}-progress`,
-      });
-      if (!saveResult.ok && !saveResult.canceled) {
-        throw new Error(saveResult.error);
-      }
-      if (saveResult.ok) {
-        haptics.success();
-        showStatus(t('mobile.progress_reports_status_exported'));
-      }
-    } catch (error) {
-      haptics.error();
-      Alert.alert(t('common.error'), error.message || t('mobile.progress_reports_export_error'));
-    } finally {
-      setBusyId(null);
-      setBusyAction(null);
+    };
+
+    if (embedded) {
+      await runExport();
+      return;
     }
+
+    scheduleAfterDismiss(() => {
+      void runExport();
+    }, () => setShareSuspended(true));
   };
 
   const handleDelete = (schedule) => {
@@ -378,10 +394,17 @@ export default function ProgressReportsPanel({
     </>
   );
 
-  const listVisible = active && sheetView === 'list';
+  const listVisible = active && sheetView === 'list' && !shareSuspended;
   const formVisible = active && sheetView === 'form';
   const historyVisible = active && sheetView === 'history';
   const upgradeVisible = active && sheetView === 'upgrade';
+
+  useEffect(() => {
+    if (!active) {
+      setShareSuspended(false);
+      clearPending();
+    }
+  }, [active, clearPending]);
 
   return (
     <>
@@ -403,6 +426,8 @@ export default function ProgressReportsPanel({
           visible={listVisible}
           title={t('mobile.progress_reports_title')}
           onClose={handleSheetClose}
+          onDismissed={handleDismissed}
+          dismissWithoutAnimation={shareSuspended}
           testID="progress-reports-sheet"
         >
           <BottomSheet.Scroll

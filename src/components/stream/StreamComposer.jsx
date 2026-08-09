@@ -16,6 +16,7 @@ const DAILY_LOG_FALLBACK_BODY = 'Daily log';
 const POST_TYPE_I18N = {
   general: 'stream.post_type_general',
   daily_log: 'stream.post_type_daily_log',
+  milestone: 'stream.post_type_milestone',
 };
 
 function emptySections() {
@@ -63,6 +64,7 @@ export default function StreamComposer({
   const { t } = useTranslation();
   const [postType, setPostType] = React.useState('general');
   const [body, setBody] = React.useState('');
+  const [milestoneTitle, setMilestoneTitle] = React.useState('');
   const [file, setFile] = React.useState(null);
   const [submitting, setSubmitting] = React.useState(false);
   const [draftSections, setDraftSections] = React.useState(emptySections);
@@ -154,6 +156,14 @@ export default function StreamComposer({
             photos: [],
           },
         });
+      } else if (postType === 'milestone') {
+        await onSubmit({
+          post_type: postType,
+          title: milestoneTitle.trim() || null,
+          body: note || (file ? `Attached: ${file.name}` : ''),
+          file,
+          payload: { approval_status: 'pending' },
+        });
       } else {
         await onSubmit({
           post_type: postType,
@@ -163,6 +173,7 @@ export default function StreamComposer({
         });
       }
       setBody('');
+      setMilestoneTitle('');
       setPostType('general');
       setFile(null);
       setDraftSections(emptySections());
@@ -207,6 +218,16 @@ export default function StreamComposer({
           </button>
         ))}
       </div>
+
+      {postType === 'milestone' ? (
+        <input
+          type="text"
+          value={milestoneTitle}
+          onChange={(e) => setMilestoneTitle(e.target.value)}
+          placeholder={t('stream.milestone_title_placeholder')}
+          className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+        />
+      ) : null}
 
       <textarea
         value={body}

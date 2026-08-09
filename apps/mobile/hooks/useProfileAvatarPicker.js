@@ -6,28 +6,32 @@ import { uploadProfilePhoto, removeProfilePhoto, validateProfilePhotoFile } from
 import { useAuth } from '../context/AuthContext';
 import { uriToUploadPayload } from '../utils/imageUpload';
 import { prepareMobileAvatarUri } from '../utils/prepareAvatarImage';
+import { IMAGE_MEDIA_TYPES } from '../utils/imagePickerMediaTypes';
 import { useHaptics } from './useHaptics';
+import { runAfterInteractionsAsync } from '../utils/runAfterSheetDismiss';
 
-export function useProfileAvatarPicker() {
+/**
+ * @param {{ beforeNativeUi?: () => void | Promise<void> }} [options]
+ *   Call before presenting Alert / image library so any parent RN Modal can unmount first.
+ */
+export function useProfileAvatarPicker({ beforeNativeUi } = {}) {
   const { t } = useTranslation();
   const { user, supabase, profileAvatarUrl, refreshProfileAvatar } = useAuth();
   const haptics = useHaptics();
   const [avatarLoading, setAvatarLoading] = useState(false);
 
+  const prepareNativeUi = async () => {
+    if (!beforeNativeUi) return;
+    await Promise.resolve(beforeNativeUi());
+    await runAfterInteractionsAsync(() => undefined);
+  };
+
   const pickAvatar = async () => {
     if (!user || !supabase || avatarLoading) return;
 
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (permission.status !== 'granted') {
-        Alert.alert('Permission required', 'Photo permission is required to upload a profile picture.');
-        return;
-      }
-
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaType?.Images
-          ? [ImagePicker.MediaType.Images]
-          : (ImagePicker.MediaTypeOptions?.Images ?? ['images']),
+        mediaTypes: IMAGE_MEDIA_TYPES,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.85,
@@ -87,18 +91,29 @@ export function useProfileAvatarPicker() {
   const onAvatarPress = () => {
     if (avatarLoading) return;
 
-    const options = profileAvatarUrl
-      ? [
-          { text: t('settings.change_photo_short'), onPress: pickAvatar },
-          { text: t('settings.remove_photo'), style: 'destructive', onPress: removeAvatar },
-          { text: t('common.cancel'), style: 'cancel' },
-        ]
-      : [
-          { text: t('settings.change_photo_short'), onPress: pickAvatar },
-          { text: t('common.cancel'), style: 'cancel' },
-        ];
+    const showChooser = () => {
+      const options = profileAvatarUrl
+        ? [
+            { text: t('settings.change_photo_short'), onPress: () => { void pickAvatar(); } },
+            { text: t('settings.remove_photo'), style: 'destructive', onPress: () => { void removeAvatar(); } },
+            { text: t('common.cancel'), style: 'cancel' },
+          ]
+        : [
+            { text: t('settings.change_photo_short'), onPress: () => { void pickAvatar(); } },
+            { text: t('common.cancel'), style: 'cancel' },
+          ];
+      Alert.alert(t('settings.profile_photo'), undefined, options);
+    };
 
-    Alert.alert(t('settings.profile_photo'), undefined, options);
+    void Promise.resolve(prepareNativeUi())
+      .then(showChooser)
+      .catch((error) => {
+        console.error('Could not dismiss profile drawer for photo picker:', error);
+        Alert.alert(
+          t('common.error'),
+          error?.message || 'Could not open photo options.',
+        );
+      });
   };
 
   return {

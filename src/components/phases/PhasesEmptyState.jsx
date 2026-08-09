@@ -6,8 +6,10 @@ function PhasesEmptyState({
     onAddPhase,
     onUseTemplate,
     isMutating = false,
+    taskCount = 0,
 }) {
     const { t } = useTranslation();
+    const count = Math.max(0, Number(taskCount) || 0);
 
     return (
         <div className="mb-4 flex flex-col gap-3 rounded-xl border border-dashed border-gray-300 bg-gray-50/80 px-4 py-3 text-left sm:flex-row sm:items-center sm:justify-between sm:gap-4">
@@ -26,7 +28,18 @@ function PhasesEmptyState({
                     <p className="mt-0.5 text-sm text-gray-600">
                         {t('projectDetail.phases_empty_description')}
                     </p>
-                    <p className="mt-1 text-xs text-gray-500">{t('projectDetail.phase_template_hint')}</p>
+                    {count > 0 ? (
+                        <p className="mt-1 text-xs text-gray-500">
+                            {t(
+                                count === 1
+                                    ? 'projectDetail.phases_empty_unassigned_hint_one'
+                                    : 'projectDetail.phases_empty_unassigned_hint_other',
+                                { count },
+                            )}
+                        </p>
+                    ) : (
+                        <p className="mt-1 text-xs text-gray-500">{t('projectDetail.phase_template_hint')}</p>
+                    )}
                 </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:shrink-0">

@@ -43,6 +43,7 @@ export {
   resolveContactAuthUserId,
   buildIssueAssigneeOptionsFromContacts,
   fetchIssueAssigneeOptions,
+  resolveIssueAssigneePatch,
 } from './utils/issueAssigneeOptions.js';
 
 export {

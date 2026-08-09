@@ -25,6 +25,7 @@ import {
 import { colors, spacing, touch } from '../theme';
 import { useHaptics } from '../hooks/useHaptics';
 import EventAttendeePicker from './EventAttendeePicker';
+import { useAfterSheetDismiss } from '../utils/runAfterSheetDismiss';
 
 export default function EventSheet({
   visible,
@@ -37,6 +38,7 @@ export default function EventSheet({
   const { t } = useTranslation();
   const { user, supabase, activeOrganization, syncPulse } = useAuth();
   const haptics = useHaptics();
+  const { scheduleAfterDismiss, handleDismissed, clearPending } = useAfterSheetDismiss();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
@@ -52,6 +54,7 @@ export default function EventSheet({
   const [attendeeEmails, setAttendeeEmails] = useState([]);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  const [shareSuspended, setShareSuspended] = useState(false);
 
   const isEditing = Boolean(eventToEdit?.id);
 
@@ -284,7 +287,7 @@ export default function EventSheet({
     ]);
   };
 
-  const handleShare = async () => {
+  const handleShare = () => {
     const times = buildEventTimes();
     const message = formatEventShareText({
       title: title.trim(),
@@ -294,18 +297,31 @@ export default function EventSheet({
       end_time: times?.endDateTime,
       is_all_day: isAllDay,
     });
-    try {
-      await Share.share({ message, title: title.trim() || t('mobile.calendar_share_title') });
-    } catch {
-      // user dismissed
-    }
+    scheduleAfterDismiss(async () => {
+      try {
+        await Share.share({ message, title: title.trim() || t('mobile.calendar_share_title') });
+      } catch {
+        // user dismissed
+      } finally {
+        setShareSuspended(false);
+      }
+    }, () => setShareSuspended(true));
   };
+
+  useEffect(() => {
+    if (!visible) {
+      setShareSuspended(false);
+      clearPending();
+    }
+  }, [visible, clearPending]);
 
   return (
     <BottomSheet
-      visible={visible}
+      visible={visible && !shareSuspended}
       title={eventToEdit ? t('mobile.event_edit_title') : t('mobile.event_new_title')}
       onClose={onClose}
+      onDismissed={handleDismissed}
+      dismissWithoutAnimation={shareSuspended}
       primaryLabel={eventToEdit ? t('common.update') : t('common.save')}
       onPrimary={handleSave}
       primaryDisabled={!canSave || loading}

@@ -1,48 +1,88 @@
 /**
  * User Management Service
- * Handles user invitation and management for Organization Admins
+ * Handles user invitation and management for Organization Admins.
+ * Invite / create go through edge functions (service role + email), never client auth.admin.
  */
+
+async function getAccessToken(supabase) {
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  if (!session?.access_token) {
+    throw new Error('Not authenticated');
+  }
+  return session.access_token;
+}
+
+function edgeBaseUrl(supabase) {
+  return supabase.supabaseUrl || supabase.restUrl?.replace(/\/rest\/v1\/?$/, '') || '';
+}
+
+async function postEdgeFunction(supabase, functionName, body) {
+  const accessToken = await getAccessToken(supabase);
+  const base = edgeBaseUrl(supabase);
+  const response = await fetch(`${base}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    const text = await response.text().catch(() => '');
+    return {
+      success: false,
+      error: text || `Server error: ${response.status}`,
+    };
+  }
+
+  if (!response.ok || result?.success === false) {
+    return {
+      success: false,
+      error: result?.error || `Server error: ${response.status}`,
+      ...result,
+    };
+  }
+
+  return { success: true, ...result };
+}
 
 /**
- * Invite a user to join the organization
- * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
- * @param {string} email - Email address to invite
- * @param {string} organizationId - Organization ID
- * @param {string} roleId - Role ID to assign (optional)
- * @param {string} invitedByUserId - User ID of inviter
- * @returns {Promise<{success: boolean, invitationId?: string, error?: string}>}
+ * Invite a user to join the organization (sends email via team-invite).
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {string} email
+ * @param {string} organizationId
+ * @param {string|null} [roleId]
+ * @param {string} [_invitedByUserId] unused — edge function uses session user
+ * @param {Record<string, unknown>} [metadata]
  */
-export async function inviteUser(supabase, email, organizationId, roleId, invitedByUserId) {
+export async function inviteUser(
+  supabase,
+  email,
+  organizationId,
+  roleId = null,
+  _invitedByUserId = null,
+  metadata = undefined,
+) {
   try {
-    // Generate invitation token
-    const invitationToken = generateInvitationToken();
-
-    // Create invitation record
-    const { data: invitation, error: invitationError } = await supabase
-      .from('invitations')
-      .insert({
-        email: email.toLowerCase(),
-        organization_id: organizationId,
-        role_id: roleId || null,
-        invited_by_user_id: invitedByUserId,
-        invitation_token: invitationToken,
-        status: 'pending'
-      })
-      .select()
-      .single();
-
-    if (invitationError) {
-      console.error('Error creating invitation:', invitationError);
-      return { success: false, error: invitationError.message };
+    if (!email || !organizationId) {
+      return { success: false, error: 'Missing required fields: email, organizationId' };
     }
 
-    // TODO: Send invitation email with deep link
-    // For now, return the invitation token for manual distribution
-    return {
-      success: true,
-      invitationId: invitation.id,
-      invitationToken: invitationToken
+    const body = {
+      email: String(email).toLowerCase(),
+      organizationId,
+      roleId: roleId || null,
     };
+    if (metadata && typeof metadata === 'object' && Object.keys(metadata).length > 0) {
+      body.metadata = metadata;
+    }
+
+    return await postEdgeFunction(supabase, 'team-invite', body);
   } catch (error) {
     console.error('Error inviting user:', error);
     return { success: false, error: error.message };
@@ -50,81 +90,33 @@ export async function inviteUser(supabase, email, organizationId, roleId, invite
 }
 
 /**
- * Generate a secure invitation token
- * @returns {string} Invitation token
+ * Create a managed user account (PIN login) via team-create-user.
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {object} params
+ * @param {string} params.fullName
+ * @param {string} params.username
+ * @param {string} params.password 6-digit PIN
+ * @param {string} params.organizationId
+ * @param {string|null} [params.roleId]
  */
-function generateInvitationToken() {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-}
-
-/**
- * Create a user account directly (for Organization Admins)
- * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
- * @param {string} email - Email address
- * @param {string} password - Password
- * @param {string} organizationId - Organization ID
- * @param {string} roleId - Role ID to assign
- * @param {string} fullName - Full name
- * @returns {Promise<{success: boolean, userId?: string, error?: string}>}
- */
-export async function createUser(supabase, email, password, organizationId, roleId, fullName) {
+export async function createUser(supabase, params) {
   try {
-    // Create auth user
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
+    const { fullName, username, password, organizationId, roleId = null } = params || {};
+
+    if (!fullName || !username || !password || !organizationId) {
+      return {
+        success: false,
+        error: 'Missing required fields: fullName, username, password, organizationId',
+      };
+    }
+
+    return await postEdgeFunction(supabase, 'team-create-user', {
+      fullName,
+      username,
       password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: fullName
-      }
+      organizationId,
+      roleId: roleId || null,
     });
-
-    if (authError) {
-      return { success: false, error: authError.message };
-    }
-
-    if (!authData?.user) {
-      return { success: false, error: 'Failed to create user account' };
-    }
-
-    // Create contact
-    const { data: contact, error: contactError } = await supabase
-      .from('contacts')
-      .insert({
-        name: fullName,
-        email: email.toLowerCase(),
-        type: 'Team',
-        organization_id: organizationId
-      })
-      .select()
-      .single();
-
-    if (contactError) {
-      console.error('Error creating contact:', contactError);
-      // Continue anyway - contact can be created later
-    }
-
-    // Update profile with organization and role
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({
-        organization_id: organizationId,
-        role_id: roleId,
-        contact_id: contact?.id || null
-      })
-      .eq('id', authData.user.id);
-
-    if (profileError) {
-      console.error('Error updating profile:', profileError);
-      return { success: false, error: 'User created but profile update failed' };
-    }
-
-    return {
-      success: true,
-      userId: authData.user.id
-    };
   } catch (error) {
     console.error('Error creating user:', error);
     return { success: false, error: error.message };
@@ -133,19 +125,14 @@ export async function createUser(supabase, email, password, organizationId, role
 
 /**
  * Remove a user from the organization
- * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
- * @param {string} userId - User ID to remove
- * @param {string} organizationId - Organization ID
- * @returns {Promise<{success: boolean, error?: string}>}
  */
 export async function removeUserFromOrganization(supabase, userId, organizationId) {
   try {
-    // Update profile to remove organization association
     const { error } = await supabase
       .from('profiles')
       .update({
         organization_id: null,
-        role_id: null
+        role_id: null,
       })
       .eq('id', userId)
       .eq('organization_id', organizationId);
@@ -161,9 +148,6 @@ export async function removeUserFromOrganization(supabase, userId, organizationI
 
 /**
  * Get all users in an organization
- * @param {import('@supabase/supabase-js').SupabaseClient} supabase - Supabase client
- * @param {string} organizationId - Organization ID
- * @returns {Promise<Array>} Array of user profiles with roles
  */
 export async function getOrganizationUsers(supabase, organizationId) {
   try {
@@ -197,4 +181,3 @@ export async function getOrganizationUsers(supabase, organizationId) {
     throw error;
   }
 }
-

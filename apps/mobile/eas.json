@@ -20,7 +20,9 @@
       "node": "22.14.0",
       "autoIncrement": true,
       "env": {
-        "YARN_IGNORE_ENGINES": "1"
+        "YARN_IGNORE_ENGINES": "1",
+        "SENTRY_ALLOW_FAILURE": "true",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       },
       "android": {
         "buildType": "app-bundle"

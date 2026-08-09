@@ -6,6 +6,7 @@ import {
   deleteProjectIssue,
   uploadIssueFile,
   fetchProjectIssueById,
+  resolveIssueAssigneePatch,
 } from '@siteweave/core-logic';
 import { supabaseClient } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -42,7 +43,7 @@ export default function IssueDetailDrawer({
     location: issue?.location || '',
     priority: issue?.priority || 'Medium',
     dueDate: issue?.due_date || '',
-    assigned_to_user_id: issue?.assigned_to_user_id || '',
+    assigned_to_contact_id: issue?.assigned_to_contact_id || '',
     related_task_ids: issue?.related_task_ids || [],
   });
 
@@ -54,7 +55,7 @@ export default function IssueDetailDrawer({
       location: issue?.location || '',
       priority: issue?.priority || 'Medium',
       dueDate: issue?.due_date || '',
-      assigned_to_user_id: issue?.assigned_to_user_id || '',
+      assigned_to_contact_id: issue?.assigned_to_contact_id || '',
       related_task_ids: Array.isArray(issue?.related_task_ids) ? issue.related_task_ids : [],
     });
   }, [issue]);
@@ -82,6 +83,10 @@ export default function IssueDetailDrawer({
     }
     setSaving(true);
     try {
+      const assigneePatch = resolveIssueAssigneePatch(
+        form.assigned_to_contact_id,
+        assigneeOptions,
+      );
       const updated = await updateProjectIssue(
         supabaseClient,
         detail.id,
@@ -91,7 +96,8 @@ export default function IssueDetailDrawer({
           location: form.location.trim() || null,
           priority: form.priority,
           due_date: form.dueDate || null,
-          assigned_to_user_id: form.assigned_to_user_id || null,
+          assigned_to_contact_id: assigneePatch.assigned_to_contact_id,
+          assigned_to_user_id: assigneePatch.assigned_to_user_id,
           related_task_ids: form.related_task_ids,
         },
         { previousStatus: detail.status },
@@ -176,12 +182,21 @@ export default function IssueDetailDrawer({
     });
   };
 
-  const handleIssuePing = async ({ recipientUserIds, delayHours, deliveryChannels, message }) => {
+  const handleIssuePing = async ({
+    recipients,
+    recipientUserIds,
+    delayHours,
+    deliveryChannels,
+    message,
+  }) => {
     if (!canPing) {
       onUpgradeRequired?.('pings');
       return;
     }
-    if (!recipientUserIds?.length) {
+    const recipientPayload = Array.isArray(recipients)
+      ? recipients.filter((r) => r && (r.userId || r.email || r.phone))
+      : [];
+    if (!recipientPayload.length && !recipientUserIds?.length) {
       addToast(t('fieldIssues.ping_select_recipients'), 'warning');
       return;
     }
@@ -201,7 +216,8 @@ export default function IssueDetailDrawer({
           issueId: detail.id,
           entityTitle: form.title || detail.title,
           priority: form.priority || detail.priority,
-          recipientUserIds,
+          recipients: recipientPayload,
+          recipientUserIds: recipientUserIds || [],
           deliveryChannels,
           delayHours,
           message,
@@ -349,13 +365,13 @@ export default function IssueDetailDrawer({
             {t('fieldIssues.assignee_label')}
           </label>
           <select
-            value={form.assigned_to_user_id}
-            onChange={(e) => setForm({ ...form, assigned_to_user_id: e.target.value })}
+            value={form.assigned_to_contact_id}
+            onChange={(e) => setForm({ ...form, assigned_to_contact_id: e.target.value })}
             className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
             <option value="">{t('tasks.unassigned')}</option>
             {assigneeOptions.map((opt) => (
-              <option key={opt.userId} value={opt.userId}>
+              <option key={opt.contactId} value={opt.contactId}>
                 {opt.label}
               </option>
             ))}
@@ -367,8 +383,12 @@ export default function IssueDetailDrawer({
             {t('fieldIssues.ping_section')}
           </label>
           <IssuePingPanel
-            assigneeOptions={assigneeOptions}
-            defaultAssigneeUserId={form.assigned_to_user_id || detail.assigned_to_user_id || ''}
+            assigneeOptions={assigneeOptions || []}
+            defaultAssigneeContactId={
+              form.assigned_to_contact_id ||
+              detail.assigned_to_contact_id ||
+              ''
+            }
             onSend={handleIssuePing}
             busy={pinging}
             onUpgradeRequired={onUpgradeRequired}

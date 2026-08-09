@@ -98,6 +98,56 @@ function mapIssueRow(row) {
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {string|null|undefined} contactId
+ */
+async function resolveUserIdForContact(supabase, contactId) {
+  if (!contactId) return null;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('contact_id', contactId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+
+/**
+ * Normalize assignee fields for insert/update.
+ * Prefers assigned_to_contact_id; fills assigned_to_user_id from profile when missing.
+ */
+async function normalizeIssueAssigneeFields(supabase, fields = {}) {
+  const hasContactKey = Object.prototype.hasOwnProperty.call(fields, 'assigned_to_contact_id');
+  const hasUserKey = Object.prototype.hasOwnProperty.call(fields, 'assigned_to_user_id');
+  if (!hasContactKey && !hasUserKey) return {};
+
+  let contactId = hasContactKey ? (fields.assigned_to_contact_id || null) : undefined;
+  let userId = hasUserKey ? (fields.assigned_to_user_id || null) : undefined;
+
+  if (contactId === null && userId === null) {
+    return { assigned_to_contact_id: null, assigned_to_user_id: null };
+  }
+
+  if (contactId && (userId === undefined || userId === null)) {
+    userId = await resolveUserIdForContact(supabase, contactId);
+  }
+
+  if (!contactId && userId) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('contact_id')
+      .eq('id', userId)
+      .maybeSingle();
+    contactId = profile?.contact_id || null;
+  }
+
+  return {
+    assigned_to_contact_id: contactId ?? null,
+    assigned_to_user_id: userId ?? null,
+  };
+}
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {Array<object>} rows
  */
 async function enrichIssues(supabase, rows) {
@@ -107,13 +157,42 @@ async function enrichIssues(supabase, rows) {
       rows.flatMap((r) => [r.created_by_user_id, r.assigned_to_user_id].filter(Boolean)),
     ),
   ];
+  const contactIds = [
+    ...new Set(rows.map((r) => r.assigned_to_contact_id).filter(Boolean)),
+  ];
   const userInfo = await fetchUserInfo(supabase, userIds);
+
+  let contactById = {};
+  if (contactIds.length > 0) {
+    const { data: contacts, error } = await supabase
+      .from('contacts')
+      .select('id, name, email, phone')
+      .in('id', contactIds);
+    if (error) throw error;
+    contactById = Object.fromEntries((contacts || []).map((c) => [c.id, c]));
+  }
+
   return rows.map((row) => {
     const mapped = mapIssueRow(row);
+    const contact = mapped.assigned_to_contact_id
+      ? contactById[mapped.assigned_to_contact_id]
+      : null;
+    const userAssignee = userInfo[mapped.assigned_to_user_id] || null;
+    const assignee = contact
+      ? {
+          id: contact.id,
+          name: contact.name || userAssignee?.name || null,
+          email: contact.email || userAssignee?.email || null,
+          phone: contact.phone || null,
+          userId: mapped.assigned_to_user_id || null,
+        }
+      : userAssignee
+        ? { ...userAssignee, userId: mapped.assigned_to_user_id || null }
+        : null;
     return {
       ...mapped,
       creator: userInfo[mapped.created_by_user_id] || null,
-      assignee: userInfo[mapped.assigned_to_user_id] || null,
+      assignee,
     };
   });
 }
@@ -209,6 +288,7 @@ export async function createProjectIssue(supabase, params) {
     due_date = null,
     created_by_user_id,
     assigned_to_user_id = null,
+    assigned_to_contact_id = null,
     related_task_ids = [],
     location = null,
     before_photo_path = null,
@@ -216,6 +296,11 @@ export async function createProjectIssue(supabase, params) {
     bridgeToStream = true,
     notifyChannels = null,
   } = params;
+
+  const assigneeFields = await normalizeIssueAssigneeFields(supabase, {
+    assigned_to_contact_id,
+    assigned_to_user_id,
+  });
 
   const insertRow = {
     project_id,
@@ -226,7 +311,7 @@ export async function createProjectIssue(supabase, params) {
     due_date,
     status: 'open',
     created_by_user_id,
-    assigned_to_user_id,
+    ...assigneeFields,
     related_task_ids: Array.isArray(related_task_ids) ? related_task_ids : [],
     location: location ? String(location).trim() : null,
     before_photo_path: before_photo_path || null,
@@ -245,7 +330,10 @@ export async function createProjectIssue(supabase, params) {
   const [withUrls] = enrichIssuesWithPhotoUrls(supabase, [issue]);
 
   notifyFieldIssueCreated(supabase, { issueId: issue.id });
-  if (assigned_to_user_id && assigned_to_user_id !== created_by_user_id) {
+  const assigneeUserId = assigneeFields.assigned_to_user_id;
+  const hasAssignee =
+    Boolean(assigneeFields.assigned_to_contact_id) || Boolean(assigneeUserId);
+  if (hasAssignee && assigneeUserId !== created_by_user_id) {
     notifyFieldIssueAssigned(supabase, {
       issueId: issue.id,
       channels: notifyChannels || undefined,
@@ -281,6 +369,14 @@ export async function updateProjectIssue(supabase, issueId, updates, options = {
     updated_at: new Date().toISOString(),
   };
 
+  if (
+    Object.prototype.hasOwnProperty.call(updates, 'assigned_to_contact_id') ||
+    Object.prototype.hasOwnProperty.call(updates, 'assigned_to_user_id')
+  ) {
+    const assigneeFields = await normalizeIssueAssigneeFields(supabase, updates);
+    Object.assign(patch, assigneeFields);
+  }
+
   if (patch.status === 'closed' && !patch.resolved_at) {
     patch.resolved_at = new Date().toISOString();
   }
@@ -299,7 +395,10 @@ export async function updateProjectIssue(supabase, issueId, updates, options = {
   const [issue] = await enrichIssues(supabase, [data]);
   const [withUrls] = enrichIssuesWithPhotoUrls(supabase, [issue]);
 
-  if (updates.assigned_to_user_id != null) {
+  if (
+    Object.prototype.hasOwnProperty.call(updates, 'assigned_to_contact_id') ||
+    Object.prototype.hasOwnProperty.call(updates, 'assigned_to_user_id')
+  ) {
     notifyFieldIssueAssigned(supabase, {
       issueId,
       channels: options.notifyChannels || undefined,
@@ -430,6 +529,7 @@ export async function createWalkthroughIssue(supabase, params) {
     before_photo_path = null,
     created_by_user_id,
     assigned_to_user_id = null,
+    assigned_to_contact_id = null,
     priority = 'Medium',
     due_date = null,
     notifyChannels = null,
@@ -451,6 +551,7 @@ export async function createWalkthroughIssue(supabase, params) {
     due_date,
     created_by_user_id,
     assigned_to_user_id,
+    assigned_to_contact_id,
     location: null,
     before_photo_path,
     bridgeToStream: true,

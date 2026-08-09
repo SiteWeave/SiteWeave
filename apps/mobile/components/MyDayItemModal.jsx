@@ -1,5 +1,14 @@
-import { View, Text, StyleSheet, Modal, ScrollView, Animated, Dimensions } from 'react-native';
-import { useRef, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  ScrollView,
+  Animated,
+  Dimensions,
+  InteractionManager,
+} from 'react-native';
+import { useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,16 +22,36 @@ import { colors, spacing, radius, touch } from '../theme';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export default function MyDayItemModal({ visible, item, onClose, onComplete, onAddPhoto, photoUploading = false }) {
+export default function MyDayItemModal({
+  visible,
+  item,
+  onClose,
+  onDismissed,
+  onComplete,
+  onCompleteFailed,
+  onAddPhoto,
+  photoUploading = false,
+}) {
   const { t } = useTranslation();
   const { supabase } = useAuth();
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
 
   const modalTranslateY = useRef(new Animated.Value(1)).current;
+  const wasVisibleRef = useRef(false);
+  const dismissNotifiedRef = useRef(false);
+
+  const notifyDismissed = useCallback(() => {
+    if (!wasVisibleRef.current || dismissNotifiedRef.current) return;
+    dismissNotifiedRef.current = true;
+    wasVisibleRef.current = false;
+    onDismissed?.();
+  }, [onDismissed]);
 
   useEffect(() => {
     if (visible) {
+      wasVisibleRef.current = true;
+      dismissNotifiedRef.current = false;
       haptics.light();
       modalTranslateY.setValue(1);
       requestAnimationFrame(() => {
@@ -34,8 +63,11 @@ export default function MyDayItemModal({ visible, item, onClose, onComplete, onA
       });
     } else {
       modalTranslateY.setValue(1);
+      const task = InteractionManager.runAfterInteractions(notifyDismissed);
+      return () => task.cancel?.();
     }
-  }, [visible, modalTranslateY]);
+    return undefined;
+  }, [visible, modalTranslateY, notifyDismissed]);
 
   if (!item) return null;
 
@@ -46,14 +78,15 @@ export default function MyDayItemModal({ visible, item, onClose, onComplete, onA
     if (isTask && item.id) {
       try {
         haptics.medium();
+        onComplete?.(item);
+        onClose();
         await completeTask(supabase, item.id);
         haptics.success();
         signalReviewPromptOpportunity();
-        onComplete?.();
-        onClose();
       } catch (error) {
         console.error('Error completing task:', error);
         haptics.error();
+        onCompleteFailed?.(item);
       }
     }
   };
@@ -98,6 +131,7 @@ export default function MyDayItemModal({ visible, item, onClose, onComplete, onA
       transparent={true}
       animationType="none"
       onRequestClose={onClose}
+      onDismiss={notifyDismissed}
     >
       <View style={styles.modalContainer}>
         <ModalScrim onPress={onClose} opacity={0.5} />

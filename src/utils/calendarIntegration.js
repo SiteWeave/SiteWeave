@@ -392,12 +392,11 @@ const transformGoogleEvents = (events) => {
     }));
 };
 
-// Decode HTML entities to text
+// Decode HTML entities to text (DOMParser does not execute scripts)
 const decodeHtmlEntities = (text) => {
     if (!text) return '';
-    const textarea = document.createElement('textarea');
-    textarea.innerHTML = text;
-    return textarea.value;
+    const doc = new DOMParser().parseFromString(String(text), 'text/html');
+    return doc.documentElement.textContent || '';
 };
 
 // Convert HTML string to plain text, preserving basic line breaks
@@ -406,9 +405,8 @@ const htmlToPlainText = (html) => {
     const normalized = html
         .replace(/<\s*br\s*\/?>/gi, '\n')
         .replace(/<\s*\/(p|div|li)\s*>/gi, '\n');
-    const container = document.createElement('div');
-    container.innerHTML = normalized;
-    const text = container.textContent || container.innerText || '';
+    const doc = new DOMParser().parseFromString(normalized, 'text/html');
+    const text = doc.body?.textContent || '';
     return text.replace(/\u00A0/g, ' ') // nbsp
         .replace(/\n{3,}/g, '\n\n')
         .trim();

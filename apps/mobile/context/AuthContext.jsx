@@ -117,6 +117,7 @@ export function AuthProvider({ children }) {
   const [collaborationProjects, setCollaborationProjects] = useState([]);
   const [pendingNotificationRoute, setPendingNotificationRoute] = useState(null);
   const [syncPulse, setSyncPulse] = useState(0);
+  const [notificationPulse, setNotificationPulse] = useState(0);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [canCreateProjects, setCanCreateProjects] = useState(false);
@@ -406,7 +407,12 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (!user?.id || !supabase) return;
-    return subscribeUserNotificationInserts(supabase, user.id, user.email || '');
+    return subscribeUserNotificationInserts(
+      supabase,
+      user.id,
+      user.email || '',
+      () => setNotificationPulse((value) => value + 1),
+    );
   }, [user?.id, user?.email, supabase]);
 
   // Lightweight background/foreground sync trigger.
@@ -732,6 +738,7 @@ export function AuthProvider({ children }) {
       pendingNotificationRoute,
       clearPendingNotificationRoute: () => setPendingNotificationRoute(null),
       syncPulse,
+      notificationPulse,
     }}>
       {children}
     </AuthContext.Provider>

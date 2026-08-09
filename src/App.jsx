@@ -12,11 +12,12 @@ import LoginView from './views/LoginView'
 import GuestTaskShareView from './views/GuestTaskShareView'
 import GuestCloseoutReviewView from './views/GuestCloseoutReviewView'
 import SmsConsentView from './views/SmsConsentView'
+import ProgressReportUnsubscribeView from './views/ProgressReportUnsubscribeView'
 import NotFoundView from './views/NotFoundView'
 import SetupWizardModal from './components/SetupWizardModal'
 import DesktopOnboardingHost from './components/DesktopOnboardingHost'
 import DirectoryManagementModal from './components/DirectoryManagementModal'
-import { seedStarterTemplatesIfNeeded } from '@siteweave/onboarding-ui'
+import { seedStarterTemplatesIfNeeded, shouldShowSetupWizard } from '@siteweave/onboarding-ui'
 import PermissionGuard from './components/PermissionGuard'
 import ForcePasswordReset from './components/ForcePasswordReset'
 import UpdateNotification from './components/UpdateNotification'
@@ -146,24 +147,16 @@ function App() {
     }
   }, [state.user, state.mustChangePassword])
 
-  // Setup wizard: founding Org Admin until organizations.setup_wizard_completed_at is set
+  // Setup wizard: founding admin until organizations.setup_wizard_completed_at is set
   React.useEffect(() => {
-    if (!state.user || !state.currentOrganization || state.mustChangePassword || !state.userRole) {
-      setShowSetupWizard(false)
-      return
-    }
-
-    const isOrgAdmin = state.userRole?.name === 'Org Admin'
-    const isFoundingAdmin =
-      state.currentOrganization.created_by_user_id != null &&
-      state.currentOrganization.created_by_user_id === state.user.id
-    const wizardPending = !state.currentOrganization.setup_wizard_completed_at
-
-    if (isOrgAdmin && isFoundingAdmin && wizardPending) {
-      setShowSetupWizard(true)
-    } else {
-      setShowSetupWizard(false)
-    }
+    setShowSetupWizard(
+      shouldShowSetupWizard({
+        user: state.user,
+        userRole: state.userRole,
+        org: state.currentOrganization,
+        mustChangePassword: state.mustChangePassword,
+      }),
+    )
   }, [state.user, state.userRole, state.currentOrganization, state.mustChangePassword])
 
   React.useEffect(() => {
@@ -245,6 +238,7 @@ function App() {
         <Route path="/t/:token" element={<GuestTaskShareView />} />
         <Route path="/sms-consent/:token" element={<SmsConsentView />} />
         <Route path="/sms-opt-in" element={<SmsConsentView demo />} />
+        <Route path="/unsubscribe/progress-report/:token" element={<ProgressReportUnsubscribeView />} />
         <Route path="/signup" element={<SignUpView />} />
         <Route path="/login" element={<LoginView />} />
         {/* App opens and post-auth default at `/`; keep login here so sign-out / cold start are not 404. */}

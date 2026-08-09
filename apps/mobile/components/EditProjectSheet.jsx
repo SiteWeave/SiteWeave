@@ -71,7 +71,7 @@ export default function EditProjectSheet({
       testID="edit-project-sheet"
     >
       <BottomSheet.Scroll>
-        <ProjectFormFields values={values} onChange={setValues} disabled={saving} />
+        <ProjectFormFields values={values} onChange={setValues} disabled={saving} dateRangeActive={visible} />
         {error ? (
           <Text variant="caption" style={styles.error}>
             {error}

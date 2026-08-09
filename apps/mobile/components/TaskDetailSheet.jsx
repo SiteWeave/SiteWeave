@@ -1,4 +1,5 @@
-import { ScrollView, StyleSheet, View, Image } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import RemoteImage from './RemoteImage';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { normalizeTaskProgressUpdate, fetchTaskPhotos, attachTaskPhotoUrls } from '@siteweave/core-logic';
@@ -227,10 +228,11 @@ export default function TaskDetailSheet({
                     const uri = photo.thumbnail_url || photo.full_url;
                     if (!uri) return null;
                     return (
-                      <Image
+                      <RemoteImage
                         key={photo.id}
-                        source={{ uri }}
+                        uri={uri}
                         style={styles.photoThumb}
+                        recyclingKey={`task-photo-${photo.id}`}
                         accessibilityLabel={t('mobile.task_photo_preview')}
                       />
                     );

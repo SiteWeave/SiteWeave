@@ -6,6 +6,7 @@ import InviteAcceptPage from './components/InviteAcceptPage'
 import GuestTaskShareView from './views/GuestTaskShareView'
 import GuestCloseoutReviewView from './views/GuestCloseoutReviewView'
 import SmsConsentView from './views/SmsConsentView'
+import ProgressReportUnsubscribeView from './views/ProgressReportUnsubscribeView'
 import NotFoundView from './views/NotFoundView'
 import ForcePasswordReset from './components/ForcePasswordReset'
 import AppShell from './layouts/AppShell'
@@ -32,7 +33,7 @@ import { getPostAuthNavigatePath } from './utils/workspaceClient'
 import { ToastProvider } from './context/ToastContext'
 import SetupWizardModal from './components/SetupWizardModal'
 import WebOnboardingHost from './components/WebOnboardingHost'
-import { seedStarterTemplatesIfNeeded } from '@siteweave/onboarding-ui'
+import { seedStarterTemplatesIfNeeded, shouldShowSetupWizard } from '@siteweave/onboarding-ui'
 
 /** Prevent duplicate OAuth processing (matches desktop `App.jsx` behavior). */
 let oauthCallbackProcessing = false
@@ -57,22 +58,14 @@ function WorkspaceLayout({ session }) {
   const [tourReplaySignal, setTourReplaySignal] = React.useState(0)
 
   React.useEffect(() => {
-    if (!state.user || !state.currentOrganization || state.mustChangePassword || !state.userRole) {
-      setShowSetupWizard(false)
-      return
-    }
-
-    const isOrgAdmin = state.userRole?.name === 'Org Admin'
-    const isFoundingAdmin =
-      state.currentOrganization.created_by_user_id != null &&
-      state.currentOrganization.created_by_user_id === state.user.id
-    const wizardPending = !state.currentOrganization.setup_wizard_completed_at
-
-    if (isOrgAdmin && isFoundingAdmin && wizardPending) {
-      setShowSetupWizard(true)
-    } else {
-      setShowSetupWizard(false)
-    }
+    setShowSetupWizard(
+      shouldShowSetupWizard({
+        user: state.user,
+        userRole: state.userRole,
+        org: state.currentOrganization,
+        mustChangePassword: state.mustChangePassword,
+      }),
+    )
   }, [state.user, state.userRole, state.currentOrganization, state.mustChangePassword])
 
   React.useEffect(() => {
@@ -288,6 +281,7 @@ export default function AppStandalone() {
       <Route path={ROUTE_PATHS.guestPunchListReview} element={<GuestCloseoutReviewView />} />
       <Route path={ROUTE_PATHS.smsConsent} element={<SmsConsentView />} />
       <Route path={ROUTE_PATHS.smsOptIn} element={<SmsConsentView demo />} />
+      <Route path={ROUTE_PATHS.progressReportUnsubscribe} element={<ProgressReportUnsubscribeView />} />
       <Route path={ROUTE_PATHS.login} element={<LoginView />} />
       <Route path={ROUTE_PATHS.signup} element={<SignUpView />} />
       <Route path={ROUTE_PATHS.projectInvite} element={<ProjectInviteAcceptPage />} />

@@ -37,6 +37,7 @@ export default function OnboardingPermissionPriming({
     } catch (error) {
       console.warn('Permission onboarding enable failed:', error?.message || error);
       setEnabled(false);
+    } finally {
       setBusy(false);
     }
   };
@@ -48,6 +49,7 @@ export default function OnboardingPermissionPriming({
       await onSkip();
     } catch (error) {
       console.warn('Permission onboarding skip failed:', error?.message || error);
+    } finally {
       setBusy(false);
     }
   };

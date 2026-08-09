@@ -1,7 +1,7 @@
 {
   "name": "siteweave",
   "private": true,
-  "version": "1.0.93",
+  "version": "1.0.94",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite",
@@ -54,7 +54,8 @@
     "react-router-dom": "^7.13.0"
   },
   "overrides": {
-    "dompurify": "3.4.12"
+    "dompurify": "3.4.12",
+    "builder-util-runtime": "9.7.0"
   },
   "devDependencies": {
     "@emnapi/core": "^1.10.0",

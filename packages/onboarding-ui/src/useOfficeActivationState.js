@@ -35,7 +35,7 @@ export function useOfficeActivationState(supabase, organizationId, projects = []
 
     (async () => {
       try {
-        const [phasesRes, reportsRes, invitesRes, membersRes] = await Promise.all([
+        const [phasesRes, reportsRes, invitesRes, profilesRes] = await Promise.all([
           projectIds.length
             ? supabase
                 .from('project_phases')
@@ -51,7 +51,7 @@ export function useOfficeActivationState(supabase, organizationId, projects = []
             .select('id', { count: 'exact', head: true })
             .eq('organization_id', organizationId),
           supabase
-            .from('contacts')
+            .from('profiles')
             .select('id', { count: 'exact', head: true })
             .eq('organization_id', organizationId),
         ]);
@@ -64,7 +64,8 @@ export function useOfficeActivationState(supabase, organizationId, projects = []
         setMetrics({
           projectCount: projects?.length || 0,
           hasPhasesOrGantt: (phasesRes.count ?? 0) > 0,
-          teamInviteSent: (invitesRes.count ?? 0) > 0 || (membersRes.count ?? 0) > 1 || inviteFlag,
+          teamInviteSent:
+            (invitesRes.count ?? 0) > 0 || (profilesRes.count ?? 0) > 1 || inviteFlag,
           reportCount: reportsRes.count ?? 0,
         });
       } catch (error) {

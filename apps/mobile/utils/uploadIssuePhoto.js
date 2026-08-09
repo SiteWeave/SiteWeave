@@ -1,5 +1,15 @@
 import { uriToUploadPayload } from './imageUpload';
+import { jpegFileName, preparePhotoForUpload } from './prepareTaskPhoto';
 import { setIssueBeforePhotoPath, setIssueAfterPhotoPath } from '@siteweave/core-logic';
+import { withOneRetry } from './withOneRetry';
+
+async function payloadFromLocalUri(uri, fileName) {
+  const prepared = await preparePhotoForUpload(uri);
+  return uriToUploadPayload(prepared.uri, {
+    mimeType: prepared.mimeType,
+    fileName: jpegFileName(fileName),
+  });
+}
 
 export async function uploadIssuePhotoFromUri(
   supabase,
@@ -9,16 +19,18 @@ export async function uploadIssuePhotoFromUri(
     throw new Error('Missing issue photo upload context');
   }
 
-  const payload = await uriToUploadPayload(uri, { fileName });
-  const safeName = (fileName || payload.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const payload = await payloadFromLocalUri(uri, fileName);
+  const safeName = (payload.name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
   const path = `field-issues/${issueId}/${Date.now()}_${safeName}`;
 
-  const { error: uploadError } = await supabase.storage.from('message_files').upload(path, payload.body, {
-    cacheControl: '3600',
-    upsert: false,
-    contentType: payload.type || 'image/jpeg',
+  await withOneRetry(async () => {
+    const { error: uploadError } = await supabase.storage.from('message_files').upload(path, payload.body, {
+      cacheControl: '3600',
+      upsert: true,
+      contentType: payload.type || 'image/jpeg',
+    });
+    if (uploadError) throw uploadError;
   });
-  if (uploadError) throw uploadError;
 
   const { data: urlData } = supabase.storage.from('message_files').getPublicUrl(path);
 
@@ -45,16 +57,18 @@ export async function uploadIssueBeforePhotoFromUri(
   { issueId, uri, userId, organizationId, fileName },
 ) {
   if (!issueId || !uri) throw new Error('Missing before photo upload context');
-  const payload = await uriToUploadPayload(uri, { fileName });
-  const safeName = (fileName || payload.name || 'before.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const payload = await payloadFromLocalUri(uri, fileName);
+  const safeName = (payload.name || 'before.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
   const path = `field-issues/${issueId}/before_${Date.now()}_${safeName}`;
 
-  const { error: uploadError } = await supabase.storage.from('message_files').upload(path, payload.body, {
-    cacheControl: '3600',
-    upsert: false,
-    contentType: payload.type || 'image/jpeg',
+  await withOneRetry(async () => {
+    const { error: uploadError } = await supabase.storage.from('message_files').upload(path, payload.body, {
+      cacheControl: '3600',
+      upsert: true,
+      contentType: payload.type || 'image/jpeg',
+    });
+    if (uploadError) throw uploadError;
   });
-  if (uploadError) throw uploadError;
 
   await setIssueBeforePhotoPath(supabase, issueId, path);
   const { data: urlData } = supabase.storage.from('message_files').getPublicUrl(path);
@@ -66,16 +80,18 @@ export async function uploadIssueAfterPhotoFromUri(
   { issueId, uri, userId, organizationId, fileName },
 ) {
   if (!issueId || !uri) throw new Error('Missing after photo upload context');
-  const payload = await uriToUploadPayload(uri, { fileName });
-  const safeName = (fileName || payload.name || 'after.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const payload = await payloadFromLocalUri(uri, fileName);
+  const safeName = (payload.name || 'after.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
   const path = `field-issues/${issueId}/after_${Date.now()}_${safeName}`;
 
-  const { error: uploadError } = await supabase.storage.from('message_files').upload(path, payload.body, {
-    cacheControl: '3600',
-    upsert: false,
-    contentType: payload.type || 'image/jpeg',
+  await withOneRetry(async () => {
+    const { error: uploadError } = await supabase.storage.from('message_files').upload(path, payload.body, {
+      cacheControl: '3600',
+      upsert: true,
+      contentType: payload.type || 'image/jpeg',
+    });
+    if (uploadError) throw uploadError;
   });
-  if (uploadError) throw uploadError;
 
   await setIssueAfterPhotoPath(supabase, issueId, path);
   const { data: urlData } = supabase.storage.from('message_files').getPublicUrl(path);

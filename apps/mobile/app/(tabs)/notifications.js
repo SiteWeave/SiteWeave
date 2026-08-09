@@ -1,5 +1,6 @@
-import { View, Text, StyleSheet, FlatList } from 'react-native';
-import { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
@@ -56,10 +57,6 @@ export default function NotificationsScreen() {
       setLoading(false);
     }
   }, [supabase, user]);
-
-  useEffect(() => {
-    loadNotifications();
-  }, [loadNotifications]);
 
   useFocusEffect(
     useCallback(() => {
@@ -190,9 +187,9 @@ export default function NotificationsScreen() {
           <SkeletonList count={8} rowHeight={88} />
         </View>
       ) : (
-        <FlatList
+        <FlashList
           data={visibleNotifications}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => String(item.id)}
           contentContainerStyle={[styles.listContent, { paddingBottom: scrollBottomPadding(insets, spacing.lg) }]}
           renderItem={renderNotification}
           ListEmptyComponent={

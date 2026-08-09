@@ -27,6 +27,7 @@ import {
 import { needsProfileCompletion, hasPendingSignupProfileSetup } from '../utils/authProfile';
 import { getLastNotificationRoute } from '../utils/notifications';
 import { initSentry, setSentryUser } from '../utils/sentry';
+import AppErrorBoundary from '../components/AppErrorBoundary';
 
 initSentry();
 
@@ -188,25 +189,27 @@ export default function RootLayout() {
   if (!i18nLoaded) return null;
 
   return (
-    <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
-      <SafeAreaProvider>
-        <I18nextProvider i18n={i18n}>
-          <AuthProvider>
-            <AppUpdateProvider>
-              <SyncStatusProvider>
-                <MobileExperienceProvider>
-                  <BrandingProvider>
-                    <RootLayoutNav />
-                  </BrandingProvider>
-                </MobileExperienceProvider>
-                <StoreUpdateModal />
-                <ReviewPromptModal />
-              </SyncStatusProvider>
-            </AppUpdateProvider>
-          </AuthProvider>
-        </I18nextProvider>
-      </SafeAreaProvider>
-    </KeyboardProvider>
+    <AppErrorBoundary>
+      <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
+        <SafeAreaProvider>
+          <I18nextProvider i18n={i18n}>
+            <AuthProvider>
+              <AppUpdateProvider>
+                <SyncStatusProvider>
+                  <MobileExperienceProvider>
+                    <BrandingProvider>
+                      <RootLayoutNav />
+                    </BrandingProvider>
+                  </MobileExperienceProvider>
+                  <StoreUpdateModal />
+                  <ReviewPromptModal />
+                </SyncStatusProvider>
+              </AppUpdateProvider>
+            </AuthProvider>
+          </I18nextProvider>
+        </SafeAreaProvider>
+      </KeyboardProvider>
+    </AppErrorBoundary>
   );
 }
 

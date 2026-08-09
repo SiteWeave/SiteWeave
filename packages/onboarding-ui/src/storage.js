@@ -22,19 +22,31 @@ export function saveOnboardingPreferences(userId, preferences) {
   }
 }
 
-export function getChecklistDismissed(userId) {
+function checklistDismissKey(userId, organizationId) {
+  if (organizationId) {
+    return `${PREFIX}checklist_dismissed_${userId}_${organizationId}`;
+  }
+  // Legacy user-only key (pre-org-scoped dismiss)
+  return `${PREFIX}checklist_dismissed_${userId}`;
+}
+
+export function getChecklistDismissed(userId, organizationId = null) {
   if (!userId) return false;
   try {
-    return localStorage.getItem(`${PREFIX}checklist_dismissed_${userId}`) === '1';
+    if (organizationId) {
+      const scoped = localStorage.getItem(checklistDismissKey(userId, organizationId));
+      if (scoped != null) return scoped === '1';
+    }
+    return localStorage.getItem(checklistDismissKey(userId, null)) === '1';
   } catch {
     return false;
   }
 }
 
-export function setChecklistDismissed(userId, dismissed = true) {
+export function setChecklistDismissed(userId, dismissed = true, organizationId = null) {
   if (!userId) return;
   try {
-    localStorage.setItem(`${PREFIX}checklist_dismissed_${userId}`, dismissed ? '1' : '0');
+    localStorage.setItem(checklistDismissKey(userId, organizationId), dismissed ? '1' : '0');
   } catch (error) {
     console.error('Error saving checklist dismissal:', error);
   }

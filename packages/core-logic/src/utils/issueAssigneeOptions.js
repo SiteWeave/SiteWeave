@@ -1,6 +1,6 @@
 /**
- * Field-issue assignees are auth user ids (profiles.id).
- * Prefer people on the project; fall back to org profiles when needed.
+ * Field-issue assignees are project contacts (anyone on the project).
+ * When a contact has a linked profile, userId is included for app notifications.
  */
 
 const UUID_RE =
@@ -21,25 +21,68 @@ export function resolveContactAuthUserId(contact) {
   return null;
 }
 
+function isContactOnProject(contact, projectId) {
+  if (!contact || projectId == null) return false;
+  const pid = String(projectId);
+  return (
+    Array.isArray(contact.project_contacts) &&
+    contact.project_contacts.some((pc) => String(pc.project_id) === pid)
+  );
+}
+
+function optionFromProjectContact(contact, fallbackLabel) {
+  const rawId = contact?.id != null ? String(contact.id) : '';
+  // Virtual profile-only rows use id `profile:<userId>` — treat userId as both keys.
+  if (rawId.startsWith('profile:')) {
+    const userId = rawId.slice('profile:'.length);
+    if (!isUuid(userId)) return null;
+    return {
+      contactId: userId,
+      userId,
+      label: contact.name || contact.email || fallbackLabel,
+      email: null,
+      phone: null,
+      isVirtualProfile: true,
+    };
+  }
+  if (!isUuid(rawId)) return null;
+  const email = contact.email ? String(contact.email).trim() : null;
+  const phone = contact.phone ? String(contact.phone).trim() : null;
+  return {
+    contactId: rawId,
+    userId: resolveContactAuthUserId(contact),
+    label: contact.name || contact.email || fallbackLabel,
+    email: email && email.includes('@') ? email : null,
+    phone: phone || null,
+    isVirtualProfile: false,
+  };
+}
+
+function dedupeByContactId(options) {
+  const seen = new Set();
+  const opts = [];
+  for (const opt of options) {
+    if (!opt?.contactId || seen.has(opt.contactId)) continue;
+    seen.add(opt.contactId);
+    opts.push(opt);
+  }
+  return opts.sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')));
+}
+
 /**
- * Build assignee options from in-memory contacts (web AppContext shape).
- * @returns {{ userId: string, label: string, email?: string|null, phone?: string|null }[]}
+ * Build assignee options from in-memory contacts — everyone on the project.
+ * @returns {{ contactId: string, userId: string|null, label: string, email?: string|null, phone?: string|null }[]}
  */
 export function buildIssueAssigneeOptionsFromContacts(
   contacts = [],
   { projectId = null, organizationId = null, fallbackLabel = 'Team member' } = {},
 ) {
-  const pid = projectId != null ? String(projectId) : null;
-  let pool = (contacts || []).filter((contact) => {
-    if (!pid) return false;
-    return (
-      Array.isArray(contact.project_contacts) &&
-      contact.project_contacts.some((pc) => String(pc.project_id) === pid)
-    );
-  });
+  const list = contacts || [];
+  let pool = list.filter((contact) => isContactOnProject(contact, projectId));
 
+  // If nobody is linked to the project yet, fall back to org team directory.
   if (pool.length === 0) {
-    pool = (contacts || []).filter((contact) => {
+    pool = list.filter((contact) => {
       if (
         organizationId &&
         contact.organization_id &&
@@ -52,29 +95,52 @@ export function buildIssueAssigneeOptionsFromContacts(
     });
   }
 
-  const seen = new Set();
-  const opts = [];
-  for (const contact of pool) {
-    const userId = resolveContactAuthUserId(contact);
-    if (!userId || seen.has(userId)) continue;
-    seen.add(userId);
-    const email = contact.email ? String(contact.email).trim() : null;
-    const phone = contact.phone ? String(contact.phone).trim() : null;
-    opts.push({
-      userId,
-      label: contact.name || contact.email || fallbackLabel,
-      email: email && email.includes('@') ? email : null,
-      phone: phone || null,
-    });
+  return dedupeByContactId(
+    pool.map((c) => optionFromProjectContact(c, fallbackLabel)).filter(Boolean),
+  );
+}
+
+/**
+ * Resolve DB assignee columns from a selected contact option / id.
+ * Virtual profile rows (no real contact) only set assigned_to_user_id.
+ */
+export function resolveIssueAssigneePatch(optionOrContactId, options = []) {
+  if (optionOrContactId && typeof optionOrContactId === 'object') {
+    const opt = optionOrContactId;
+    if (opt.isVirtualProfile) {
+      return { assigned_to_contact_id: null, assigned_to_user_id: opt.userId || null };
+    }
+    return {
+      assigned_to_contact_id: opt.contactId || null,
+      assigned_to_user_id: opt.userId || null,
+    };
   }
-  return opts;
+
+  const id = optionOrContactId ? String(optionOrContactId) : '';
+  if (!id) {
+    return { assigned_to_contact_id: null, assigned_to_user_id: null };
+  }
+
+  const match = (options || []).find((o) => o.contactId === id || o.userId === id);
+  if (match?.isVirtualProfile) {
+    return { assigned_to_contact_id: null, assigned_to_user_id: match.userId || null };
+  }
+  if (match) {
+    return {
+      assigned_to_contact_id: match.contactId,
+      assigned_to_user_id: match.userId || null,
+    };
+  }
+
+  if (isUuid(id)) {
+    return { assigned_to_contact_id: id, assigned_to_user_id: null };
+  }
+  return { assigned_to_contact_id: null, assigned_to_user_id: null };
 }
 
 /**
  * Load assignee options for a project (mobile / server-friendly).
- * @param {import('@supabase/supabase-js').SupabaseClient} supabase
- * @param {{ projectId: string, organizationId?: string|null, fallbackLabel?: string }} args
- * @returns {Promise<{ userId: string, label: string, email?: string|null, phone?: string|null }[]>}
+ * Returns every project contact; includes userId when a profile is linked.
  */
 export async function fetchIssueAssigneeOptions(supabase, args = {}) {
   const {
@@ -85,45 +151,79 @@ export async function fetchIssueAssigneeOptions(supabase, args = {}) {
 
   if (!supabase || !projectId) return [];
 
-  const { data: rows, error: pcError } = await supabase
+  let rows = [];
+  const withFk = await supabase
     .from('project_contacts')
-    .select('contact_id, contacts!fk_project_contacts_contact_id(id, name, email, phone)')
+    .select('contact_id, contacts!fk_project_contacts_contact_id(id, name, email, phone, type)')
     .eq('project_id', projectId);
 
-  if (pcError) throw pcError;
-
-  const contactIds = (rows || [])
-    .map((row) => row.contact_id || row.contacts?.id)
-    .filter((id) => isUuid(id));
-
-  let profileQuery = supabase
-    .from('profiles')
-    .select('id, contact_id, contacts:contact_id(name, email, phone)');
-
-  if (contactIds.length > 0) {
-    profileQuery = profileQuery.in('contact_id', contactIds);
-  } else if (organizationId) {
-    profileQuery = profileQuery.eq('organization_id', organizationId);
+  if (withFk.error) {
+    const plain = await supabase
+      .from('project_contacts')
+      .select('contact_id')
+      .eq('project_id', projectId);
+    if (plain.error) throw plain.error;
+    rows = plain.data || [];
   } else {
-    return [];
+    rows = withFk.data || [];
   }
 
-  const { data: profiles, error } = await profileQuery;
-  if (error) throw error;
+  let contactIds = [...new Set(
+    (rows || []).map((row) => row.contact_id || row.contacts?.id).filter((id) => isUuid(id)),
+  )];
 
-  const seen = new Set();
-  const opts = [];
-  for (const profile of profiles || []) {
-    if (!isUuid(profile.id) || seen.has(profile.id)) continue;
-    seen.add(profile.id);
-    const email = profile.contacts?.email ? String(profile.contacts.email).trim() : null;
-    const phone = profile.contacts?.phone ? String(profile.contacts.phone).trim() : null;
-    opts.push({
-      userId: profile.id,
-      label: profile.contacts?.name || profile.contacts?.email || fallbackLabel,
+  // Fall back to org team contacts when the project has nobody linked yet.
+  if (contactIds.length === 0 && organizationId) {
+    const { data: orgContacts, error: orgErr } = await supabase
+      .from('contacts')
+      .select('id, name, email, phone, type')
+      .eq('organization_id', organizationId)
+      .in('type', ['Team', 'Subcontractor']);
+    if (orgErr) throw orgErr;
+    rows = (orgContacts || []).map((c) => ({ contact_id: c.id, contacts: c }));
+    contactIds = (orgContacts || []).map((c) => c.id).filter((id) => isUuid(id));
+  }
+
+  if (contactIds.length === 0) return [];
+
+  // Load contact rows when embed was missing.
+  const needContactFetch = (rows || []).some((r) => !r.contacts?.name && !r.contacts?.email);
+  let contactById = new Map();
+  if (needContactFetch) {
+    const { data: contacts, error: cErr } = await supabase
+      .from('contacts')
+      .select('id, name, email, phone, type')
+      .in('id', contactIds);
+    if (cErr) throw cErr;
+    contactById = new Map((contacts || []).map((c) => [c.id, c]));
+  } else {
+    for (const row of rows || []) {
+      const c = row.contacts;
+      const id = row.contact_id || c?.id;
+      if (id && c) contactById.set(id, { ...c, id });
+    }
+  }
+
+  const { data: profiles, error: pErr } = await supabase
+    .from('profiles')
+    .select('id, contact_id')
+    .in('contact_id', contactIds);
+  if (pErr) throw pErr;
+  const userByContact = new Map((profiles || []).map((p) => [p.contact_id, p.id]));
+
+  const opts = contactIds.map((contactId) => {
+    const c = contactById.get(contactId) || { id: contactId };
+    const email = c.email ? String(c.email).trim() : null;
+    const phone = c.phone ? String(c.phone).trim() : null;
+    return {
+      contactId,
+      userId: userByContact.get(contactId) || null,
+      label: c.name || c.email || fallbackLabel,
       email: email && email.includes('@') ? email : null,
       phone: phone || null,
-    });
-  }
-  return opts;
+      isVirtualProfile: false,
+    };
+  });
+
+  return dedupeByContactId(opts);
 }

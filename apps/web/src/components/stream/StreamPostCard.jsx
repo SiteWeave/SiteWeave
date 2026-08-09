@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatRelativeTime } from '@siteweave/i18n';
-import { updateStreamPost, deleteStreamPost, enrichStreamPost } from '@siteweave/core-logic';
+import { updateStreamPost, deleteStreamPost, enrichStreamPost, updateMilestoneApprovalStatus } from '@siteweave/core-logic';
 import { useToast } from '../../context/ToastContext';
 import StreamReplyThread from './StreamReplyThread';
 import DailyLogStreamBody from './DailyLogStreamBody';
@@ -42,6 +42,7 @@ export default function StreamPostCard({
   const [editTitle, setEditTitle] = React.useState(post.title || '');
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
+  const [approving, setApproving] = React.useState(false);
 
   const isAuthor = post.author_id === currentUserId;
   const authorName = post.author?.name || t('stream.team_member');
@@ -51,6 +52,8 @@ export default function StreamPostCard({
     : post.body;
   const replyCount = post.reply_count || 0;
   const showTitleField = post.post_type === 'announcement' || post.post_type === 'milestone';
+  const isMilestone = post.post_type === 'milestone';
+  const approvalStatus = post.payload?.approval_status || (isMilestone ? 'pending' : null);
 
   const handleSaveEdit = async () => {
     setSaving(true);
@@ -86,6 +89,26 @@ export default function StreamPostCard({
     }
   };
 
+  const handleMilestoneStatus = async (status) => {
+    setApproving(true);
+    try {
+      const updated = await updateMilestoneApprovalStatus(
+        supabaseClient,
+        post.id,
+        status,
+        post.payload || {},
+      );
+      const enriched = await enrichStreamPost(supabaseClient, updated, { reply_count: replyCount });
+      onPostChange?.(enriched);
+      addToast(t('stream.milestone_status_updated'), 'success');
+    } catch (e) {
+      console.error(e);
+      addToast(e.message || t('stream.update_error'), 'error');
+    } finally {
+      setApproving(false);
+    }
+  };
+
   return (
     <article className="rounded-2xl border border-slate-200/80 bg-white px-6 py-5 shadow-xs transition-shadow hover:shadow-sm">
       <header className="mb-3 flex items-start justify-between gap-3">
@@ -104,6 +127,19 @@ export default function StreamPostCard({
               >
                 {t(POST_TYPE_I18N[post.post_type] || POST_TYPE_I18N.general)}
               </span>
+              {isMilestone && approvalStatus ? (
+                <span
+                  className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                    approvalStatus === 'approved'
+                      ? 'bg-emerald-50 text-emerald-800'
+                      : approvalStatus === 'rejected'
+                        ? 'bg-red-50 text-red-800'
+                        : 'bg-amber-50 text-amber-900'
+                  }`}
+                >
+                  {t(`stream.milestone_${approvalStatus}`)}
+                </span>
+              ) : null}
             </div>
             <p className="text-[11px] text-slate-400">{formatRelativeTime(post.created_at, t)}</p>
           </div>
@@ -205,6 +241,27 @@ export default function StreamPostCard({
         >
           {post.file_name || t('stream.attachment')}
         </a>
+      ) : null}
+
+      {isMilestone && approvalStatus === 'pending' && !editing ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={approving}
+            onClick={() => handleMilestoneStatus('approved')}
+            className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {t('stream.milestone_approve')}
+          </button>
+          <button
+            type="button"
+            disabled={approving}
+            onClick={() => handleMilestoneStatus('rejected')}
+            className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+          >
+            {t('stream.milestone_reject')}
+          </button>
+        </div>
       ) : null}
 
       <footer className="mt-4 flex items-center gap-3 border-t border-slate-100 pt-3">

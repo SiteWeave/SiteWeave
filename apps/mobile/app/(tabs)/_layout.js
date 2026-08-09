@@ -38,7 +38,8 @@ function TabScaffold() {
         tabBar={(props) => <FloatingTabBar {...props} />}
         screenOptions={{
           headerShown: false,
-          lazy: false,
+          lazy: true,
+          freezeOnBlur: true,
         }}
       >
         <Tabs.Screen name="index" options={{ title: 'Home' }} />

@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { filterByOrganizationId } from '../utils/orgScope';
 import { getPinnedProjectId, setPinnedProjectId } from '../utils/widgetPreferences';
 import { patchWidgetSnapshot } from '../utils/widgetBridge';
+import { HOME_SCREEN_WIDGETS_ENABLED } from '../utils/widgetFeatureFlags';
 
 export default function WidgetPinnedProjectSheet({ visible, onClose }) {
   const { t } = useTranslation();
@@ -20,7 +21,7 @@ export default function WidgetPinnedProjectSheet({ visible, onClose }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!HOME_SCREEN_WIDGETS_ENABLED || !visible) return;
     let cancelled = false;
 
     const load = async () => {
@@ -75,6 +76,8 @@ export default function WidgetPinnedProjectSheet({ visible, onClose }) {
       setSaving(false);
     }
   };
+
+  if (!HOME_SCREEN_WIDGETS_ENABLED) return null;
 
   return (
     <BottomSheet

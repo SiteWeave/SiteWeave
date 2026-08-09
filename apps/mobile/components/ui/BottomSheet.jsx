@@ -231,7 +231,11 @@ export default function BottomSheet({
         setClosing(false);
         setRendered(false);
         sheetOverlay?.sheetClosed({ hideTabBar: hideTabBarRef.current, reduceMotion });
-        onDismissedRef.current?.();
+        // Defer until after Modal commits visible=false — launching native pickers
+        // in the same turn as Modal teardown hangs on some devices.
+        setTimeout(() => {
+          onDismissedRef.current?.();
+        }, 0);
       };
 
       if (reduceMotion || dismissWithoutAnimationRef.current) {

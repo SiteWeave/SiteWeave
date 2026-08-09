@@ -40,38 +40,42 @@ export function resolveContactAuthUserId(contact) {
 
 /**
  * Build field-issue assignee options from in-memory contacts (prefer project members).
+ * Falls back to org team accounts when project contacts lack linked profiles.
  * @returns {{ userId: string, label: string }[]}
  */
 export function buildIssueAssigneeOptionsFromContacts(
   contacts = [],
   { projectId = null, organizationId = null, fallbackLabel = 'Team member' } = {},
 ) {
-  const members = getProjectMemberContacts(projectId, contacts);
-  let pool = members;
-  if (pool.length === 0) {
-    pool = (contacts || []).filter((contact) => {
-      if (
-        organizationId &&
-        contact.organization_id &&
-        String(contact.organization_id) !== String(organizationId)
-      ) {
-        return false;
-      }
-      const type = String(contact.type || '').toLowerCase();
-      return !type || type === 'team' || type === 'internal' || type === 'user';
-    });
-  }
+  const list = contacts || [];
+  const members = getProjectMemberContacts(projectId, list);
+  const orgPool = list.filter((contact) => {
+    if (
+      organizationId &&
+      contact.organization_id &&
+      String(contact.organization_id) !== String(organizationId)
+    ) {
+      return false;
+    }
+    const type = String(contact.type || '').toLowerCase();
+    return !type || type === 'team' || type === 'internal' || type === 'user';
+  });
 
   const seen = new Set();
   const opts = [];
-  for (const contact of pool) {
-    const userId = resolveContactAuthUserId(contact);
-    if (!userId || seen.has(userId)) continue;
-    seen.add(userId);
-    opts.push({
-      userId,
-      label: contact.name || contact.email || fallbackLabel,
-    });
-  }
+  const pushFrom = (pool) => {
+    for (const contact of pool) {
+      const userId = resolveContactAuthUserId(contact);
+      if (!userId || seen.has(userId)) continue;
+      seen.add(userId);
+      opts.push({
+        userId,
+        label: contact.name || contact.email || fallbackLabel,
+      });
+    }
+  };
+
+  pushFrom(members);
+  if (opts.length === 0) pushFrom(orgPool);
   return opts;
 }

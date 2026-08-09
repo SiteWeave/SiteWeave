@@ -162,6 +162,7 @@ export default function CreateProjectSheet({
           disabled={saving}
           compact={!showMoreDetails}
           recentAddresses={recentAddresses}
+          dateRangeActive={visible}
         />
         <PressableWithFade
           style={styles.moreToggle}

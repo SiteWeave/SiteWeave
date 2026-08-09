@@ -282,24 +282,49 @@ serve(async (req) => {
       console.error('Progress report PDF export link generation failed (email will still send):', exportError)
     }
 
-    const emailHtml = reportExportUrl
+    const emailHtmlBase = reportExportUrl
       ? injectProgressReportExportButton(emailContent.html, reportExportUrl)
       : emailContent.html
-    const emailText = reportExportUrl
+    const emailTextBase = reportExportUrl
       ? `${emailContent.text}\n\nDownload PDF: ${reportExportUrl}`
       : emailContent.text
 
     // Determine recipients (null-safe: relation may be missing or empty)
-    const rawRecipients = schedule.progress_report_recipients || []
-    let recipients: string[] = []
+    const rawRecipients = (schedule.progress_report_recipients || []) as Array<{
+      id?: string
+      email?: string
+      is_active?: boolean
+      unsubscribe_token?: string | null
+    }>
+    type SendTarget = { email: string; unsubscribeUrl?: string | null }
+    const sendTargets: SendTarget[] = []
+
     if (is_test && test_email) {
-      recipients = [test_email]
+      sendTargets.push({ email: test_email, unsubscribeUrl: null })
     } else {
-      recipients = rawRecipients
-        .filter((r: { is_active?: boolean }) => r.is_active !== false)
-        .map((r: { email: string }) => r.email)
-        .filter(Boolean)
+      const base = appBaseUrl()
+      for (const row of rawRecipients) {
+        if (row.is_active === false || !row.email) continue
+        let token = row.unsubscribe_token || null
+        if (!token && row.id) {
+          token = newUnsubscribeToken()
+          const { error: tokenError } = await supabase
+            .from('progress_report_recipients')
+            .update({ unsubscribe_token: token })
+            .eq('id', row.id)
+          if (tokenError) {
+            console.warn('Could not persist unsubscribe_token:', tokenError.message)
+            token = null
+          }
+        }
+        sendTargets.push({
+          email: row.email,
+          unsubscribeUrl: token ? `${base}/unsubscribe/progress-report/${token}` : null,
+        })
+      }
     }
+
+    const recipients = sendTargets.map((t) => t.email)
 
     if (recipients.length === 0) {
       return new Response(
@@ -314,38 +339,60 @@ serve(async (req) => {
       )
     }
 
-    // Send email via Resend
+    // Send email via Resend (per recipient when unsubscribe links are present)
     let emailId = null
     if (RESEND_API_KEY) {
-      const resendResponse = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${RESEND_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: RESEND_FROM,
-          to: recipients,
-          subject: emailContent.subject,
-          html: emailHtml,
-          text: emailText,
-        })
-      })
-
-      const resendRaw = await resendResponse.text()
-      let resendData: Record<string, unknown> = {}
-      if (resendRaw) {
-        try {
-          resendData = JSON.parse(resendRaw) as Record<string, unknown>
-        } catch {
-          resendData = { raw: resendRaw.slice(0, 500) }
+      const sendErrors: Array<{ email: string; error: unknown }> = []
+      for (const target of sendTargets) {
+        const html = target.unsubscribeUrl
+          ? injectProgressReportUnsubscribe(emailHtmlBase, target.unsubscribeUrl)
+          : emailHtmlBase
+        const text = target.unsubscribeUrl
+          ? `${emailTextBase}\n\nUnsubscribe: ${target.unsubscribeUrl}`
+          : emailTextBase
+        const headers: Record<string, string> = {}
+        if (target.unsubscribeUrl) {
+          headers['List-Unsubscribe'] = `<${target.unsubscribeUrl}>`
+          headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
         }
+
+        const resendResponse = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: RESEND_FROM,
+            to: [target.email],
+            subject: emailContent.subject,
+            html,
+            text,
+            ...(Object.keys(headers).length ? { headers } : {}),
+          })
+        })
+
+        const resendRaw = await resendResponse.text()
+        let resendData: Record<string, unknown> = {}
+        if (resendRaw) {
+          try {
+            resendData = JSON.parse(resendRaw) as Record<string, unknown>
+          } catch {
+            resendData = { raw: resendRaw.slice(0, 500) }
+          }
+        }
+
+        if (!resendResponse.ok) {
+          console.error('Resend error:', target.email, resendData)
+          sendErrors.push({ email: target.email, error: resendData })
+          continue
+        }
+        emailId = resendData.id || emailId
       }
 
-      if (!resendResponse.ok) {
-        console.error('Resend error:', resendData)
+      if (sendErrors.length === sendTargets.length) {
         return new Response(
-          JSON.stringify({ error: 'Failed to send email via Resend', details: resendData }),
+          JSON.stringify({ error: 'Failed to send email via Resend', details: sendErrors }),
           { 
             status: 500, 
             headers: { 
@@ -355,8 +402,6 @@ serve(async (req) => {
           }
         )
       }
-
-      emailId = resendData.id
     } else {
       console.log('Email would be sent to:', recipients)
       console.log('Subject:', emailContent.subject)
@@ -603,6 +648,26 @@ function injectProgressReportExportButton(html: string, reportExportUrl: string)
     /(<p style="margin:0;color:#9ca3af;font-size:11px;">Automated progress report from [^<]+<\/p>\s*<\/td>)(\s*<\/tr>)/,
     `$1${pdfCell}$2`,
   )
+}
+
+function injectProgressReportUnsubscribe(html: string, unsubscribeUrl: string): string {
+  const safeUrl = unsubscribeUrl.replace(/"/g, '&quot;')
+  const block = `<p style="margin:12px 0 0;color:#9ca3af;font-size:11px;line-height:1.5;">
+    Don't want these emails?
+    <a href="${safeUrl}" style="color:#6b7280;text-decoration:underline;">Unsubscribe</a>
+  </p>`
+  if (html.includes('<!-- siteweave-unsubscribe-slot -->')) {
+    return html.replace('<!-- siteweave-unsubscribe-slot -->', block)
+  }
+  return `${html}${block}`
+}
+
+function appBaseUrl(): string {
+  return (Deno.env.get('APP_URL') || Deno.env.get('VITE_APP_URL') || 'https://app.siteweave.org').replace(/\/+$/, '')
+}
+
+function newUnsubscribeToken(): string {
+  return crypto.randomUUID().replace(/-/g, '')
 }
 
 async function ensureReportExportBucket(supabase: ReturnType<typeof createClient>, bucketName: string) {

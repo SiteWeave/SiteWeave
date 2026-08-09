@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   CACHE_TTL,
   cacheKey,
@@ -7,16 +6,31 @@ import {
   isMemoryCacheFresh,
   invalidateMemoryCache,
 } from '@siteweave/core-logic';
+import {
+  getStorageString,
+  setStorageString,
+  removeStorageKey,
+  getAllStorageKeys,
+  multiRemoveStorageKeys,
+  getFastString,
+  setFastString,
+  isFastStorageNative,
+} from './fastStorage';
 
 const STORAGE_PREFIX = 'siteweave_cache_v1:';
 
 async function readStorage(key) {
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_PREFIX + key);
+    const storageKey = STORAGE_PREFIX + key;
+    // Sync MMKV path for hot reads when available
+    let raw = isFastStorageNative ? getFastString(storageKey) : null;
+    if (raw == null) {
+      raw = await getStorageString(storageKey);
+    }
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.expiresAt || Date.now() > parsed.expiresAt) {
-      await AsyncStorage.removeItem(STORAGE_PREFIX + key);
+      await removeStorageKey(storageKey);
       return null;
     }
     return parsed.data;
@@ -27,17 +41,20 @@ async function readStorage(key) {
 
 async function writeStorage(key, data, ttlMs) {
   try {
-    await AsyncStorage.setItem(
-      STORAGE_PREFIX + key,
-      JSON.stringify({ data, expiresAt: Date.now() + ttlMs }),
-    );
+    const storageKey = STORAGE_PREFIX + key;
+    const payload = JSON.stringify({ data, expiresAt: Date.now() + ttlMs });
+    if (isFastStorageNative) {
+      setFastString(storageKey, payload);
+      return;
+    }
+    await setStorageString(storageKey, payload);
   } catch {
     // ignore quota errors
   }
 }
 
 /**
- * Read-through cache: memory first, then AsyncStorage.
+ * Read-through cache: memory first, then MMKV/AsyncStorage.
  */
 export async function getCached(userId, resource, ttlMs = CACHE_TTL.list) {
   const key = cacheKey(userId, resource);
@@ -62,9 +79,9 @@ export async function invalidateCached(userId, resourcePrefix) {
   const prefix = cacheKey(userId, resourcePrefix);
   invalidateMemoryCache(prefix);
   try {
-    const keys = await AsyncStorage.getAllKeys();
+    const keys = await getAllStorageKeys();
     const toRemove = keys.filter((k) => k.startsWith(STORAGE_PREFIX + prefix));
-    if (toRemove.length) await AsyncStorage.multiRemove(toRemove);
+    if (toRemove.length) await multiRemoveStorageKeys(toRemove);
   } catch {
     // ignore
   }

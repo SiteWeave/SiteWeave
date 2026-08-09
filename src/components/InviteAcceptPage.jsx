@@ -589,12 +589,27 @@ function InviteAcceptPage() {
           .single();
 
         if (orgRow && orgRow.created_by_user_id == null) {
-          const { error: claimError } = await supabase
-            .from('organizations')
-            .update({ created_by_user_id: authData.user.id })
-            .eq('id', invitation.organization_id)
-            .is('created_by_user_id', null);
-
+          let claimError = null;
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            const { error } = await supabase
+              .from('organizations')
+              .update({ created_by_user_id: authData.user.id })
+              .eq('id', invitation.organization_id)
+              .is('created_by_user_id', null);
+            claimError = error;
+            if (!error) {
+              const { data: verify } = await supabase
+                .from('organizations')
+                .select('created_by_user_id')
+                .eq('id', invitation.organization_id)
+                .single();
+              if (verify?.created_by_user_id === authData.user.id) {
+                claimError = null;
+                break;
+              }
+            }
+            await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+          }
           if (claimError) {
             console.warn('Could not claim organization created_by_user_id:', claimError);
           }

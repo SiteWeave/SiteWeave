@@ -292,14 +292,17 @@
       const adminPassword = document.getElementById('adminPassword').value.trim();
 
       if (!supabaseUrl || !authToken) {
-        showResult('error', 'Please configure your Supabase URL and Auth Token first.');
+        showResult('error', [el('p', { className: 'info-text' }, 'Please configure your Supabase URL and Auth Token first.')]);
         return;
       }
 
       const submitBtn = document.getElementById('submitBtn');
-      const originalText = submitBtn.innerHTML;
+      const originalText = submitBtn.textContent;
       submitBtn.disabled = true;
-      submitBtn.innerHTML = '<span class="loading"></span> Creating...';
+      submitBtn.replaceChildren();
+      const spinner = document.createElement('span');
+      spinner.className = 'loading';
+      submitBtn.append(spinner, document.createTextNode(' Creating...'));
 
       try {
         const response = await fetch(`${supabaseUrl}/functions/v1/create-org-admin`, {
@@ -320,23 +323,32 @@
         const data = await response.json();
 
         if (data.success) {
-          showResult('success', `
-            <h3>✅ Success!</h3>
-            <p class="info-text"><strong>${data.organization.name}</strong> has been created successfully!</p>
-            <p class="info-text"><strong>Admin Account:</strong></p>
-            <div class="setup-link">
-              Email: ${data.admin.email}<br/>
-              Password: (the one you entered)
-            </div>
-            <p class="info-text" style="margin-top: 15px;">
-              <strong>Organization ID:</strong> ${data.organization.id}<br/>
-              <strong>Slug:</strong> ${data.organization.slug}<br/>
-              <strong>Admin User ID:</strong> ${data.admin.id}
-            </p>
-            <p class="info-text" style="margin-top: 15px; color: #059669; font-weight: 600;">
-              The admin can now log in with the email and password you provided. They will see the Setup Wizard on first login.
-            </p>
-          `);
+          const nameStrong = el('strong', {}, data.organization.name);
+          const createdLine = el('p', { className: 'info-text' });
+          createdLine.append(nameStrong, document.createTextNode(' has been created successfully!'));
+
+          const idsLine = el('p', { className: 'info-text', style: 'margin-top: 15px;' });
+          idsLine.append(
+            el('strong', {}, 'Organization ID:'),
+            document.createTextNode(` ${data.organization.id}`),
+            document.createElement('br'),
+            el('strong', {}, 'Slug:'),
+            document.createTextNode(` ${data.organization.slug}`),
+            document.createElement('br'),
+            el('strong', {}, 'Admin User ID:'),
+            document.createTextNode(` ${data.admin.id}`)
+          );
+
+          showResult('success', [
+            el('h3', {}, '✅ Success!'),
+            createdLine,
+            el('p', { className: 'info-text' }, el('strong', {}, 'Admin Account:')),
+            el('div', { className: 'setup-link' }, `Email: ${data.admin.email}`, document.createElement('br'), 'Password: (the one you entered)'),
+            idsLine,
+            el('p', { className: 'info-text', style: 'margin-top: 15px; color: #059669; font-weight: 600;' },
+              'The admin can now log in with the email and password you provided. They will see the Setup Wizard on first login.'
+            ),
+          ]);
           
           // Clear form
           document.getElementById('companyName').value = '';
@@ -344,34 +356,51 @@
           document.getElementById('ownerEmail').value = '';
           document.getElementById('adminPassword').value = '';
         } else {
-          showResult('error', `
-            <h3>❌ Error</h3>
-            <p class="info-text">${data.error || 'Failed to create organization'}</p>
-          `);
+          showResult('error', [
+            el('h3', {}, '❌ Error'),
+            el('p', { className: 'info-text' }, data.error || 'Failed to create organization'),
+          ]);
         }
       } catch (error) {
-        showResult('error', `
-          <h3>❌ Error</h3>
-          <p class="info-text">Network error: ${error.message}</p>
-          <p class="info-text" style="margin-top: 10px;">
-            Make sure:
-            <ul style="margin-left: 20px; margin-top: 5px;">
-              <li>Your Supabase URL is correct</li>
-              <li>The edge function is deployed</li>
-              <li>You're logged in as a super admin</li>
-            </ul>
-          </p>
-        `);
+        const tips = el('ul', { style: 'margin-left: 20px; margin-top: 5px;' },
+          el('li', {}, 'Your Supabase URL is correct'),
+          el('li', {}, 'The edge function is deployed'),
+          el('li', {}, "You're logged in as a super admin"),
+        );
+        const tipsWrap = el('p', { className: 'info-text', style: 'margin-top: 10px;' });
+        tipsWrap.append(document.createTextNode('Make sure:'), tips);
+
+        showResult('error', [
+          el('h3', {}, '❌ Error'),
+          el('p', { className: 'info-text' }, `Network error: ${error.message}`),
+          tipsWrap,
+        ]);
       } finally {
         submitBtn.disabled = false;
-        submitBtn.innerHTML = originalText;
+        submitBtn.textContent = originalText;
       }
     });
 
-    function showResult(type, html) {
+    function el(tag, attrs = {}, ...children) {
+      const node = document.createElement(tag);
+      for (const [key, value] of Object.entries(attrs)) {
+        if (key === 'className') node.className = value;
+        else if (key === 'style') node.setAttribute('style', value);
+        else node.setAttribute(key, value);
+      }
+      for (const child of children) {
+        if (child == null || child === false) continue;
+        node.append(typeof child === 'string' || typeof child === 'number'
+          ? document.createTextNode(String(child))
+          : child);
+      }
+      return node;
+    }
+
+    function showResult(type, nodes) {
       const resultDiv = document.getElementById('result');
       resultDiv.className = `result ${type}`;
-      resultDiv.innerHTML = html;
+      resultDiv.replaceChildren(...(Array.isArray(nodes) ? nodes : [nodes]));
       resultDiv.style.display = 'block';
       resultDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
@@ -379,10 +408,10 @@
     function copyToClipboard(text) {
       navigator.clipboard.writeText(text).then(() => {
         const btn = event.target;
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '✅ Copied!';
+        const originalText = btn.textContent;
+        btn.textContent = '✅ Copied!';
         setTimeout(() => {
-          btn.innerHTML = originalText;
+          btn.textContent = originalText;
         }, 2000);
       });
     }

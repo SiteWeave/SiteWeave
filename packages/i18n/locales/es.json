@@ -1331,7 +1331,10 @@
     "preview": {
       "done_all_time": "Hecho (todo el tiempo)",
       "not_complete": "Sin completar",
+      "done_vs_open": "Hecho vs abiertas",
+      "latest_task": "Última tarea",
       "latest_task_due": "Última tarea con vencimiento",
+      "progress_days": "Progreso",
       "schedule_business_days": "Cronograma (días laborables)",
       "status_update": "Actualización de estado",
       "completed_work": "Trabajo completado",

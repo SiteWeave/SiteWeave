@@ -2,11 +2,11 @@ import {
   View,
   StyleSheet,
   TextInput,
-  FlatList,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { FlashList } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import {
@@ -26,8 +26,15 @@ import { useBranding } from '../context/BrandingContext';
 import { useCreateAction } from '../context/CreateActionContext';
 import { useHaptics } from '../hooks/useHaptics';
 import { colors, spacing, radius, touch } from '../theme';
+import { useScrollPrefetch } from '../hooks/useScrollPrefetch';
+import { loadFormDraft, saveFormDraft, clearFormDraft } from '../utils/formDrafts';
 
-const TYPE_LABELS = Object.fromEntries(STREAM_POST_TYPES.map((t) => [t.value, t.label]));
+/** Mobile Updates: general + daily log only (no milestone composer/filter). */
+const MOBILE_STREAM_POST_TYPES = STREAM_POST_TYPES.filter((t) => t.value !== 'milestone');
+
+const TYPE_LABELS = {
+  ...Object.fromEntries(STREAM_POST_TYPES.map((t) => [t.value, t.label])),
+};
 
 export default function ProjectStreamPanel({
   project,
@@ -65,19 +72,19 @@ export default function ProjectStreamPanel({
     searchRef.current = debouncedSearch;
   }, [debouncedSearch]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ silent = false } = {}) => {
     if (!project?.id || !supabase) return;
     try {
-      setError(null);
+      if (!silent) setError(null);
       const { posts: rows } = await fetchStreamPosts(supabase, project.id, {
         search: searchRef.current || undefined,
       });
       setPosts(rows);
     } catch (e) {
       console.error('ProjectStreamPanel load error:', e);
-      setError(t('mobile.stream_load_error'));
+      if (!silent) setError(t('mobile.stream_load_error'));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
       setRefreshing(false);
     }
   }, [project?.id, supabase, t]);
@@ -94,23 +101,54 @@ export default function ProjectStreamPanel({
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'project_stream_posts', filter: `project_id=eq.${project.id}` },
-        () => load(),
+        () => load({ silent: true }),
       )
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [project?.id, supabase, load]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!project?.id) return undefined;
+    loadFormDraft('stream_composer', project.id).then((draft) => {
+      if (cancelled || !draft?.data?.body) return;
+      setBody(String(draft.data.body));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.id]);
+
+  useEffect(() => {
+    if (!project?.id) return undefined;
+    const handle = setTimeout(() => {
+      const trimmed = body.trim();
+      if (!trimmed) {
+        clearFormDraft('stream_composer', project.id);
+        return;
+      }
+      saveFormDraft('stream_composer', project.id, { body });
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [body, project?.id]);
+
+  const onStreamScrollPrefetch = useScrollPrefetch(() => {
+    // Soft warm: reload silently when near end so new posts feel instant after long scroll sessions.
+    load({ silent: true });
+  });
+
   const onRefresh = () => {
     setRefreshing(true);
-    load();
+    load({ silent: true });
   };
 
   const filterOptions = useMemo(
-    () => [{ value: 'all', label: t('mobile.stream_filter_all') }, ...STREAM_POST_TYPES],
+    () => [{ value: 'all', label: t('mobile.stream_filter_all') }, ...MOBILE_STREAM_POST_TYPES],
     [t],
   );
 
-  const composePostType = viewFilter === 'all' ? 'general' : viewFilter;
+  const composePostType =
+    viewFilter === 'all' || viewFilter === 'milestone' ? 'general' : viewFilter;
 
   const filteredPosts = useMemo(() => {
     if (viewFilter === 'all') return posts;
@@ -134,8 +172,9 @@ export default function ProjectStreamPanel({
         body: trimmed,
       });
       setBody('');
+      clearFormDraft('stream_composer', project.id);
       haptics.success();
-      await load();
+      await load({ silent: true });
     } catch (e) {
       console.error('ProjectStreamPanel post error:', e);
       haptics.error();
@@ -175,7 +214,7 @@ export default function ProjectStreamPanel({
       setReplyDraft('');
       haptics.light();
       await loadReplies(postId);
-      await load();
+      await load({ silent: true });
     } catch (e) {
       console.error('submitReply error:', e);
       haptics.error();
@@ -204,7 +243,7 @@ export default function ProjectStreamPanel({
           clearButtonMode="while-editing"
           testID="stream-search"
         />
-        <FlatList
+        <FlashList
           horizontal
           showsHorizontalScrollIndicator={false}
           data={filterOptions}
@@ -372,7 +411,7 @@ export default function ProjectStreamPanel({
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior="padding">
-      <FlatList
+      <FlashList
         style={styles.container}
         data={filteredPosts}
         keyExtractor={(item) => String(item.id)}
@@ -400,6 +439,8 @@ export default function ProjectStreamPanel({
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        onScroll={onStreamScrollPrefetch}
+        scrollEventThrottle={400}
       />
     </KeyboardAvoidingView>
   );

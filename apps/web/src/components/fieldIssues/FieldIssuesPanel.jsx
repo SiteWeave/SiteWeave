@@ -23,6 +23,7 @@ import { savePunchListPdf } from '../../utils/savePunchListPdf';
 import {
   buildIssueAssigneeOptionsFromContacts,
   fetchIssueAssigneeOptions,
+  resolveIssueAssigneePatch,
 } from '@siteweave/core-logic';
 import FieldIssueCard from './FieldIssueCard';
 import IssueDetailDrawer from './IssueDetailDrawer';
@@ -57,14 +58,14 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
     description: '',
     priority: 'Medium',
     dueDate: '',
-    assigned_to_user_id: '',
+    assigned_to_contact_id: '',
     location: '',
   });
   const [walkthroughIssue, setWalkthroughIssue] = useState({
     location: '',
     description: '',
     photoFile: null,
-    assigned_to_user_id: '',
+    assigned_to_contact_id: '',
   });
   const [notifyChannels, setNotifyChannels] = useState({
     email: true,
@@ -88,26 +89,40 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
         organizationId: orgId,
         fallbackLabel: t('fieldIssues.team_member'),
       });
-      if (fromContacts.length > 0) {
-        if (!cancelled) setAssigneeOptions(fromContacts);
-        return;
+      // Show in-memory options immediately so the select isn't empty while fetching.
+      if (!cancelled && fromContacts.length > 0) {
+        setAssigneeOptions(fromContacts);
       }
 
       if (!projectId) {
-        if (!cancelled) setAssigneeOptions([]);
+        if (!cancelled && fromContacts.length === 0) setAssigneeOptions([]);
         return;
       }
 
+      // Prefer server list (includes email/phone for pings). Merge any in-memory
+      // contacts that weren't returned so virtual/profile-only rows still appear.
       try {
         const opts = await fetchIssueAssigneeOptions(supabaseClient, {
           projectId,
           organizationId: orgId,
           fallbackLabel: t('fieldIssues.team_member'),
         });
-        if (!cancelled) setAssigneeOptions(opts);
+        if (!cancelled) {
+          if (opts.length === 0) {
+            setAssigneeOptions(fromContacts);
+          } else {
+            const byId = new Map(opts.map((o) => [o.contactId, o]));
+            for (const c of fromContacts) {
+              if (!byId.has(c.contactId)) byId.set(c.contactId, c);
+            }
+            setAssigneeOptions([...byId.values()].sort((a, b) =>
+              String(a.label || '').localeCompare(String(b.label || '')),
+            ));
+          }
+        }
       } catch (error) {
         console.error('Failed to load issue assignees', error);
-        if (!cancelled) setAssigneeOptions([]);
+        if (!cancelled) setAssigneeOptions(fromContacts);
       }
     })();
     return () => {
@@ -172,7 +187,13 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
 
     setIsCreating(true);
     try {
-      const assigneeId = newIssue.assigned_to_user_id || null;
+      const assigneePatch = resolveIssueAssigneePatch(
+        newIssue.assigned_to_contact_id,
+        assigneeOptions,
+      );
+      const hasAssignee = Boolean(
+        assigneePatch.assigned_to_contact_id || assigneePatch.assigned_to_user_id,
+      );
       const created = await createProjectIssue(supabaseClient, {
         project_id: projectId,
         organization_id: project.organization_id,
@@ -181,9 +202,10 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
         priority: newIssue.priority,
         due_date: newIssue.dueDate || null,
         created_by_user_id: state.user?.id,
-        assigned_to_user_id: assigneeId,
+        assigned_to_contact_id: assigneePatch.assigned_to_contact_id,
+        assigned_to_user_id: assigneePatch.assigned_to_user_id,
         location: newIssue.location?.trim() || null,
-        notifyChannels: assigneeId
+        notifyChannels: hasAssignee
           ? {
               email: notifyChannels.email,
               app: notifyChannels.app,
@@ -198,7 +220,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
         description: '',
         priority: 'Medium',
         dueDate: '',
-        assigned_to_user_id: '',
+        assigned_to_contact_id: '',
         location: '',
       });
       setNotifyChannels({ email: true, app: true, sms: false });
@@ -280,15 +302,22 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
     }
     setIsCreating(true);
     try {
-      const assigneeId = walkthroughIssue.assigned_to_user_id || null;
+      const assigneePatch = resolveIssueAssigneePatch(
+        walkthroughIssue.assigned_to_contact_id,
+        assigneeOptions,
+      );
+      const hasAssignee = Boolean(
+        assigneePatch.assigned_to_contact_id || assigneePatch.assigned_to_user_id,
+      );
       const created = await createWalkthroughIssue(supabaseClient, {
         project_id: projectId,
         organization_id: project.organization_id,
         location: walkthroughIssue.location.trim(),
         description: walkthroughIssue.description.trim() || null,
         created_by_user_id: state.user?.id,
-        assigned_to_user_id: assigneeId,
-        notifyChannels: assigneeId
+        assigned_to_contact_id: assigneePatch.assigned_to_contact_id,
+        assigned_to_user_id: assigneePatch.assigned_to_user_id,
+        notifyChannels: hasAssignee
           ? {
               email: notifyChannels.email,
               app: notifyChannels.app,
@@ -313,7 +342,7 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
           .eq('id', created.id);
         if (updatePhotoError) throw updatePhotoError;
       }
-      setWalkthroughIssue({ location: '', description: '', photoFile: null, assigned_to_user_id: '' });
+      setWalkthroughIssue({ location: '', description: '', photoFile: null, assigned_to_contact_id: '' });
       setShowWalkthrough(false);
       await load();
       addToast(t('punchList.item_saved_next'), 'success');
@@ -524,18 +553,18 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
                 label={t('fieldIssues.due_date')}
               />
               <select
-                value={newIssue.assigned_to_user_id}
-                onChange={(e) => setNewIssue({ ...newIssue, assigned_to_user_id: e.target.value })}
+                value={newIssue.assigned_to_contact_id}
+                onChange={(e) => setNewIssue({ ...newIssue, assigned_to_contact_id: e.target.value })}
                 className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg"
               >
                 <option value="">{t('fieldIssues.assign_to')}</option>
                 {assigneeOptions.map((opt) => (
-                  <option key={opt.userId} value={opt.userId}>
+                  <option key={opt.contactId} value={opt.contactId}>
                     {opt.label}
                   </option>
                 ))}
               </select>
-              {newIssue.assigned_to_user_id ? (
+              {newIssue.assigned_to_contact_id ? (
                 <fieldset className="space-y-2 rounded-lg border border-slate-200 px-3 py-2.5">
                   <legend className="px-1 text-xs font-medium text-slate-600">
                     {t('fieldIssues.notify_channels')}
@@ -634,20 +663,20 @@ export default function FieldIssuesPanel({ projectId, project, projectTasks = []
                 className="w-full text-base px-4 py-3 border border-slate-200 rounded-xl"
               />
               <select
-                value={walkthroughIssue.assigned_to_user_id}
+                value={walkthroughIssue.assigned_to_contact_id}
                 onChange={(e) =>
-                  setWalkthroughIssue({ ...walkthroughIssue, assigned_to_user_id: e.target.value })
+                  setWalkthroughIssue({ ...walkthroughIssue, assigned_to_contact_id: e.target.value })
                 }
                 className="w-full text-base px-4 py-3 border border-slate-200 rounded-xl"
               >
                 <option value="">{t('fieldIssues.assign_to')}</option>
                 {assigneeOptions.map((opt) => (
-                  <option key={opt.userId} value={opt.userId}>
+                  <option key={opt.contactId} value={opt.contactId}>
                     {opt.label}
                   </option>
                 ))}
               </select>
-              {walkthroughIssue.assigned_to_user_id ? (
+              {walkthroughIssue.assigned_to_contact_id ? (
                 <fieldset className="space-y-2 rounded-xl border border-slate-200 px-4 py-3">
                   <legend className="px-1 text-sm font-medium text-slate-600">
                     {t('fieldIssues.notify_channels')}

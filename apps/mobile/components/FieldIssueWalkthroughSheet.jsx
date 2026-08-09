@@ -3,22 +3,20 @@ import {
   View,
   StyleSheet,
   Alert,
-  Image,
   ScrollView,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { createWalkthroughIssue, fetchIssueAssigneeOptions } from '@siteweave/core-logic';
+import { createWalkthroughIssue, fetchIssueAssigneeOptions, resolveIssueAssigneePatch } from '@siteweave/core-logic';
 import BottomSheet from './ui/BottomSheet';
 import { Text } from './ui/Text';
 import PressableWithFade from './PressableWithFade';
+import RemoteImage from './RemoteImage';
 import { colors, spacing, touch } from '../theme';
 import { uploadIssueBeforePhotoFromUri } from '../utils/uploadIssuePhoto';
-
-const IMAGE_MEDIA_TYPES = ImagePicker.MediaType?.Images
-  ? [ImagePicker.MediaType.Images]
-  : (ImagePicker.MediaTypeOptions?.Images ?? ['images']);
+import { useAfterSheetDismiss } from '../utils/runAfterSheetDismiss';
+import { IMAGE_MEDIA_TYPES } from '../utils/imagePickerMediaTypes';
 
 const DEFAULT_LOCATIONS = ['Kitchen', 'Master Bath', 'Living Room', 'Exterior', 'Garage'];
 
@@ -33,12 +31,15 @@ export default function FieldIssueWalkthroughSheet({
   onCreated,
 }) {
   const { t } = useTranslation();
+  const { scheduleAfterDismiss, handleDismissed, clearPending } = useAfterSheetDismiss();
   const [photoUri, setPhotoUri] = useState(null);
   const [location, setLocation] = useState('');
   const [note, setNote] = useState('');
-  const [assignedToUserId, setAssignedToUserId] = useState('');
+  const [assignedToContactId, setAssignedToContactId] = useState('');
   const [assigneeOptions, setAssigneeOptions] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [pickerSuspended, setPickerSuspended] = useState(false);
+  const sheetVisible = visible && !pickerSuspended;
 
   const locationChips = useMemo(() => {
     const fromIssues = (existingLocations || []).filter(Boolean);
@@ -47,12 +48,16 @@ export default function FieldIssueWalkthroughSheet({
   }, [existingLocations]);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      setPickerSuspended(false);
+      clearPending();
+      return;
+    }
     setPhotoUri(null);
     setLocation('');
     setNote('');
-    setAssignedToUserId('');
-  }, [visible]);
+    setAssignedToContactId('');
+  }, [visible, clearPending]);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,20 +83,34 @@ export default function FieldIssueWalkthroughSheet({
     };
   }, [visible, supabase, projectId, organizationId, t]);
 
-  const handleTakePhoto = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(t('common.error'), t('mobile.issue_photo_permission'));
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: IMAGE_MEDIA_TYPES,
-      quality: 0.8,
-      allowsEditing: false,
-    });
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setPhotoUri(result.assets[0].uri);
-    }
+  const handleTakePhoto = () => {
+    if (saving || pickerSuspended) return;
+    scheduleAfterDismiss(async () => {
+      try {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert(t('common.error'), t('mobile.issue_photo_permission'));
+          return;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+          mediaTypes: IMAGE_MEDIA_TYPES,
+          quality: 0.8,
+          allowsEditing: false,
+        });
+        if (!result.canceled && result.assets?.[0]?.uri) {
+          setPhotoUri(result.assets[0].uri);
+        }
+      } catch (error) {
+        console.error('Walkthrough camera failed:', error);
+        Alert.alert(
+          t('common.error'),
+          error?.message ||
+            t('mobile.issue_photo_failed', { defaultValue: 'Could not open the camera.' }),
+        );
+      } finally {
+        setPickerSuspended(false);
+      }
+    }, () => setPickerSuspended(true));
   };
 
   const handleSaveAndNext = async () => {
@@ -107,13 +126,15 @@ export default function FieldIssueWalkthroughSheet({
 
     setSaving(true);
     try {
+      const assigneePatch = resolveIssueAssigneePatch(assignedToContactId, assigneeOptions);
       const issue = await createWalkthroughIssue(supabase, {
         project_id: projectId,
         organization_id: organizationId,
         location: location.trim(),
         description: note.trim() || null,
         created_by_user_id: userId,
-        assigned_to_user_id: assignedToUserId || null,
+        assigned_to_contact_id: assigneePatch.assigned_to_contact_id,
+        assigned_to_user_id: assigneePatch.assigned_to_user_id,
         priority: 'Medium',
       });
       if (issue?.id) {
@@ -138,12 +159,14 @@ export default function FieldIssueWalkthroughSheet({
 
   return (
     <BottomSheet
-      visible={visible}
+      visible={sheetVisible}
       title={t('punchList.walkthrough_title')}
       onClose={onClose}
+      onDismissed={handleDismissed}
+      dismissWithoutAnimation={pickerSuspended}
       primaryLabel={saving ? '…' : t('punchList.save_and_next')}
       onPrimary={handleSaveAndNext}
-      primaryDisabled={saving}
+      primaryDisabled={saving || pickerSuspended}
       primaryLoading={saving}
       secondaryLabel={t('common.done')}
       onSecondary={onClose}
@@ -159,7 +182,7 @@ export default function FieldIssueWalkthroughSheet({
 
         <PressableWithFade style={styles.photoBox} onPress={handleTakePhoto} testID="walkthrough-photo">
           {photoUri ? (
-            <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
+            <RemoteImage uri={photoUri} style={styles.photo} />
           ) : (
             <View style={styles.photoPlaceholder}>
               <Ionicons name="camera-outline" size={36} color={colors.textMuted} />
@@ -208,24 +231,24 @@ export default function FieldIssueWalkthroughSheet({
           contentContainerStyle={styles.assigneeRow}
         >
           <PressableWithFade
-            style={[styles.assigneeChip, !assignedToUserId && styles.chipActive]}
-            onPress={() => setAssignedToUserId('')}
+            style={[styles.assigneeChip, !assignedToContactId && styles.chipActive]}
+            onPress={() => setAssignedToContactId('')}
             disabled={saving}
           >
             <Text
               variant="caption"
-              style={[styles.chipText, !assignedToUserId && styles.chipTextActive]}
+              style={[styles.chipText, !assignedToContactId && styles.chipTextActive]}
             >
               {t('fieldIssues.assign_to')}
             </Text>
           </PressableWithFade>
           {assigneeOptions.map((opt) => {
-            const active = assignedToUserId === opt.userId;
+            const active = assignedToContactId === opt.contactId;
             return (
               <PressableWithFade
-                key={opt.userId}
+                key={opt.contactId}
                 style={[styles.assigneeChip, active && styles.chipActive]}
-                onPress={() => setAssignedToUserId(opt.userId)}
+                onPress={() => setAssignedToContactId(opt.contactId)}
                 disabled={saving}
               >
                 <Text

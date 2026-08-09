@@ -1,5 +1,6 @@
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useEffect, useMemo, useState } from 'react';
+import { Image } from 'expo-image';
 import { colors } from '../../theme';
 
 const SIZES = {
@@ -65,6 +66,9 @@ export default function Avatar({
           style,
         ]}
         onError={() => setImageFailed(true)}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        recyclingKey={avatarUrl}
         accessibilityLabel={name ? `${name} avatar` : 'User avatar'}
       />
     );

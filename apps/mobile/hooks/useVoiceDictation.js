@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { NativeModules, Platform } from 'react-native';
-import Constants from 'expo-constants';
+import { isExpoGo } from '../utils/runtimeEnv';
 
 let VoiceModule = null;
 
 function isVoiceNativeModuleAvailable() {
   if (Platform.OS !== 'ios') return false;
   // @react-native-voice/voice creates NativeEventEmitter at import time and crashes in Expo Go.
-  if (Constants.appOwnership === 'expo') return false;
+  if (isExpoGo()) return false;
   return Boolean(NativeModules.Voice);
 }
 

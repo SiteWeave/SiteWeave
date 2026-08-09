@@ -1017,6 +1017,29 @@ serve(async (req) => {
       }
     })
 
+    // Also include tasks completed in-window by completed_at (activity_log can miss some).
+    const periodStartMs = startDate ? new Date(startDate).getTime() : NaN
+    const periodEndMs = endDate ? new Date(endDate).getTime() : Date.now()
+    for (const task of tasks) {
+      if (!task?.completed || !task.id || completedTasksById.has(task.id)) continue
+      const completedAtRaw = task.completed_at || task.updated_at
+      if (!completedAtRaw) continue
+      const completedMs = new Date(completedAtRaw).getTime()
+      if (Number.isNaN(completedMs)) continue
+      if (Number.isFinite(periodStartMs) && completedMs < periodStartMs) continue
+      if (Number.isFinite(periodEndMs) && completedMs > periodEndMs) continue
+      completedTasksById.set(task.id, {
+        id: task.id,
+        text: task.text,
+        title: task.text,
+        completed_at: completedAtRaw,
+        assignee: task.contacts?.name || task.assignee_id,
+        project_name: task.projects?.name || project?.name,
+        phase_name: phaseNameForTask((task as any).project_phase_id, phases),
+        task_photos: task.task_photos || [],
+      })
+    }
+
     const completedTasks = Array.from(completedTasksById.values())
 
     const visiblePhases = phases.filter((p: { is_client_visible?: boolean }) => p.is_client_visible !== false)
@@ -1082,7 +1105,7 @@ serve(async (req) => {
     }
 
     const periodCompletedIdSet = new Set(completedTasks.map((c: { id: string }) => c.id))
-    const lastWeekDone = dedupeLastWeekDoneRowsByDisplay(
+    const lastWeekDoneRows = dedupeLastWeekDoneRowsByDisplay(
       dedupeTasksForLastWeekDone(
         doneTasks.filter((t: any) => {
           if (periodCompletedIdSet.has(t.id)) return false
@@ -1103,8 +1126,18 @@ serve(async (req) => {
           completed_at: t.completed_at || t.updated_at || t.created_at,
           assignee: (t.contacts as any)?.name ?? null,
           phase_name: phaseNameForTask(t.project_phase_id, phases),
+          task_photos: t.task_photos || [],
         })),
     ).slice(0, 10)
+    const lastWeekDone = includeTaskPhotos
+      ? await Promise.all(
+          lastWeekDoneRows.map(async (t: any) => ({
+            ...t,
+            photos: await buildTaskPhotoAssets(supabase, t.task_photos || [], MAX_REPORT_PHOTOS_PER_TASK),
+            task_photos: undefined,
+          })),
+        )
+      : lastWeekDoneRows.map((t: any) => ({ ...t, task_photos: undefined }))
 
     const thisWeekPlan = dedupeWeeklyPlanRowsByDisplay(
       openTasks

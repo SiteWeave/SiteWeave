@@ -10,17 +10,39 @@
  * @param {string} html - Full HTML document from export edge function
  * @param {object} [options]
  * @param {string} [options.defaultFilename] - e.g. "Q1 Report.pdf"
- * @returns {Promise<{ ok: true, path?: string, canceled?: boolean, method?: 'electron'|'jspdf' } | { ok: false, error: string }>}
+ * @param {string} [options.pdfBase64] - Prefer branded server PDF when present
+ * @returns {Promise<{ ok: true, path?: string, canceled?: boolean, method?: 'electron'|'jspdf'|'bytes' } | { ok: false, error: string }>}
  */
 export async function saveProgressReportPdf(html, options = {}) {
-  if (!html || typeof html !== 'string') {
-    return { ok: false, error: 'No report content to save.' };
-  }
-
   let defaultFilename = options.defaultFilename || 'progress-report.pdf';
   defaultFilename = defaultFilename.replace(/[\\/]/g, '_');
   if (!defaultFilename.toLowerCase().endsWith('.pdf')) {
     defaultFilename = defaultFilename.replace(/\.html$/i, '') + '.pdf';
+  }
+
+  if (options.pdfBase64 && typeof options.pdfBase64 === 'string') {
+    try {
+      const binary = atob(options.pdfBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = defaultFilename;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      return { ok: true, method: 'bytes' };
+    } catch (e) {
+      console.warn('Branded PDF download failed; falling back to HTML→PDF', e);
+    }
+  }
+
+  if (!html || typeof html !== 'string') {
+    return { ok: false, error: 'No report content to save.' };
   }
 
   if (typeof window !== 'undefined' && window.electronAPI?.saveHtmlAsPdf) {

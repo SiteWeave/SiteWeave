@@ -2,6 +2,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildProgressReportEmail } from '../_shared/progressReportEmailTemplates.ts'
+import { buildBrandedProgressReportPdf } from '../_shared/buildProgressReportPdf.ts'
 import {
   callGenerateProgressReport,
   GenerateProgressReportError,
@@ -212,6 +213,24 @@ serve(async (req) => {
     const suggested_pdf_filename = defaultProgressReportPdfFilename(reportName, emailContent.subject)
     const html_filename = suggested_pdf_filename.replace(/\.pdf$/i, '.html')
 
+    let pdf_base64: string | null = null
+    try {
+      const pdfBytes = await buildBrandedProgressReportPdf({
+        subject: emailContent.subject,
+        reportData: (report_data || {}) as Record<string, unknown>,
+        schedule: schedule as Record<string, unknown>,
+        branding: brandingData,
+      })
+      let binary = ''
+      const chunk = 0x8000
+      for (let i = 0; i < pdfBytes.length; i += chunk) {
+        binary += String.fromCharCode(...pdfBytes.subarray(i, i + chunk))
+      }
+      pdf_base64 = btoa(binary)
+    } catch (pdfErr) {
+      console.warn('Branded PDF bytes unavailable; client will fall back to HTML→PDF:', pdfErr)
+    }
+
     if (req.method === 'GET') {
       const docHeaders = new Headers()
       docHeaders.set('Content-Type', 'text/html; charset=utf-8')
@@ -233,10 +252,13 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         html,
+        pdf_base64,
         subject: emailContent.subject,
         report_name: reportName,
         suggested_pdf_filename,
-        message: 'Client saves this HTML as a PDF file (Electron: native PDF; browser: download).',
+        message: pdf_base64
+          ? 'Branded PDF bytes included; HTML retained as fallback.'
+          : 'Client saves this HTML as a PDF file (Electron: native PDF; browser: download).',
       }),
       {
         status: 200,

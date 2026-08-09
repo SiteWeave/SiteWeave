@@ -11,12 +11,25 @@ const DELAY_OPTIONS = [
   { hours: 48, labelKey: 'fieldIssues.ping_delay_48h' },
 ];
 
+function recipientKey(opt) {
+  return opt?.contactId || opt?.userId || '';
+}
+
+function isPingable(opt) {
+  if (!opt) return false;
+  if (opt.userId) return true;
+  if (opt.email && String(opt.email).includes('@')) return true;
+  if (opt.phone && String(opt.phone).trim()) return true;
+  return false;
+}
+
 /**
  * Multi-recipient issue ping controls: recipients, delay, channels.
+ * Recipients are project contacts (with or without accounts).
  */
 export default function IssuePingPanel({
   assigneeOptions = [],
-  defaultAssigneeUserId = '',
+  defaultAssigneeContactId = '',
   onSend,
   busy = false,
   onUpgradeRequired,
@@ -25,8 +38,13 @@ export default function IssuePingPanel({
   const { canPing } = useWorkspaceTier();
   const smsEnabled = isSmsNotificationsEnabled();
 
+  const options = React.useMemo(
+    () => (assigneeOptions || []).filter((opt) => recipientKey(opt)),
+    [assigneeOptions],
+  );
+
   const [selectedIds, setSelectedIds] = React.useState(() =>
-    defaultAssigneeUserId ? [defaultAssigneeUserId] : [],
+    defaultAssigneeContactId ? [defaultAssigneeContactId] : [],
   );
   const [delayHours, setDelayHours] = React.useState(0);
   const [channels, setChannels] = React.useState(() => ({
@@ -37,22 +55,31 @@ export default function IssuePingPanel({
   const [message, setMessage] = React.useState('');
 
   React.useEffect(() => {
-    if (defaultAssigneeUserId) {
-      setSelectedIds((prev) =>
-        prev.includes(defaultAssigneeUserId) ? prev : [defaultAssigneeUserId, ...prev],
-      );
-    }
-  }, [defaultAssigneeUserId]);
-
-  const toggleRecipient = (userId) => {
+    if (!defaultAssigneeContactId) return;
     setSelectedIds((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
+      prev.includes(defaultAssigneeContactId) ? prev : [defaultAssigneeContactId, ...prev],
+    );
+  }, [defaultAssigneeContactId]);
+
+  const toggleRecipient = (id) => {
+    if (!id) return;
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   };
 
   const toggleChannel = (key) => {
     setChannels((prev) => ({ ...prev, [key]: !prev[key] }));
   };
+
+  const selectedOptions = options.filter((opt) => selectedIds.includes(recipientKey(opt)));
+
+  const canReachSelected = selectedOptions.some((opt) => {
+    if (channels.email && opt.email && String(opt.email).includes('@')) return true;
+    if (smsEnabled && channels.sms && opt.phone) return true;
+    if (channels.app && opt.userId) return true;
+    return false;
+  });
 
   const handleSend = () => {
     if (!canPing) {
@@ -63,24 +90,34 @@ export default function IssuePingPanel({
     if (channels.email) deliveryChannels.push('email');
     if (smsEnabled && channels.sms) deliveryChannels.push('sms');
     if (channels.app) deliveryChannels.push('app');
+
+    const recipients = selectedOptions.map((opt) => ({
+      userId: opt.userId || null,
+      email: opt.email || null,
+      phone: opt.phone || null,
+      name: opt.label || null,
+      contactId: opt.contactId || null,
+    }));
+
     onSend?.({
-      recipientUserIds: selectedIds,
+      recipients,
+      recipientUserIds: recipients.map((r) => r.userId).filter(Boolean),
       delayHours,
       deliveryChannels,
       message: message.trim() || null,
     });
   };
 
-  if (!assigneeOptions.length) {
+  if (!options.length) {
     return (
       <p className="text-xs text-slate-500">{t('fieldIssues.no_project_assignees')}</p>
     );
   }
 
+  const channelSelected =
+    channels.email || channels.app || (smsEnabled && channels.sms);
   const canSubmit =
-    selectedIds.length > 0 &&
-    (channels.email || channels.app || (smsEnabled && channels.sms)) &&
-    !busy;
+    selectedOptions.length > 0 && channelSelected && canReachSelected && !busy;
 
   return (
     <div className="space-y-3" data-testid="issue-ping-panel">
@@ -89,20 +126,41 @@ export default function IssuePingPanel({
           {t('fieldIssues.ping_recipients')}
         </label>
         <div className="max-h-28 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 space-y-0.5">
-          {assigneeOptions.map((opt) => (
-            <label
-              key={opt.userId}
-              className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs text-slate-700 hover:bg-slate-50"
-            >
-              <input
-                type="checkbox"
-                checked={selectedIds.includes(opt.userId)}
-                onChange={() => toggleRecipient(opt.userId)}
-                className="rounded border-slate-300"
-              />
-              <span className="truncate">{opt.label}</span>
-            </label>
-          ))}
+          {options.map((opt) => {
+            const id = recipientKey(opt);
+            const pingable = isPingable(opt);
+            return (
+              <label
+                key={id}
+                className={`flex items-center gap-2 rounded px-1 py-0.5 text-xs ${
+                  pingable
+                    ? 'cursor-pointer text-slate-700 hover:bg-slate-50'
+                    : 'cursor-not-allowed text-slate-400'
+                }`}
+                title={
+                  pingable
+                    ? undefined
+                    : t('fieldIssues.ping_no_contact', {
+                        defaultValue: 'No email, phone, or app account on file',
+                      })
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(id)}
+                  onChange={() => pingable && toggleRecipient(id)}
+                  disabled={!pingable}
+                  className="rounded border-slate-300"
+                />
+                <span className="min-w-0 flex-1 truncate">{opt.label}</span>
+                {!opt.userId && pingable ? (
+                  <span className="shrink-0 text-[10px] text-slate-400">
+                    {t('fieldIssues.ping_contact_only', { defaultValue: 'email/SMS' })}
+                  </span>
+                ) : null}
+              </label>
+            );
+          })}
         </div>
       </div>
 

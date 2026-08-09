@@ -23,6 +23,7 @@ const CreateActionContext = createContext({
   openCreateProject: () => {},
   openCreateEvent: () => {},
   openSiteDay: () => {},
+  openReportIssue: () => {},
   showCreateButton: false,
 });
 
@@ -144,6 +145,23 @@ export function CreateActionProvider({ children }) {
 
   const menuItems = useMemo(() => {
     const items = [];
+    // Field capture first — site day + report issue are the daily path.
+    items.push({
+      key: 'site-day',
+      label: t('mobile.site_day_title'),
+      icon: 'camera-outline',
+      onPress: () => {
+        scheduleAfterMenu(async () => {
+          await openSiteDay();
+        });
+      },
+    });
+    items.push({
+      key: 'issue',
+      label: t('mobile.report_issue'),
+      icon: 'alert-circle-outline',
+      onPress: () => openReportIssue({ fromMenu: true }),
+    });
     if (isManagerView && canCreateProjects) {
       items.push({
         key: 'project',
@@ -160,22 +178,6 @@ export function CreateActionProvider({ children }) {
         onPress: () => openCreateEvent(new Date(), { fromMenu: true }),
       });
     }
-    items.push({
-      key: 'issue',
-      label: t('mobile.report_issue'),
-      icon: 'alert-circle-outline',
-      onPress: () => openReportIssue({ fromMenu: true }),
-    });
-    items.push({
-      key: 'site-day',
-      label: t('mobile.site_day_title'),
-      icon: 'document-text-outline',
-      onPress: () => {
-        scheduleAfterMenu(async () => {
-          await openSiteDay();
-        });
-      },
-    });
     return items;
   }, [
     t,
@@ -189,8 +191,15 @@ export function CreateActionProvider({ children }) {
   ]);
 
   const value = useMemo(
-    () => ({ openCreateMenu, openCreateProject, openCreateEvent, openSiteDay, showCreateButton }),
-    [openCreateMenu, openCreateProject, openCreateEvent, openSiteDay, showCreateButton],
+    () => ({
+      openCreateMenu,
+      openCreateProject,
+      openCreateEvent,
+      openSiteDay,
+      openReportIssue,
+      showCreateButton,
+    }),
+    [openCreateMenu, openCreateProject, openCreateEvent, openSiteDay, openReportIssue, showCreateButton],
   );
 
   return (

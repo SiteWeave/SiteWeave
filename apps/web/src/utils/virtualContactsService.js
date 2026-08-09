@@ -334,6 +334,28 @@ export async function getVirtualContacts(supabase, userId, organizationId, userP
       }
     }
 
+    // Backfill profile_id for contacts that have linked accounts but were loaded
+    // only via project_contacts (without going through the profiles query).
+    const missingProfileContactIds = Array.from(contactMap.values())
+      .filter((c) => !c.profile_id && c.id && !String(c.id).startsWith('profile:'))
+      .map((c) => c.id);
+    if (missingProfileContactIds.length > 0) {
+      const { data: linkedProfiles, error: linkedProfilesError } = await supabase
+        .from('profiles')
+        .select('id, contact_id')
+        .in('contact_id', missingProfileContactIds);
+      if (linkedProfilesError) {
+        console.error('Error linking contact profiles:', linkedProfilesError);
+      } else {
+        (linkedProfiles || []).forEach((profile) => {
+          const contact = contactMap.get(profile.contact_id);
+          if (contact && !contact.profile_id) {
+            contact.profile_id = profile.id;
+          }
+        });
+      }
+    }
+
     const contacts = Array.from(contactMap.values());
 
     if (!isGuest && organizationId) {

@@ -59,6 +59,7 @@ export function collectProgressReportPhotoGroups(reportData: Record<string, unkn
     for (const slice of slices) {
       const projectName = String(slice.project_name || 'Project')
       pushTaskPhotoGroups(groups, slice.completed_tasks as any, projectName)
+      pushTaskPhotoGroups(groups, slice.last_week_done as any, projectName)
       const snap = slice.snapshot as { open_tasks?: any[] } | undefined
       pushTaskPhotoGroups(groups, snap?.open_tasks, projectName)
     }
@@ -66,6 +67,7 @@ export function collectProgressReportPhotoGroups(reportData: Record<string, unkn
   }
 
   pushTaskPhotoGroups(groups, reportData.completed_tasks as any)
+  pushTaskPhotoGroups(groups, reportData.last_week_done as any)
   const snap = reportData.snapshot as { open_tasks?: any[] } | undefined
   pushTaskPhotoGroups(groups, snap?.open_tasks)
   return groups
@@ -98,7 +100,7 @@ function isAllowedImageFetchUrl(urlString: string): boolean {
   }
 }
 
-/** HTTPS + exact project host, no redirects, with timeout. */
+/** HTTPS + exact project host; follow one same-host redirect (signed storage URLs). */
 async function fetchAllowedImageResponse(url: string): Promise<Response | null> {
   if (!isAllowedImageFetchUrl(url)) {
     console.warn('progressReportPdf: blocked image fetch to non-allowlisted host')
@@ -107,10 +109,21 @@ async function fetchAllowedImageResponse(url: string): Promise<Response | null> 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS)
   try {
-    const res = await fetch(url, { redirect: 'manual', signal: controller.signal })
+    let res = await fetch(url, { redirect: 'manual', signal: controller.signal })
     if (res.status >= 300 && res.status < 400) {
-      console.warn('progressReportPdf: blocked redirected image fetch', res.status)
-      return null
+      const location = res.headers.get('location')
+      if (!location || !isAllowedImageFetchUrl(new URL(location, url).toString())) {
+        console.warn('progressReportPdf: blocked redirected image fetch', res.status)
+        return null
+      }
+      res = await fetch(new URL(location, url).toString(), {
+        redirect: 'manual',
+        signal: controller.signal,
+      })
+      if (res.status >= 300 && res.status < 400) {
+        console.warn('progressReportPdf: blocked multi-hop image redirect', res.status)
+        return null
+      }
     }
     if (!res.ok) return null
     return res
@@ -196,6 +209,21 @@ export function injectProgressReportPrintChrome(
     print-color-adjust: exact;
   }
   .siteweave-print-toolbar { display: none !important; }
+  /* Do not force height:auto — that collapsed fixed thumbnails and stacked captions over photos. */
+  img {
+    max-width: 100% !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  img[width="120"][height="90"] {
+    width: 120px !important;
+    height: 90px !important;
+    object-fit: cover !important;
+  }
+  table { border-collapse: collapse !important; }
+  tr, td { page-break-inside: avoid; break-inside: avoid; }
+  ul, li { page-break-inside: avoid; break-inside: avoid; }
+  p { orphans: 3; widows: 3; }
 }
 @media screen {
   body { margin: 0; background: #f3f4f6; }

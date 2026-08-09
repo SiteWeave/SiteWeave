@@ -183,6 +183,10 @@ export type DigestParams = {
   omitLeadBlock?: boolean
   /** IANA timezone for “today” vs task date-only fields (e.g. org `progress_report_timezone`). */
   calendarTimeZone?: string | null
+  /** Optional sender note — rendered as a prominent callout in the email body. */
+  note?: string | null
+  /** Label above the note callout (e.g. "Message from Alex"). */
+  noteLabel?: string | null
 }
 
 function taskMetaLine(task: DigestTask, now: Date, calendarTimeZone: string): string {
@@ -283,10 +287,17 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
     tasksSectionTitle,
     omitLeadBlock = false,
     calendarTimeZone: calendarTimeZoneRaw,
+    note: noteRaw = null,
+    noteLabel: noteLabelRaw = null,
   } = params
 
   const sentAt = new Date()
   const calendarTimeZone = resolveCalendarTimeZone(calendarTimeZoneRaw)
+  const note = noteRaw && String(noteRaw).trim() ? String(noteRaw).trim() : ''
+  const noteLabel =
+    noteLabelRaw && String(noteLabelRaw).trim()
+      ? String(noteLabelRaw).trim()
+      : 'Message'
 
   const safeTasks = tasks.slice(0, 8)
   const defaultReview =
@@ -357,6 +368,17 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
     : 'margin:0;font-size:20px;line-height:1.3;font-weight:600;color:#111827;'
   const sectionHeadingTag = omitLeadBlock ? 'h1' : 'h2'
 
+  const noteBlock = note
+    ? `<tr>
+            <td style="padding:16px 24px 4px;">
+              <div style="background:#eff6ff;border:1px solid #bfdbfe;border-left:4px solid #2563eb;border-radius:10px;padding:16px 18px;">
+                <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#1d4ed8;">${escapeHtml(noteLabel)}</p>
+                <p style="margin:10px 0 0;font-size:20px;line-height:1.4;font-weight:600;color:#0f172a;letter-spacing:-0.01em;">${escapeHtml(note)}</p>
+              </div>
+            </td>
+          </tr>`
+    : ''
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -394,6 +416,7 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
               }
             </td>
           </tr>
+          ${noteBlock}
           ${
             showSummaryRow
               ? `<tr>
@@ -457,6 +480,9 @@ export function buildMinimalDigestEmail(params: DigestParams): { html: string; t
   const textParts: string[] = ['SiteWeave', '', ...textProject, '']
   if (!omitLeadBlock) {
     textParts.push(reminderHeadline || heading, subheading, '')
+  }
+  if (note) {
+    textParts.push(`${noteLabel}:`, note, '')
   }
   if (showSummaryRow) {
     textParts.push(`${summaryLabel}: ${summaryValue}`, '')

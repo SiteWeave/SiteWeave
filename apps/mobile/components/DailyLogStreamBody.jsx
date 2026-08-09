@@ -1,8 +1,9 @@
-import { View, StyleSheet, Image, Linking } from 'react-native';
+import { View, StyleSheet, Linking } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { parseDailyLogPayload } from '@siteweave/core-logic';
 import { Text } from './ui/Text';
 import PressableWithFade from './PressableWithFade';
+import RemoteImage from './RemoteImage';
 import { colors, spacing, radius } from '../theme';
 
 const BLOCKER_CATEGORIES = ['delay', 'safety', 'quality'];
@@ -15,9 +16,11 @@ function SectionBlock({ title, children }) {
   if (!children) return null;
   return (
     <View style={styles.section}>
-      <Text variant="caption" style={styles.sectionTitle}>
-        {title}
-      </Text>
+      {title ? (
+        <Text variant="caption" style={styles.sectionTitle}>
+          {title}
+        </Text>
+      ) : null}
       {children}
     </View>
   );
@@ -57,7 +60,18 @@ export default function DailyLogStreamBody({ post, compact = false }) {
   );
   const blockers = withLabel(sections.blockers, (row) => row.title);
   const crew = withLabel(sections.crew_on_site, (row) => [row.trade, row.name].filter(Boolean).join(' '));
-  const photos = (parsed.photos || []).filter((photo) => photo?.url);
+  const photos = (parsed.photos || [])
+    .map((photo) => {
+      if (!photo) return null;
+      if (typeof photo === 'string') return { url: photo };
+      return photo;
+    })
+    .filter((photo) => photo?.url);
+
+  // Legacy / partial payloads sometimes only set top-level file_url.
+  if (photos.length === 0 && post?.file_url) {
+    photos.push({ url: post.file_url, file_name: post.file_name || null });
+  }
 
   const notesFromSections = String(sections.notes || '').trim();
   const bodyText = String(post?.body || '').trim();
@@ -133,8 +147,8 @@ export default function DailyLogStreamBody({ post, compact = false }) {
         </SectionBlock>
       ) : null}
 
-      {photos.length > 0 && !compact ? (
-        <SectionBlock title={t('mobile.site_day_photos')}>
+      {photos.length > 0 ? (
+        <SectionBlock title={compact ? undefined : t('mobile.site_day_photos')}>
           <View style={styles.photoRow}>
             {photos.map((photo, i) => (
               <PressableWithFade
@@ -142,7 +156,11 @@ export default function DailyLogStreamBody({ post, compact = false }) {
                 onPress={() => photo.url && Linking.openURL(photo.url)}
                 style={styles.photoThumbWrap}
               >
-                <Image source={{ uri: photo.url }} style={styles.photoThumb} resizeMode="cover" />
+                <RemoteImage
+                  uri={photo.url}
+                  style={compact ? styles.photoThumbCompact : styles.photoThumb}
+                  recyclingKey={`stream-photo-${photo.url || i}`}
+                />
               </PressableWithFade>
             ))}
           </View>
@@ -169,4 +187,5 @@ const styles = StyleSheet.create({
   photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
   photoThumbWrap: { borderRadius: radius.card, overflow: 'hidden' },
   photoThumb: { width: 72, height: 72, backgroundColor: colors.surfaceMuted },
+  photoThumbCompact: { width: 64, height: 64, backgroundColor: colors.surfaceMuted },
 });

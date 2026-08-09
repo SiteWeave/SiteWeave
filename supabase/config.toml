@@ -332,6 +332,9 @@ verify_jwt = false
 [functions.export-progress-report-pdf]
 verify_jwt = false
 
+[functions.unsubscribe-progress-report]
+verify_jwt = false
+
 [functions.cleanup-task-photo-storage]
 verify_jwt = false
 

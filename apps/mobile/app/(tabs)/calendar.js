@@ -1,7 +1,8 @@
-import { View, Text, StyleSheet, FlatList } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
+import { FlashList } from '@shopify/flash-list';
 import { useAuth } from '../../context/AuthContext';
 import { fetchCalendarEvents, fetchUserIncompleteTasks, getCalendarLoadRange, isDateInCalendarLoadRange } from '@siteweave/core-logic';
 import { filterByOrganizationId } from '../../utils/orgScope';
@@ -17,6 +18,7 @@ import AppHeader from '../../components/ui/AppHeader';
 import { scrollBottomPadding, contentTopInset } from '../../utils/layoutInsets';
 import { colors, spacing, touch, shadows } from '../../theme';
 import { SkeletonList } from '../../components/ui/Skeleton';
+import { warmProjectDetailCache } from '../../utils/prefetchIntent';
 
 export default function CalendarScreen() {
   const { t } = useTranslation();
@@ -34,6 +36,9 @@ export default function CalendarScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
   const realtimeRef = useRef(null);
+  const realtimeReloadTimerRef = useRef(null);
+  const loadCalendarDataRef = useRef(async () => {});
+  const loadGenerationRef = useRef(0);
   const loadedRangeRef = useRef(null);
 
   useEffect(() => {
@@ -44,7 +49,7 @@ export default function CalendarScreen() {
     const range = loadedRangeRef.current;
     if (!range) return;
     if (!isDateInCalendarLoadRange(selectedDate, range)) {
-      loadCalendarData();
+      loadCalendarData({ silent: true });
     }
   }, [selectedDate.getFullYear(), selectedDate.getMonth()]);
 
@@ -58,15 +63,27 @@ export default function CalendarScreen() {
     const channel = supabase
       .channel('calendar_events_mobile')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_events' }, () => {
-        loadCalendarData();
+        scheduleRealtimeReload();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-        loadCalendarData();
+        scheduleRealtimeReload();
       })
       .subscribe();
     realtimeRef.current = channel;
 
+    function scheduleRealtimeReload() {
+      if (realtimeReloadTimerRef.current) clearTimeout(realtimeReloadTimerRef.current);
+      realtimeReloadTimerRef.current = setTimeout(() => {
+        realtimeReloadTimerRef.current = null;
+        void loadCalendarDataRef.current?.({ silent: true });
+      }, 400);
+    }
+
     return () => {
+      if (realtimeReloadTimerRef.current) {
+        clearTimeout(realtimeReloadTimerRef.current);
+        realtimeReloadTimerRef.current = null;
+      }
       if (realtimeRef.current) {
         supabase.removeChannel(realtimeRef.current);
         realtimeRef.current = null;
@@ -88,10 +105,11 @@ export default function CalendarScreen() {
     taskId: task.id,
   });
 
-  const loadCalendarData = async () => {
+  const loadCalendarData = async ({ silent = false } = {}) => {
     if (!supabase) return;
+    const generation = ++loadGenerationRef.current;
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const rangeRef = selectedDate || new Date();
       const [eventsData, tasksData] = await Promise.allSettled([
         fetchCalendarEvents(supabase, rangeRef),
@@ -103,6 +121,7 @@ export default function CalendarScreen() {
       const orgId = activeOrganization?.id;
       const tasksRaw = orgId ? filterByOrganizationId(tasksRawAll, orgId) : tasksRawAll;
       const tasks = (tasksRaw || []).filter((task) => task.due_date);
+      if (generation !== loadGenerationRef.current) return;
 
       setAllEvents(events);
       setCalendarTasks(tasks);
@@ -127,12 +146,13 @@ export default function CalendarScreen() {
     } catch (error) {
       console.error('Error loading calendar:', error);
     } finally {
-      setLoading(false);
+      if (!silent && generation === loadGenerationRef.current) setLoading(false);
     }
   };
+  loadCalendarDataRef.current = loadCalendarData;
 
   const handleEventCreated = () => {
-    loadCalendarData();
+    loadCalendarData({ silent: true });
   };
 
   const handleOpenCreate = () => {
@@ -227,6 +247,15 @@ export default function CalendarScreen() {
         <PressableWithFade
           style={[styles.eventCard, isTask && styles.taskCardCompact]}
           onPress={handlePress}
+          onPressIn={() => {
+            if (item.project_id && user?.id && supabase) {
+              warmProjectDetailCache({
+                supabase,
+                userId: user.id,
+                projectId: item.project_id,
+              }).catch(() => {});
+            }
+          }}
           static
           accessibilityRole="button"
           accessibilityLabel={item.title}
@@ -300,7 +329,7 @@ export default function CalendarScreen() {
       <View style={styles.container}>
         <AppHeader title={t('mobile.calendar_title', { defaultValue: 'Calendar' })} dense />
 
-        <FlatList
+        <FlashList
           style={styles.list}
           data={dayItems}
           keyExtractor={(item) => String(item.id)}

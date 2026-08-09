@@ -8,7 +8,7 @@ const NotificationCountContext = createContext({
 });
 
 export function NotificationCountProvider({ children }) {
-  const { user, supabase } = useAuth();
+  const { user, supabase, notificationPulse } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
 
   const refreshUnreadCount = useCallback(async () => {
@@ -29,7 +29,7 @@ export function NotificationCountProvider({ children }) {
 
   useEffect(() => {
     refreshUnreadCount();
-  }, [refreshUnreadCount]);
+  }, [refreshUnreadCount, notificationPulse]);
 
   return (
     <NotificationCountContext.Provider value={{ unreadCount, refreshUnreadCount }}>

@@ -1,4 +1,4 @@
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import PressableWithFade from './PressableWithFade';
@@ -21,6 +21,8 @@ export default function TaskCard({
   onPhotoPress,
   canManagePhotos = true,
   photoUploading = false,
+  photoStatus = null,
+  onPhotoRetry,
   variant = 'default',
   isLast = false,
   testID,
@@ -51,6 +53,23 @@ export default function TaskCard({
     : {};
 
   const isFlat = variant === 'flat';
+  const status = photoStatus?.status;
+  const isFailed = status === 'failed';
+  const isSaved = status === 'saved';
+  const busy = photoUploading || status === 'uploading';
+
+  const photoIcon = isFailed
+    ? 'refresh'
+    : isSaved
+      ? 'checkmark-circle'
+      : 'camera-outline';
+  const photoColor = isFailed
+    ? '#EF4444'
+    : isSaved
+      ? '#10B981'
+      : busy
+        ? colors.textSubtle
+        : primaryColor;
 
   return (
     <Wrapper
@@ -78,15 +97,29 @@ export default function TaskCard({
           ) : null}
           {canManagePhotos ? (
             <PressableWithFade
-              onPress={() => onPhotoPress?.(task)}
+              onPress={() => {
+                if (isFailed && onPhotoRetry) {
+                  onPhotoRetry(task);
+                  return;
+                }
+                onPhotoPress?.(task);
+              }}
               style={styles.iconBtn}
               hitSlop={touch.hitSlop}
-              disabled={photoUploading}
+              disabled={busy && !isFailed}
               testID={`${testID}-photo`}
               accessibilityRole="button"
-              accessibilityLabel={t('mobile.add_photo')}
+              accessibilityLabel={
+                isFailed
+                  ? t('mobile.photo_retry', { defaultValue: 'Retry' })
+                  : t('mobile.add_photo')
+              }
             >
-              <Ionicons name="camera-outline" size={22} color={photoUploading ? colors.textSubtle : primaryColor} />
+              {busy && !isFailed ? (
+                <ActivityIndicator size="small" color={primaryColor} />
+              ) : (
+                <Ionicons name={photoIcon} size={22} color={photoColor} />
+              )}
             </PressableWithFade>
           ) : null}
         </View>
@@ -118,40 +151,38 @@ const styles = StyleSheet.create({
   cardFlatLast: {
     borderBottomWidth: 0,
   },
-  accent: { width: 4 },
+  accent: {
+    width: 4,
+  },
   inner: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    minWidth: 0,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
   },
   title: {
     flex: 1,
-    minWidth: 0,
     fontWeight: '600',
-    fontSize: 16,
   },
   trailing: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.lg,
-    flexShrink: 0,
+    gap: spacing.sm,
   },
   dueText: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
     color: colors.textMuted,
-    maxWidth: 80,
+    maxWidth: 72,
   },
   dueOverdue: {
-    color: colors.error,
+    color: '#EF4444',
+    fontWeight: '600',
   },
   iconBtn: {
-    width: 44,
-    height: 44,
+    width: touch.minSize,
+    height: touch.minSize,
     alignItems: 'center',
     justifyContent: 'center',
   },

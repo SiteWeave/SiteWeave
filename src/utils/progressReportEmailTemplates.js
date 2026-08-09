@@ -28,8 +28,25 @@ function escapeHtml(text) {
 
 function formatDate(dateString) {
   if (!dateString) return '';
-  const date = new Date(dateString);
+  const raw = String(dateString).trim();
+  const isoDay = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  const date = isoDay
+    ? new Date(Number(isoDay[1]), Number(isoDay[2]) - 1, Number(isoDay[3]))
+    : new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
   return date.toLocaleDateString(i18n.language || 'en', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/** Long-form date for weekly plan lines, e.g. "May 8, 2026". */
+function formatReadableDate(dateString) {
+  if (!dateString) return '';
+  const raw = String(dateString).trim();
+  const isoDay = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  const date = isoDay
+    ? new Date(Number(isoDay[1]), Number(isoDay[2]) - 1, Number(isoDay[3]))
+    : new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toLocaleDateString(i18n.language || 'en', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
 function formatReportPeriod(startDate, endDate) {
@@ -145,6 +162,7 @@ function emailShell({ subject, branding, bodyHtml }) {
           <div style="padding:12px 0 0;margin-top:12px;border-top:1px solid #e5e7eb;">
             ${siteweaveFooterBlock}
           </div>
+          <!-- siteweave-unsubscribe-slot -->
         </div>
       </td>
     </tr>
@@ -161,37 +179,30 @@ function vitalsHtml(vitals, primary, secondary) {
   if (vitals.tasks_completed_count != null && vitals.open_tasks_count != null) {
     cells.push({
       val: `${vitals.tasks_completed_count} / ${vitals.open_tasks_count}`,
-      label: 'Tasks completed (all) / Open (not complete)',
+      label: 'Done vs open',
       color: secondary,
-      isText: true,
     });
   }
   if (vitals.project_end_date) {
     cells.push({
-      val: formatDate(vitals.project_end_date),
-      label: 'Project end (latest task due)',
+      val: formatReadableDate(vitals.project_end_date),
+      label: 'Latest task',
       color: primary,
-      isText: true,
     });
   }
   if (vitals.schedule_day_total != null && vitals.schedule_day_current != null) {
     cells.push({
-      val: `${vitals.schedule_day_current} / ${vitals.schedule_day_total}`,
-      subVal: vitals.schedule_progress_pct != null ? `${vitals.schedule_progress_pct}% through schedule` : null,
-      label: 'Schedule timeline',
+      val: `${vitals.schedule_day_current} / ${vitals.schedule_day_total} days`,
+      label: 'Progress',
       color: '#374151',
-      isText: true,
     });
   }
   if (cells.length === 0) return '';
   const width = `${Math.floor(100 / cells.length)}%`;
   const cellHtml = cells.map((c, idx) => `
-    <td style="width:${width};text-align:center;padding:16px 12px;${idx > 0 ? 'border-left:1px solid #e5e7eb;' : ''}">
-      ${c.isText
-        ? `<p style="margin:0;font-size:15px;font-weight:600;color:${c.color};line-height:1.3;">${escapeHtml(String(c.val))}</p>
-           ${c.subVal ? `<p style="margin:4px 0 0;font-size:11px;color:#6b7280;">${escapeHtml(c.subVal)}</p>` : ''}`
-        : `<p style="margin:0;font-size:30px;font-weight:700;color:${c.color};line-height:1;">${escapeHtml(String(c.val))}</p>`}
-      <p style="margin:6px 0 0;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;font-weight:500;">${escapeHtml(c.label)}</p>
+    <td style="width:${width};text-align:center;padding:10px 8px;vertical-align:middle;${idx > 0 ? 'border-left:1px solid #e5e7eb;' : ''}">
+      <p style="margin:0;font-size:14px;font-weight:700;color:${c.color};line-height:1.3;">${escapeHtml(String(c.val))}</p>
+      <p style="margin:4px 0 0;font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.04em;font-weight:600;line-height:1.2;">${escapeHtml(c.label)}</p>
     </td>`).join('');
   return `
   <table role="presentation" style="width:100%;border-collapse:collapse;background-color:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;margin-bottom:28px;">
@@ -201,7 +212,7 @@ function vitalsHtml(vitals, primary, secondary) {
 
 // ─── lookahead section ─────────────────────────────────────────────────────────
 
-function weeklyPlanHtml(reportData, primary, sections, showWeeklyProjectTag = true) {
+function weeklyPlanHtml(reportData, primary, sections, showWeeklyProjectTag = true, showTaskPhotos = false) {
   const lastWeek = reportData.last_week_done || [];
   const thisWeek = reportData.this_week_plan || [];
   const nextWeek = reportData.next_week_plan || [];
@@ -220,19 +231,19 @@ function weeklyPlanHtml(reportData, primary, sections, showWeeklyProjectTag = tr
     <div style="margin-bottom:14px;">
       <p style="margin:0 0 6px;color:#065f46;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">We did this last week</p>
       ${lastWeek.length
-        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${lastWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}${wkProj(task)}</li>`).join('')}</ul>`
+        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${lastWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}${wkProj(task)}${showTaskPhotos && task.photos?.length ? taskPhotosHtml(task.photos) : ''}</li>`).join('')}</ul>`
         : '<p style="margin:0;color:#6b7280;font-size:13px;">No completed tasks in the last week.</p>'}
     </div>
     <div style="margin-bottom:14px;">
       <p style="margin:0 0 6px;color:#1e3a8a;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Here is what we are doing this week</p>
       ${thisWeek.length
-        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${thisWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}${wkProj(task)}${task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(String(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
+        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${thisWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}${wkProj(task)}${task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(formatReadableDate(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
         : '<p style="margin:0;color:#6b7280;font-size:13px;">No tasks scheduled this week.</p>'}
     </div>
     <div>
       <p style="margin:0 0 6px;color:#3730a3;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Here is what we will do next week</p>
       ${nextWeek.length
-        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${nextWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}${wkProj(task)}${task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(String(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
+        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${nextWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}${wkProj(task)}${task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(formatReadableDate(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
         : '<p style="margin:0;color:#6b7280;font-size:13px;">No tasks scheduled for next week.</p>'}
     </div>
   </div>`;
@@ -297,21 +308,32 @@ function scheduleAdjustmentsHtml(reportData, primary, showProjectNames = true) {
 
 function taskPhotosHtml(photos = []) {
   if (!photos || photos.length === 0) return '';
+  // Table layout (not flex) so print / html2canvas / email clients keep spacing and avoid overlap.
+  const cellFor = (photo) => `
+    <td style="width:120px;max-width:120px;padding:0 10px 12px 0;vertical-align:top;">
+      <a href="${escapeHtml(photo.full_url || photo.thumbnail_url || '#')}" target="_blank" rel="noreferrer" style="display:block;text-decoration:none;">
+        <img
+          src="${escapeHtml(photo.thumbnail_url || photo.full_url || '')}"
+          alt="${escapeHtml(photo.caption || 'Task photo')}"
+          width="120"
+          height="90"
+          style="display:block;width:120px;height:90px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;background:#f9fafb;"
+        >
+      </a>
+      ${photo.caption ? `<p style="margin:6px 0 0;color:#6b7280;font-size:11px;line-height:1.35;word-break:break-word;">${escapeHtml(photo.caption)}</p>` : ''}
+      ${photo.is_completion_photo ? `<p style="margin:4px 0 0;color:#059669;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Completion photo</p>` : ''}
+    </td>`;
+  const cols = 4;
+  const rows = [];
+  for (let i = 0; i < photos.length; i += cols) {
+    const slice = photos.slice(i, i + cols);
+    const pad = Array.from({ length: cols - slice.length }, () => '<td style="padding:0;width:120px;"></td>').join('');
+    rows.push(`<tr>${slice.map(cellFor).join('')}${pad}</tr>`);
+  }
   return `
-  <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:10px;">
-    ${photos.map((photo) => `
-      <div style="width:120px;">
-        <a href="${escapeHtml(photo.full_url || photo.thumbnail_url || '#')}" target="_blank" rel="noreferrer" style="display:block;text-decoration:none;">
-          <img
-            src="${escapeHtml(photo.thumbnail_url || photo.full_url || '')}"
-            alt="${escapeHtml(photo.caption || 'Task photo')}"
-            style="display:block;width:120px;height:90px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;background:#f9fafb;"
-          >
-        </a>
-        ${photo.caption ? `<p style="margin:6px 0 0;color:#6b7280;font-size:11px;line-height:1.4;">${escapeHtml(photo.caption)}</p>` : ''}
-        ${photo.is_completion_photo ? `<p style="margin:4px 0 0;color:#059669;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Completion photo</p>` : ''}
-      </div>`).join('')}
-  </div>`;
+  <table role="presentation" style="width:100%;border-collapse:collapse;margin-top:10px;">
+    ${rows.join('')}
+  </table>`;
 }
 
 // ─── STANDARD template (replaces both Client and Internal) ────────────────────
@@ -557,7 +579,7 @@ function standardReportSectionsHtml(reportData, schedule, branding, options = {}
 
     ${snapshotSection}
 
-    ${sections.weekly_plan ? weeklyPlanHtml(reportData, primary, sections, showWeeklyProjectTag) : ''}
+    ${sections.weekly_plan ? weeklyPlanHtml(reportData, primary, sections, showWeeklyProjectTag, showTaskPhotos) : ''}
 
     ${sections.show_weather_impacts && reportData.weather_impacts?.length ? weatherImpactsHtml(reportData, primary, showWeatherProjectNames) : ''}
     ${sections.show_schedule_adjustments && reportData.schedule_adjustments?.length ? scheduleAdjustmentsHtml(reportData, primary, showWeatherProjectNames) : ''}
@@ -752,13 +774,11 @@ function generateTextVersion(reportData, schedule, period) {
       text += `${slices.length} project(s) in this report. `;
     }
     if (v.tasks_completed_count != null && v.open_tasks_count != null) {
-      text += `Tasks completed (all) / Open (not complete): ${v.tasks_completed_count} / ${v.open_tasks_count}\n`;
+      text += `Done vs open: ${v.tasks_completed_count} / ${v.open_tasks_count}\n`;
     }
-    if (v.project_end_date) text += `Project end (latest task due): ${formatDate(v.project_end_date)}\n`;
+    if (v.project_end_date) text += `Latest task: ${formatDate(v.project_end_date)}\n`;
     if (v.schedule_day_total != null && v.schedule_day_current != null) {
-      text += `Schedule timeline: ${v.schedule_day_current} / ${v.schedule_day_total} days`;
-      if (v.schedule_progress_pct != null) text += ` (${v.schedule_progress_pct}% through schedule)`;
-      text += '\n';
+      text += `Progress: ${v.schedule_day_current} / ${v.schedule_day_total} days\n`;
     }
     text += '\n';
   };
@@ -826,7 +846,7 @@ function generateTextVersion(reportData, schedule, period) {
       text += `\nHere's what we are doing this week:\n`;
       if (data.this_week_plan?.length) {
         data.this_week_plan.forEach((t) => {
-          text += `- ${t.text || 'Task'}${phaseTxt(t)}${wkProj(t)}${t.start_date ? ` (starts ${t.start_date})` : ''}\n`;
+          text += `- ${t.text || 'Task'}${phaseTxt(t)}${wkProj(t)}${t.start_date ? ` (starts ${formatReadableDate(t.start_date)})` : ''}\n`;
         });
       } else {
         text += `- No tasks scheduled this week.\n`;
@@ -834,7 +854,7 @@ function generateTextVersion(reportData, schedule, period) {
       text += `\nHere's what we will do next week:\n`;
       if (data.next_week_plan?.length) {
         data.next_week_plan.forEach((t) => {
-          text += `- ${t.text || 'Task'}${phaseTxt(t)}${wkProj(t)}${t.start_date ? ` (starts ${t.start_date})` : ''}\n`;
+          text += `- ${t.text || 'Task'}${phaseTxt(t)}${wkProj(t)}${t.start_date ? ` (starts ${formatReadableDate(t.start_date)})` : ''}\n`;
         });
       } else {
         text += `- No tasks scheduled for next week.\n`;
@@ -878,13 +898,11 @@ function generateTextVersion(reportData, schedule, period) {
   if (reportData.vitals) {
     const v = reportData.vitals;
     if (v.tasks_completed_count != null && v.open_tasks_count != null) {
-      text += `Tasks completed (all) / Open (not complete): ${v.tasks_completed_count} / ${v.open_tasks_count}\n`;
+      text += `Done vs open: ${v.tasks_completed_count} / ${v.open_tasks_count}\n`;
     }
-    if (v.project_end_date) text += `Project end (latest task due): ${formatDate(v.project_end_date)}\n`;
+    if (v.project_end_date) text += `Latest task: ${formatDate(v.project_end_date)}\n`;
     if (v.schedule_day_total != null && v.schedule_day_current != null) {
-      text += `Schedule timeline: ${v.schedule_day_current} / ${v.schedule_day_total} days`;
-      if (v.schedule_progress_pct != null) text += ` (${v.schedule_progress_pct}% through schedule)`;
-      text += '\n';
+      text += `Progress: ${v.schedule_day_current} / ${v.schedule_day_total} days\n`;
     }
     text += '\n';
   }

@@ -33,6 +33,7 @@ export default function ProjectFormFields({
   disabled = false,
   compact = false,
   recentAddresses = [],
+  dateRangeActive = true,
 }) {
   const { t } = useTranslation();
 
@@ -135,6 +136,7 @@ export default function ProjectFormFields({
               }
               placeholder={t('mobile.project_date_range_placeholder')}
               disabled={disabled}
+              active={dateRangeActive}
               testID="project-date-range"
             />
           </View>

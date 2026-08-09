@@ -11,6 +11,7 @@ const REPLY_BODY_MAX = 4000;
 export const STREAM_POST_TYPES = [
   { value: 'general', label: 'Update' },
   { value: 'daily_log', label: 'Daily log' },
+  { value: 'milestone', label: 'Milestone' },
 ];
 
 /**
@@ -141,9 +142,17 @@ export async function createStreamPost(supabase, postData) {
   if (!body) throw new Error('Post body is required');
   if (body.length > POST_BODY_MAX) throw new Error(`Post must be under ${POST_BODY_MAX} characters`);
 
+  const insertPayload = { ...postData, body };
+  if (postData.post_type === 'milestone') {
+    insertPayload.payload = {
+      ...(postData.payload && typeof postData.payload === 'object' ? postData.payload : {}),
+      approval_status: postData.payload?.approval_status || 'pending',
+    };
+  }
+
   const { data, error } = await supabase
     .from('project_stream_posts')
-    .insert({ ...postData, body })
+    .insert(insertPayload)
     .select('*')
     .single();
 
@@ -198,6 +207,24 @@ export async function updateStreamPost(supabase, postId, updates) {
 
   if (error) throw error;
   return enrichStreamPost(supabase, data);
+}
+
+/**
+ * Set milestone approval status on a stream post payload.
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {string} postId
+ * @param {'pending'|'approved'|'rejected'} status
+ * @param {object} [currentPayload]
+ */
+export async function updateMilestoneApprovalStatus(supabase, postId, status, currentPayload = {}) {
+  const allowed = new Set(['pending', 'approved', 'rejected']);
+  if (!allowed.has(status)) throw new Error('Invalid approval status');
+  const payload = {
+    ...(currentPayload && typeof currentPayload === 'object' ? currentPayload : {}),
+    approval_status: status,
+    approval_updated_at: new Date().toISOString(),
+  };
+  return updateStreamPost(supabase, postId, { payload });
 }
 
 /**

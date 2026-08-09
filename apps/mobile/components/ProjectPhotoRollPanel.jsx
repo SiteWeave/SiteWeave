@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, FlatList, Image, Modal, Pressable } from 'react-native';
+import { View, StyleSheet, Modal, Pressable } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import { fetchProjectPhotoRoll } from '@siteweave/core-logic';
 import { Text } from './ui/Text';
 import PressableWithFade from './PressableWithFade';
+import RemoteImage from './RemoteImage';
 import { colors, spacing, radius } from '../theme';
 import { SkeletonList } from './ui/Skeleton';
+import { useScrollPrefetch } from '../hooks/useScrollPrefetch';
+import { prefetchRemoteImages } from '../utils/prefetchIntent';
 
 const FILTERS = [
   { id: 'all', sources: null },
@@ -53,6 +57,10 @@ export default function ProjectPhotoRollPanel({
     return items.filter((row) => def.sources.includes(row.source));
   }, [items, filter]);
 
+  const onScrollPrefetch = useScrollPrefetch(() => {
+    prefetchRemoteImages(visibleItems.map((row) => row.full_url || row.thumbnail_url));
+  });
+
   if (loading) {
     return (
       <View style={[styles.wrap, { paddingBottom: contentPaddingBottom }]}>
@@ -63,12 +71,13 @@ export default function ProjectPhotoRollPanel({
 
   return (
     <>
-      <FlatList
+      <FlashList
         data={visibleItems}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id)}
         numColumns={3}
-        columnWrapperStyle={styles.gridRow}
         contentContainerStyle={[styles.list, { paddingBottom: contentPaddingBottom }]}
+        onScroll={onScrollPrefetch}
+        scrollEventThrottle={400}
         ListHeaderComponent={
           <View style={styles.filterRow}>
             {FILTERS.map((f) => (
@@ -91,7 +100,11 @@ export default function ProjectPhotoRollPanel({
         }
         renderItem={({ item }) => (
           <PressableWithFade style={styles.thumbWrap} onPress={() => setViewer(item)} static>
-            <Image source={{ uri: item.thumbnail_url || item.full_url }} style={styles.thumb} />
+            <RemoteImage
+              uri={item.thumbnail_url || item.full_url}
+              style={styles.thumb}
+              recyclingKey={`photo-roll-${item.id}`}
+            />
           </PressableWithFade>
         )}
         testID="project-photo-roll-panel"
@@ -99,7 +112,12 @@ export default function ProjectPhotoRollPanel({
       <Modal visible={Boolean(viewer)} transparent animationType="fade" onRequestClose={() => setViewer(null)}>
         <Pressable style={styles.viewerBackdrop} onPress={() => setViewer(null)}>
           {viewer ? (
-            <Image source={{ uri: viewer.full_url || viewer.thumbnail_url }} style={styles.viewerImage} resizeMode="contain" />
+            <RemoteImage
+              uri={viewer.full_url || viewer.thumbnail_url}
+              style={styles.viewerImage}
+              contentFit="contain"
+              recyclingKey={`photo-viewer-${viewer.id}`}
+            />
           ) : null}
         </Pressable>
       </Modal>
@@ -121,8 +139,7 @@ const styles = StyleSheet.create({
   filterChipActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
   filterText: { fontWeight: '600', color: colors.textMuted, fontSize: 12 },
   filterTextActive: { color: colors.primary },
-  gridRow: { gap: spacing.sm, marginBottom: spacing.sm },
-  thumbWrap: { flex: 1, aspectRatio: 1, maxWidth: '32%' },
+  thumbWrap: { flex: 1, aspectRatio: 1, margin: spacing.xs / 2, maxWidth: '33%' },
   thumb: { width: '100%', height: '100%', borderRadius: radius.card, backgroundColor: colors.surfaceMuted },
   empty: { color: colors.textMuted, textAlign: 'center', marginTop: spacing.xl },
   viewerBackdrop: {

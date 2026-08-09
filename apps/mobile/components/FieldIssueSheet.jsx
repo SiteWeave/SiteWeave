@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, StyleSheet, Alert, Image, ScrollView } from 'react-native';
+import { View, StyleSheet, Alert, ScrollView } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -8,16 +8,25 @@ import {
   updateProjectIssue,
   todayIso,
   fetchIssueAssigneeOptions,
+  resolveIssueAssigneePatch,
   isSmsNotificationsEnabled,
 } from '@siteweave/core-logic';
 import BottomSheet from './ui/BottomSheet';
 import DateField from './ui/DateField';
 import { Text } from './ui/Text';
 import PressableWithFade from './PressableWithFade';
+import RemoteImage from './RemoteImage';
 import { colors, spacing, touch, typography } from '../theme';
 import { enqueueOfflineAction } from '../utils/offlineQueue';
 import { persistOfflinePhotoUri } from '../utils/offlinePhotoStorage';
 import { uploadIssuePhotoFromUri } from '../utils/uploadIssuePhoto';
+import { alertPhotoUploadFailed } from '../utils/photoUploadFeedback';
+import {
+  runAfterInteractionsAsync,
+  useAfterSheetDismiss,
+} from '../utils/runAfterSheetDismiss';
+import { IMAGE_MEDIA_TYPES } from '../utils/imagePickerMediaTypes';
+import { loadFormDraft, saveFormDraft, clearFormDraft } from '../utils/formDrafts';
 
 const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
 
@@ -35,10 +44,6 @@ const SEVERITY_STYLES = {
   Critical: { bg: '#FEE2E2', text: '#991B1B' },
 };
 
-const IMAGE_MEDIA_TYPES = ImagePicker.MediaType?.Images
-  ? [ImagePicker.MediaType.Images]
-  : (ImagePicker.MediaTypeOptions?.Images ?? ['images']);
-
 export default function FieldIssueSheet({
   visible,
   onClose,
@@ -50,34 +55,100 @@ export default function FieldIssueSheet({
   issueToEdit = null,
 }) {
   const { t } = useTranslation();
+  const { scheduleAfterDismiss, handleDismissed, clearPending } = useAfterSheetDismiss();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
   const [priority, setPriority] = useState('Medium');
   const [dueDate, setDueDate] = useState('');
-  const [assignedToUserId, setAssignedToUserId] = useState('');
+  const [assignedToContactId, setAssignedToContactId] = useState('');
   const [assigneeOptions, setAssigneeOptions] = useState([]);
   const [assigneesLoading, setAssigneesLoading] = useState(false);
   const [photoUri, setPhotoUri] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [pickerSuspended, setPickerSuspended] = useState(false);
   const [notifyChannels, setNotifyChannels] = useState({
     email: true,
     app: true,
     sms: false,
   });
   const smsNotifyAvailable = isSmsNotificationsEnabled();
+  const sheetVisible = visible && !pickerSuspended;
 
   useEffect(() => {
-    if (!visible) return;
-    setTitle(issueToEdit?.title || '');
-    setDescription(issueToEdit?.description || '');
-    setLocation(issueToEdit?.location || '');
-    setPriority(issueToEdit?.priority || 'Medium');
-    setDueDate(issueToEdit?.due_date || todayIso());
-    setAssignedToUserId(issueToEdit?.assigned_to_user_id || '');
-    setPhotoUri(null);
-    setNotifyChannels({ email: true, app: true, sms: false });
-  }, [visible, issueToEdit]);
+    if (!visible) {
+      setPickerSuspended(false);
+      clearPending();
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      if (issueToEdit) {
+        setTitle(issueToEdit?.title || '');
+        setDescription(issueToEdit?.description || '');
+        setLocation(issueToEdit?.location || '');
+        setPriority(issueToEdit?.priority || 'Medium');
+        setDueDate(issueToEdit?.due_date || todayIso());
+        setAssignedToContactId(issueToEdit?.assigned_to_contact_id || '');
+        setPhotoUri(null);
+        setNotifyChannels({ email: true, app: true, sms: false });
+        return;
+      }
+      const draft = await loadFormDraft('field_issue', projectId || 'default');
+      if (cancelled) return;
+      const data = draft?.data;
+      setTitle(data?.title || '');
+      setDescription(data?.description || '');
+      setLocation(data?.location || '');
+      setPriority(data?.priority || 'Medium');
+      setDueDate(data?.dueDate || todayIso());
+      setAssignedToContactId(data?.assignedToContactId || data?.assignedToUserId || '');
+      setPhotoUri(data?.photoUri || null);
+      setNotifyChannels(data?.notifyChannels || { email: true, app: true, sms: false });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, issueToEdit, clearPending, projectId]);
+
+  useEffect(() => {
+    if (!visible || issueToEdit) return undefined;
+    const handle = setTimeout(() => {
+      const hasContent =
+        title.trim() ||
+        description.trim() ||
+        location.trim() ||
+        photoUri ||
+        assignedToContactId;
+      if (!hasContent) {
+        clearFormDraft('field_issue', projectId || 'default');
+        return;
+      }
+      saveFormDraft('field_issue', projectId || 'default', {
+        title,
+        description,
+        location,
+        priority,
+        dueDate,
+        assignedToContactId,
+        photoUri,
+        notifyChannels,
+      });
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [
+    visible,
+    issueToEdit,
+    projectId,
+    title,
+    description,
+    location,
+    priority,
+    dueDate,
+    assignedToContactId,
+    photoUri,
+    notifyChannels,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,25 +177,85 @@ export default function FieldIssueSheet({
     };
   }, [visible, supabase, projectId, organizationId, t]);
 
-  const handleTakePhoto = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(t('common.error'), t('mobile.issue_photo_permission'));
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: IMAGE_MEDIA_TYPES,
-      quality: 0.8,
-      allowsEditing: false,
-    });
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setPhotoUri(result.assets[0].uri);
+  const pickIssuePhoto = async (source) => {
+    try {
+      if (source === 'camera') {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert(t('common.error'), t('mobile.issue_photo_permission'));
+          return;
+        }
+      }
+      const result =
+        source === 'camera'
+          ? await ImagePicker.launchCameraAsync({
+              mediaTypes: IMAGE_MEDIA_TYPES,
+              quality: 0.8,
+              allowsEditing: false,
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: IMAGE_MEDIA_TYPES,
+              quality: 0.8,
+              allowsEditing: false,
+            });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setPhotoUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Field issue photo pick failed:', error);
+      alertPhotoUploadFailed({
+        t,
+        message:
+          error?.message ||
+          t('mobile.issue_photo_failed', { defaultValue: 'Could not open the camera.' }),
+        onRetake: () => {
+          void runAfterInteractionsAsync(() => pickIssuePhoto(source));
+        },
+      });
+    } finally {
+      setPickerSuspended(false);
     }
   };
 
+  const handleTakePhoto = () => {
+    if (saving || pickerSuspended) return;
+    scheduleAfterDismiss(() => {
+      let sourceSelected = false;
+      Alert.alert(t('mobile.issue_add_photo'), undefined, [
+        {
+          text: t('common.cancel'),
+          style: 'cancel',
+          onPress: () => setPickerSuspended(false),
+        },
+        {
+          text: t('mobile.photo_take', { defaultValue: 'Take photo' }),
+          onPress: () => {
+            sourceSelected = true;
+            void runAfterInteractionsAsync(() => pickIssuePhoto('camera'));
+          },
+        },
+        {
+          text: t('mobile.photo_library', { defaultValue: 'Choose from library' }),
+          onPress: () => {
+            sourceSelected = true;
+            void runAfterInteractionsAsync(() => pickIssuePhoto('library'));
+          },
+        },
+      ], {
+        cancelable: true,
+        onDismiss: () => {
+          if (!sourceSelected) setPickerSuspended(false);
+        },
+      });
+    }, () => setPickerSuspended(true));
+  };
+
   const persistIssue = async () => {
-    const assigneeId = assignedToUserId || null;
-    const channelPayload = assigneeId
+    const assigneePatch = resolveIssueAssigneePatch(assignedToContactId, assigneeOptions);
+    const hasAssignee = Boolean(
+      assigneePatch.assigned_to_contact_id || assigneePatch.assigned_to_user_id,
+    );
+    const channelPayload = hasAssignee
       ? {
           email: notifyChannels.email,
           app: notifyChannels.app,
@@ -139,7 +270,8 @@ export default function FieldIssueSheet({
       location: location.trim() || null,
       priority,
       due_date: dueDate || null,
-      assigned_to_user_id: assigneeId,
+      assigned_to_contact_id: assigneePatch.assigned_to_contact_id,
+      assigned_to_user_id: assigneePatch.assigned_to_user_id,
       created_by_user_id: userId,
       bridgeToStream: true,
       notifyChannels: channelPayload,
@@ -157,7 +289,8 @@ export default function FieldIssueSheet({
               location: issuePayload.location,
               priority: issuePayload.priority,
               due_date: issuePayload.due_date,
-              assigned_to_user_id: assigneeId,
+              assigned_to_contact_id: assigneePatch.assigned_to_contact_id,
+              assigned_to_user_id: assigneePatch.assigned_to_user_id,
             },
             {
               previousStatus: issueToEdit.status,
@@ -167,13 +300,51 @@ export default function FieldIssueSheet({
           )
         : await createProjectIssue(supabase, issuePayload);
       if (photoUri && issue?.id) {
-        await uploadIssuePhotoFromUri(supabase, {
-          issueId: issue.id,
-          uri: photoUri,
-          userId,
-          organizationId,
-        });
+        try {
+          await uploadIssuePhotoFromUri(supabase, {
+            issueId: issue.id,
+            uri: photoUri,
+            userId,
+            organizationId,
+          });
+        } catch (photoError) {
+          console.error('Field issue photo upload failed:', photoError);
+          alertPhotoUploadFailed({
+            t,
+            message:
+              photoError?.message ||
+              t('mobile.photo_not_saved_message', {
+                defaultValue: 'The photo did not upload. Retry, or take another.',
+              }),
+            onRetry: async () => {
+              try {
+                await uploadIssuePhotoFromUri(supabase, {
+                  issueId: issue.id,
+                  uri: photoUri,
+                  userId,
+                  organizationId,
+                });
+              } catch (retryError) {
+                Alert.alert(
+                  t('mobile.photo_not_saved_title', { defaultValue: 'Photo not saved' }),
+                  retryError?.message ||
+                    t('mobile.photo_not_saved_message', {
+                      defaultValue: 'The photo did not upload. Retry, or take another.',
+                    }),
+                );
+              }
+            },
+            onRetake: () => {
+              // Issue already saved; user can add a photo from punch list later.
+            },
+          });
+          await clearFormDraft('field_issue', projectId || 'default');
+          onCreated?.();
+          onClose?.();
+          return;
+        }
       }
+      await clearFormDraft('field_issue', projectId || 'default');
       Alert.alert(
         t('common.success'),
         issueToEdit ? t('common.save') : t('mobile.issue_reported'),
@@ -198,6 +369,7 @@ export default function FieldIssueSheet({
         type: 'create_issue',
         payload: { ...issuePayload, localPhotoUri },
       });
+      await clearFormDraft('field_issue', projectId || 'default');
       Alert.alert(t('mobile.offline_queued_title'), t('mobile.issue_queued'));
       onClose?.();
     } finally {
@@ -208,7 +380,7 @@ export default function FieldIssueSheet({
   const handleSave = async () => {
     if (!title.trim() || !supabase || !userId || !projectId || !organizationId) return;
 
-    if (!assignedToUserId) {
+    if (!assignedToContactId) {
       Alert.alert(
         t('fieldIssues.assignee_label'),
         t('fieldIssues.assign_later_confirm', {
@@ -227,12 +399,14 @@ export default function FieldIssueSheet({
 
   return (
     <BottomSheet
-      visible={visible}
+      visible={sheetVisible}
       title={issueToEdit ? t('common.edit') : t('mobile.report_issue_title')}
       onClose={onClose}
+      onDismissed={handleDismissed}
+      dismissWithoutAnimation={pickerSuspended}
       primaryLabel={issueToEdit ? t('common.save') : t('mobile.report_issue_submit')}
       onPrimary={handleSave}
-      primaryDisabled={saving || !title.trim()}
+      primaryDisabled={saving || !title.trim() || pickerSuspended}
       primaryLoading={saving}
       snap="medium"
       maxSnap="large"
@@ -267,7 +441,7 @@ export default function FieldIssueSheet({
         {!assigneesLoading && assigneeOptions.length === 0 ? (
           <Text variant="caption" style={styles.hint}>
             {t('fieldIssues.no_project_assignees', {
-              defaultValue: 'No project members with accounts yet. Add crew to the project to assign.',
+              defaultValue: 'No one is on this project yet. Add people to the project team to assign.',
             })}
           </Text>
         ) : null}
@@ -279,30 +453,30 @@ export default function FieldIssueSheet({
           <PressableWithFade
             style={[
               styles.assigneeChip,
-              !assignedToUserId ? styles.chipActiveNeutral : styles.chipInactive,
+              !assignedToContactId ? styles.chipActiveNeutral : styles.chipInactive,
             ]}
-            onPress={() => setAssignedToUserId('')}
+            onPress={() => setAssignedToContactId('')}
             disabled={saving}
           >
             <Text
               style={[
                 styles.chipText,
-                !assignedToUserId ? styles.chipTextActiveNeutral : styles.chipTextInactive,
+                !assignedToContactId ? styles.chipTextActiveNeutral : styles.chipTextInactive,
               ]}
             >
               {t('mobile.task_assignee_none')}
             </Text>
           </PressableWithFade>
           {assigneeOptions.map((opt) => {
-            const active = assignedToUserId === opt.userId;
+            const active = assignedToContactId === opt.contactId;
             return (
               <PressableWithFade
-                key={opt.userId}
+                key={opt.contactId}
                 style={[
                   styles.assigneeChip,
                   active ? styles.chipActiveNeutral : styles.chipInactive,
                 ]}
-                onPress={() => setAssignedToUserId(opt.userId)}
+                onPress={() => setAssignedToContactId(opt.contactId)}
                 disabled={saving}
               >
                 <Text
@@ -319,7 +493,7 @@ export default function FieldIssueSheet({
           })}
         </ScrollView>
 
-        {assignedToUserId ? (
+        {assignedToContactId ? (
           <View style={styles.notifyBlock}>
             <Text variant="caption" style={styles.label}>
               {t('fieldIssues.notify_channels')}
@@ -426,8 +600,8 @@ export default function FieldIssueSheet({
           </Text>
         </PressableWithFade>
         {photoUri ? (
-          <Image
-            source={{ uri: photoUri }}
+          <RemoteImage
+            uri={photoUri}
             style={styles.preview}
             accessibilityLabel={t('mobile.issue_photo_preview')}
           />

@@ -1,5 +1,16 @@
-import { View, Text, StyleSheet, Modal, Animated, Dimensions, Alert, ScrollView, ActivityIndicator } from 'react-native';
-import { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  Animated,
+  Dimensions,
+  Alert,
+  ScrollView,
+  ActivityIndicator,
+  InteractionManager,
+} from 'react-native';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,7 +32,27 @@ export default function ProfileDrawer({ visible, onClose }) {
   const { t } = useTranslation();
   const { user, signOut, deleteAccount, profileAvatarUrl } = useAuth();
   const { mode, canSwitchView, setMode } = useMobileExperience();
-  const { onAvatarPress, avatarLoading } = useProfileAvatarPicker();
+  const nativeUiReadyRef = useRef(null);
+
+  const resolveNativeUiReady = useCallback(() => {
+    const resolve = nativeUiReadyRef.current;
+    if (!resolve) return;
+    nativeUiReadyRef.current = null;
+    InteractionManager.runAfterInteractions(resolve);
+  }, []);
+
+  const closeBeforeNativeUi = useCallback(
+    () =>
+      new Promise((resolve) => {
+        nativeUiReadyRef.current = resolve;
+        onClose();
+      }),
+    [onClose],
+  );
+
+  const { onAvatarPress, avatarLoading } = useProfileAvatarPicker({
+    beforeNativeUi: closeBeforeNativeUi,
+  });
   const haptics = useHaptics();
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
@@ -42,8 +73,9 @@ export default function ProfileDrawer({ visible, onClose }) {
       });
     } else {
       drawerTranslateY.setValue(1);
+      resolveNativeUiReady();
     }
-  }, [visible, drawerTranslateY, haptics]);
+  }, [visible, drawerTranslateY, haptics, resolveNativeUiReady]);
 
   const handleSignOut = async () => {
     try {
@@ -105,7 +137,13 @@ export default function ProfileDrawer({ visible, onClose }) {
   const getUserEmail = () => user?.email || '';
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      onRequestClose={onClose}
+      onDismiss={resolveNativeUiReady}
+    >
       <View style={styles.modalContainer}>
         <ModalScrim onPress={onClose} opacity={0.5} />
 

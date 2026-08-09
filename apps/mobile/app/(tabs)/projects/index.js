@@ -1,7 +1,8 @@
-import { View, StyleSheet, FlatList, RefreshControl, TextInput } from 'react-native';
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { View, StyleSheet, RefreshControl, TextInput } from 'react-native';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { FlashList } from '@shopify/flash-list';
 import { useAuth } from '../../../context/AuthContext';
 import { useMobileExperience } from '../../../context/MobileExperienceContext';
 import { useCreateAction } from '../../../context/CreateActionContext';
@@ -14,8 +15,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing } from '../../../theme';
 import { scrollBottomPadding, contentTopInset } from '../../../utils/layoutInsets';
 import { getCached, setCached } from '../../../utils/persistentCache';
+import { warmProjectDetailCache } from '../../../utils/prefetchIntent';
 import { SkeletonCard } from '../../../components/ui/Skeleton';
 import { useSyncStatus } from '../../../context/SyncStatusContext';
+import { useScrollPrefetch } from '../../../hooks/useScrollPrefetch';
 
 export default function ProjectsScreen() {
   const { t } = useTranslation();
@@ -23,6 +26,7 @@ export default function ProjectsScreen() {
   const { isManagerView } = useMobileExperience();
   const { openCreateProject } = useCreateAction();
   const { isOnline } = useSyncStatus();
+  const previousOnlineRef = useRef(isOnline);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [projects, setProjects] = useState([]);
@@ -88,7 +92,9 @@ export default function ProjectsScreen() {
   );
 
   useEffect(() => {
-    if (isOnline) {
+    const cameOnline = isOnline && !previousOnlineRef.current;
+    previousOnlineRef.current = isOnline;
+    if (cameOnline) {
       loadProjects();
     }
   }, [isOnline, loadProjects]);
@@ -134,9 +140,32 @@ export default function ProjectsScreen() {
     <ProjectListCard
       project={item}
       onPress={() => router.push(`/(tabs)/projects/${item.id}`)}
+      onPressIn={() => {
+        if (user?.id && supabase && item?.id) {
+          warmProjectDetailCache({
+            supabase,
+            userId: user.id,
+            projectId: item.id,
+          }).catch(() => {});
+        }
+      }}
       testID={`project-row-${item.id}`}
     />
   );
+
+  const onScrollPrefetch = useScrollPrefetch(() => {
+    // Projects list is not paginated; warm first visible details ahead of navigation.
+    const ahead = filteredProjects.slice(0, 5);
+    ahead.forEach((p) => {
+      if (user?.id && supabase && p?.id) {
+        warmProjectDetailCache({
+          supabase,
+          userId: user.id,
+          projectId: p.id,
+        }).catch(() => {});
+      }
+    });
+  });
 
   return (
     <View style={[styles.safeArea, { paddingTop: contentTopInset(insets) }]}>
@@ -150,12 +179,14 @@ export default function ProjectsScreen() {
           placeholderTextColor={colors.textSubtle}
           testID="projects-global-search"
         />
-        <FlatList
+        <FlashList
           data={filteredProjects}
           renderItem={renderProject}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => String(item.id)}
           contentContainerStyle={[styles.list, { paddingBottom: scrollBottomPadding(insets, spacing.lg) }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          onScroll={onScrollPrefetch}
+          scrollEventThrottle={400}
           ListEmptyComponent={
             loading ? (
               <View style={styles.skeletonList}>
@@ -187,7 +218,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: spacing.lg,
   },
-  list: { paddingTop: spacing.xs, gap: spacing.md },
+  list: { paddingTop: spacing.xs },
   searchInput: {
     borderWidth: 1,
     borderColor: colors.border,

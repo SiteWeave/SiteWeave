@@ -11,6 +11,10 @@ export {
   getChecklistDismissed,
   setChecklistDismissed,
 } from './storage';
+export {
+  shouldShowSetupWizard,
+  isEligibleForActivationChecklist,
+} from './shouldShowSetupWizard';
 export { STARTER_TEMPLATES, seedStarterTemplatesIfNeeded, loadSampleProjectIfRequested } from './starterTemplates';
 export { useOnboarding } from './useOnboarding';
 export { useOfficeActivationState, markTeamInviteSent } from './useOfficeActivationState';

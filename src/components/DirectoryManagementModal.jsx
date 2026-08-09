@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { getOrganizationUsers, inviteUser, createUser, removeUserFromOrganization } from '../utils/userManagementService';
+import { getOrganizationUsers, removeUserFromOrganization } from '../utils/userManagementService';
 import { getAssignableOrgRoles } from '../utils/roleManagementService';
 import PermissionGuard from './PermissionGuard';
 import Modal from './Modal';

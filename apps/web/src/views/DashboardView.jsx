@@ -36,11 +36,14 @@ import {
   getChecklistDismissed,
   setChecklistDismissed,
   isActivationComplete,
+  isEligibleForActivationChecklist,
   useOfficeActivationState,
   useBrandingPrimaryColor,
 } from '@siteweave/onboarding-ui';
 import { ROUTE_PATHS } from '../config/routes';
 import { logProjectCreated } from '../utils/activityLogger';
+
+const PENDING_PROJECT_TAB_KEY = 'siteweave_pending_project_tab';
 
 const loadBrandingColor = (organizationId) =>
   getOrganizationBranding(supabaseClient, organizationId).then((b) => b?.primary_color);
@@ -108,14 +111,18 @@ function DashboardView() {
     const [showProjectLimitModal, setShowProjectLimitModal] = useState(false);
     const [showCommsUpgrade, setShowCommsUpgrade] = useState(false);
     const [checklistDismissed, setChecklistDismissedState] = useState(() =>
-        state.user?.id ? getChecklistDismissed(state.user.id) : false,
+        state.user?.id
+            ? getChecklistDismissed(state.user.id, state.currentOrganization?.id)
+            : false,
     );
     const { canProgressReports } = useWorkspaceTier();
 
     useEffect(() => {
         if (!state.user?.id) return;
-        setChecklistDismissedState(getChecklistDismissed(state.user.id));
-    }, [state.user?.id]);
+        setChecklistDismissedState(
+            getChecklistDismissed(state.user.id, state.currentOrganization?.id),
+        );
+    }, [state.user?.id, state.currentOrganization?.id]);
 
     const isGuestOnly = state.isProjectCollaborator && !state.currentOrganization;
 
@@ -128,11 +135,11 @@ function DashboardView() {
 
     const primaryColor = useBrandingPrimaryColor(loadBrandingColor, state.currentOrganization?.id);
 
-    const isOrgAdminForChecklist =
-        state.userRole?.name === 'Org Admin' ||
-        state.userRole?.permissions?.can_manage_roles === true ||
-        (state.currentOrganization?.created_by_user_id != null &&
-            state.currentOrganization.created_by_user_id === state.user?.id);
+    const isOrgAdminForChecklist = isEligibleForActivationChecklist({
+        user: state.user,
+        userRole: state.userRole,
+        org: state.currentOrganization,
+    });
 
     const showActivationChecklist =
         activationReady &&
@@ -151,12 +158,16 @@ function DashboardView() {
         !isActivationComplete(activationCompleted);
 
     const handleChecklistDismiss = () => {
-        if (state.user?.id) setChecklistDismissed(state.user.id, true);
+        if (state.user?.id) {
+            setChecklistDismissed(state.user.id, true, state.currentOrganization?.id);
+        }
         setChecklistDismissedState(true);
     };
 
     const handleChecklistShow = () => {
-        if (state.user?.id) setChecklistDismissed(state.user.id, false);
+        if (state.user?.id) {
+            setChecklistDismissed(state.user.id, false, state.currentOrganization?.id);
+        }
         setChecklistDismissedState(false);
     };
 
@@ -200,6 +211,11 @@ function DashboardView() {
             if (!projectId) {
                 await tryOpenCreateProject();
                 return;
+            }
+            try {
+                sessionStorage.setItem(PENDING_PROJECT_TAB_KEY, 'gantt');
+            } catch {
+                /* ignore */
             }
             dispatch({ type: 'SET_PROJECT', payload: projectId });
             dispatch({ type: 'SET_VIEW', payload: 'Projects' });

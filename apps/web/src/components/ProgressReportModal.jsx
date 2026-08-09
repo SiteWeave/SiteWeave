@@ -127,7 +127,7 @@ function ProgressReportModal({ projectId, onClose }) {
     }
     try {
       const result = await exportReportToPDF(supabaseClient, scheduleId);
-      if (!result?.html) {
+      if (!result?.html && !result?.pdf_base64) {
         addToast(t('progressReports.export_no_document'), 'error');
         return;
       }
@@ -136,6 +136,7 @@ function ProgressReportModal({ projectId, onClose }) {
           result.report_name ?? '',
           result.subject ?? '',
         ),
+        pdfBase64: result.pdf_base64 || undefined,
       });
       if (!saveResult.ok) {
         addToast(saveResult.error || t('progressReports.pdf_save_error'), 'error');

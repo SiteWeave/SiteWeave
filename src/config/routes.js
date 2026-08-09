@@ -28,6 +28,7 @@ export const ROUTE_PATHS = {
   smsConsent: '/sms-consent/:token',
   /** Public sample opt-in page for SMS program registration / review */
   smsOptIn: '/sms-opt-in',
+  progressReportUnsubscribe: '/unsubscribe/progress-report/:token',
 }
 
 export const PRIMARY_NAV_ITEMS = [

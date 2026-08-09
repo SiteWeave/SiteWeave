@@ -472,14 +472,39 @@ serve(async (req) => {
       }
 
       const recipientInputs: PingRecipientInput[] = []
+      const contactIdsToResolve: string[] = []
       if (Array.isArray(recipientsRaw) && recipientsRaw.length > 0) {
         for (const r of recipientsRaw) {
+          const contactId = r?.contactId || r?.contact_id || null
+          const email = r?.email || null
+          const phone = r?.phone || null
+          const userId = r?.userId || r?.user_id || null
+          if (contactId && !email && !phone && !userId) {
+            contactIdsToResolve.push(String(contactId))
+          }
           recipientInputs.push({
-            userId: r?.userId || r?.user_id || null,
-            email: r?.email || null,
-            phone: r?.phone || null,
+            userId: userId || null,
+            email,
+            phone,
             name: r?.name || null,
           })
+        }
+      }
+      if (contactIdsToResolve.length > 0) {
+        const { data: contactRows } = await supabase
+          .from('contacts')
+          .select('id, name, email, phone')
+          .in('id', [...new Set(contactIdsToResolve)])
+        const byId = new Map((contactRows || []).map((c) => [String(c.id), c]))
+        for (let i = 0; i < (recipientsRaw || []).length; i++) {
+          const raw = recipientsRaw[i]
+          const contactId = raw?.contactId || raw?.contact_id
+          if (!contactId) continue
+          const row = byId.get(String(contactId))
+          if (!row || !recipientInputs[i]) continue
+          if (!recipientInputs[i].email && row.email) recipientInputs[i].email = row.email
+          if (!recipientInputs[i].phone && row.phone) recipientInputs[i].phone = row.phone
+          if (!recipientInputs[i].name && row.name) recipientInputs[i].name = row.name
         }
       }
       if (Array.isArray(recipientUserIdsRaw)) {

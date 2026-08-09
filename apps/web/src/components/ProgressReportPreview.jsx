@@ -259,7 +259,8 @@ function StandardPreviewSections({
 
   const formatTaskStartDate = (value) => {
     const parsed = parsePreviewDay(value);
-    return parsed ? parsed.toLocaleDateString(locale) : value;
+    if (!parsed) return value ? `starts ${value}` : '';
+    return `starts ${parsed.toLocaleDateString(locale, { month: 'long', day: 'numeric', year: 'numeric' })}`;
   };
 
   const formatScheduleDate = (value) => formatTaskStartDate(value);
@@ -267,32 +268,27 @@ function StandardPreviewSections({
   return (
     <>
       {reportSections.vitals !== false && d.vitals && (
-        <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-3 border border-gray-200 rounded-lg bg-gray-50 px-4 py-3 text-center">
+        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 border border-gray-200 rounded-lg bg-gray-50 px-4 py-3 text-center">
           <div>
-            <p className="text-xl font-semibold text-gray-900 tabular-nums">{d.vitals.tasks_completed_count ?? 0}</p>
-            <p className="text-xs text-gray-500 mt-0.5 max-w-[9rem]">{p('done_all_time')}</p>
-          </div>
-          <div>
-            <p className="text-xl font-semibold text-gray-900 tabular-nums">{d.vitals.open_tasks_count ?? 0}</p>
-            <p className="text-xs text-gray-500 mt-0.5 max-w-[9rem]">{p('not_complete')}</p>
+            <p className="text-base font-bold text-gray-900 tabular-nums leading-tight">
+              {d.vitals.tasks_completed_count ?? 0} / {d.vitals.open_tasks_count ?? 0}
+            </p>
+            <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-400 mt-1">{p('done_vs_open')}</p>
           </div>
           {d.vitals.project_end_date && (
-            <div className="sm:border-l sm:border-gray-200 sm:pl-10">
-              <p className="text-lg font-semibold text-gray-800 leading-tight">
-                {new Date(d.vitals.project_end_date).toLocaleDateString(locale)}
+            <div className="sm:border-l sm:border-gray-200 sm:pl-8">
+              <p className="text-base font-bold text-gray-800 leading-tight">
+                {new Date(d.vitals.project_end_date + (String(d.vitals.project_end_date).length <= 10 ? 'T12:00:00' : '')).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })}
               </p>
-              <p className="text-xs text-gray-500 mt-1 font-medium">{p('latest_task_due')}</p>
+              <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-400 mt-1">{p('latest_task')}</p>
             </div>
           )}
           {d.vitals.schedule_day_total != null && (
-            <div className="sm:border-l sm:border-gray-200 sm:pl-10">
-              <p className="text-lg font-semibold text-gray-800 leading-tight">
-                {d.vitals.schedule_day_current} / {d.vitals.schedule_day_total}
+            <div className="sm:border-l sm:border-gray-200 sm:pl-8">
+              <p className="text-base font-bold text-gray-800 leading-tight tabular-nums">
+                {d.vitals.schedule_day_current} / {d.vitals.schedule_day_total} days
               </p>
-              {d.vitals.schedule_progress_pct != null && (
-                <p className="text-xs text-gray-500 mt-0.5">{d.vitals.schedule_progress_pct}%</p>
-              )}
-              <p className="text-xs text-gray-500 mt-1 font-medium">{p('schedule_business_days')}</p>
+              <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-400 mt-1">{p('progress_days')}</p>
             </div>
           )}
         </div>

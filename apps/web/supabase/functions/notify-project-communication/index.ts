@@ -75,6 +75,53 @@ const corsHeaders = {
 const STREAM_TYPE_LABELS: Record<string, string> = {
   general: 'Update',
   daily_log: 'Daily log',
+  milestone: 'Milestone',
+}
+
+async function emailCommunicationRecipients(opts: {
+  recipients: ProjectRecipient[]
+  heading: string
+  subheading: string
+  ctaUrl: string
+  subject: string
+  preview: string
+  projectName: string
+  footerText: string
+}) {
+  const { recipients, heading, subheading, ctaUrl, subject, preview, projectName, footerText } = opts
+  let emailed = 0
+  for (const r of recipients) {
+    if (!r.email) continue
+    try {
+      const template = buildMinimalDigestEmail({
+        heading,
+        subheading,
+        ctaUrl,
+        reviewLinkText: 'Open in SiteWeave',
+        summaryLabel: 'New',
+        summaryValue: 1,
+        recipientName: 'there',
+        tasks: [{ title: preview || subheading, priority: null }],
+        footerText,
+        projectName,
+        projectAddress: null,
+        tasksSectionTitle: 'Message',
+        omitLeadBlock: true,
+        calendarTimeZone: null,
+      })
+      const sendResult = await sendTransactionalEmail({
+        to: r.email,
+        subject,
+        html: template.html,
+        text: template.text,
+      })
+      if (sendResult.success) emailed += 1
+      else console.error('project communication email failed', r.email, sendResult.error)
+    } catch (err) {
+      console.error('project communication email error', r.email, err)
+    }
+  }
+  return emailed
 }
 
 async function loadPushTokens(supabase: SupabaseClient, userIds: string[]) {
@@ -161,10 +208,18 @@ serve(async (req) => {
         excludeUserId: user.id,
       })
 
+      const mentioned = await resolveMentionedRecipients(
+        supabase,
+        post.project_id,
+        `${post.title || ''}\n${post.body || ''}`,
+        post.organization_id,
+      )
+
       const typeLabel = STREAM_TYPE_LABELS[post.post_type] || 'Update'
       const preview = post.title || (post.body || '').slice(0, 120)
       const projectName = project?.name || 'Project'
       const actionUrl = buildAppProjectUrl(post.project_id, 'updates')
+      const actorName = await resolveActorDisplayName(supabase, user.id)
 
       const notifRows = recipients.map((r) => ({
         organization_id: post.organization_id,
@@ -185,7 +240,31 @@ serve(async (req) => {
 
       await insertUserNotifications(supabase, notifRows)
 
-      const pushTokens = await loadPushTokens(supabase, recipients.map((r) => r.userId))
+      const mentionTargets = mentioned.filter((m) => m.userId !== user.id)
+      if (mentionTargets.length) {
+        await insertUserNotifications(
+          supabase,
+          mentionTargets.map((r) => ({
+            organization_id: post.organization_id,
+            project_id: post.project_id,
+            recipient_user_id: r.userId,
+            recipient_email: r.email,
+            source_type: 'stream_post_mention',
+            source_id: post.id,
+            title: `You were mentioned · ${projectName}`,
+            body: preview,
+            metadata: {
+              action_url: actionUrl,
+              post_type: post.post_type,
+              screen: `/projects/${post.project_id}/updates`,
+              project_id: post.project_id,
+            },
+          })),
+        )
+      }
+
+      const pushRecipients = dedupeRecipients([...recipients, ...mentionTargets])
+      const pushTokens = await loadPushTokens(supabase, pushRecipients.map((r) => r.userId))
       await sendExpoPush(pushTokens, {
         title: `${typeLabel} · ${projectName}`,
         body: preview,
@@ -196,8 +275,19 @@ serve(async (req) => {
         },
       })
 
+      const emailed = await emailCommunicationRecipients({
+        recipients: pushRecipients,
+        heading: `${typeLabel} on ${projectName}`,
+        subheading: preview || typeLabel,
+        ctaUrl: actionUrl,
+        subject: `${typeLabel}: ${projectName}`,
+        preview: preview || typeLabel,
+        projectName,
+        footerText: `${actorName} posted in the project stream.`,
+      })
+
       return new Response(
-        JSON.stringify({ success: true, notified: recipients.length }),
+        JSON.stringify({ success: true, notified: recipients.length, emailed }),
         { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
       )
     }
@@ -317,8 +407,22 @@ serve(async (req) => {
         },
       })
 
+      const actorName = await resolveActorDisplayName(supabase, user.id)
+      const emailed = await emailCommunicationRecipients({
+        recipients: pushRecipients,
+        heading: mentionTargets.length
+          ? `Comment / mention on ${projectName}`
+          : `New comment on ${projectName}`,
+        subheading: `${taskLabel}: ${preview}`,
+        ctaUrl: actionUrl,
+        subject: `Task comment: ${projectName}`,
+        preview: preview || 'New comment',
+        projectName,
+        footerText: `${actorName} commented on ${taskLabel}.`,
+      })
+
       return new Response(
-        JSON.stringify({ success: true, notified: recipients.length }),
+        JSON.stringify({ success: true, notified: recipients.length, emailed }),
         { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
       )
     }
@@ -339,7 +443,9 @@ serve(async (req) => {
 
       const { data: issue, error: issueError } = await supabase
         .from('project_issues')
-        .select('id, project_id, organization_id, title, priority, assigned_to_user_id, created_by_user_id')
+        .select(
+          'id, project_id, organization_id, title, priority, assigned_to_user_id, assigned_to_contact_id, created_by_user_id',
+        )
         .eq('id', issueId)
         .single()
 
@@ -363,14 +469,25 @@ serve(async (req) => {
       let recipients: ProjectRecipient[] = []
       let assigneeContact: { email: string | null; phone: string | null; name: string | null } | null = null
 
-      if (action === 'field_issue_assigned' && issue.assigned_to_user_id) {
-        if (issue.assigned_to_user_id !== user.id) {
+      if (action === 'field_issue_assigned') {
+        if (issue.assigned_to_user_id && issue.assigned_to_user_id !== user.id) {
           recipients = allRecipients.filter((r) => r.userId === issue.assigned_to_user_id)
           if (!recipients.length) {
             assigneeContact = await resolveAssigneeContact(supabase, issue.assigned_to_user_id)
             if (assigneeContact.email) {
               recipients = [{ userId: issue.assigned_to_user_id, email: assigneeContact.email }]
             }
+          }
+        } else if (issue.assigned_to_contact_id) {
+          const { data: contactRow } = await supabase
+            .from('contacts')
+            .select('name, email, phone')
+            .eq('id', issue.assigned_to_contact_id)
+            .maybeSingle()
+          assigneeContact = {
+            email: contactRow?.email ? String(contactRow.email).trim().toLowerCase() : null,
+            phone: contactRow?.phone ? String(contactRow.phone).trim() : null,
+            name: contactRow?.name ? String(contactRow.name).trim() : null,
           }
         }
       } else {
@@ -426,12 +543,17 @@ serve(async (req) => {
 
       if (
         action === 'field_issue_assigned' &&
-        issue.assigned_to_user_id &&
-        issue.assigned_to_user_id !== user.id &&
-        (channels.email || channels.sms)
+        (channels.email || channels.sms) &&
+        (
+          (issue.assigned_to_user_id && issue.assigned_to_user_id !== user.id) ||
+          (!issue.assigned_to_user_id && issue.assigned_to_contact_id)
+        )
       ) {
         const assignee =
-          assigneeContact || (await resolveAssigneeContact(supabase, issue.assigned_to_user_id))
+          assigneeContact ||
+          (issue.assigned_to_user_id
+            ? await resolveAssigneeContact(supabase, issue.assigned_to_user_id)
+            : { email: null, phone: null, name: null })
         const recipientEmail =
           recipients[0]?.email ||
           (assignee.email && assignee.email.includes('@') ? assignee.email : null)

@@ -4,7 +4,7 @@ import ProgressDonut from './ProgressDonut';
 import PressableWithFade from './PressableWithFade';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function ProjectCardCompact({ project }) {
+export default function ProjectCardCompact({ project, onPressIn }) {
   const router = useRouter();
 
   const handlePress = () => {
@@ -23,6 +23,7 @@ export default function ProjectCardCompact({ project }) {
     <PressableWithFade
       style={styles.card}
       onPress={handlePress}
+      onPressIn={onPressIn}
       static
     >
       <View style={styles.content}>

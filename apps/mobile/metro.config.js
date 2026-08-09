@@ -17,6 +17,31 @@ const packagesRoot = path.resolve(workspaceRoot, 'packages');
 // Paths to force resolution from mobile app's node_modules
 const mobileNodeModules = path.resolve(projectRoot, 'node_modules');
 
+/** When EXPO_GO_COMPAT=1, stub native-only packages so Expo Go can load the JS bundle. */
+const expoGoCompat =
+  process.env.EXPO_GO_COMPAT === '1' || process.env.EXPO_PUBLIC_EXPO_GO_COMPAT === '1';
+
+const expoGoStubs = expoGoCompat
+  ? {
+      'react-native-mmkv': path.resolve(projectRoot, 'stubs/expo-go/react-native-mmkv.js'),
+      'react-native-nitro-modules': path.resolve(
+        projectRoot,
+        'stubs/expo-go/react-native-nitro-modules.js',
+      ),
+      '@react-native-voice/voice': path.resolve(projectRoot, 'stubs/expo-go/react-native-voice.js'),
+      'react-native-android-widget': path.resolve(
+        projectRoot,
+        'stubs/expo-go/react-native-android-widget.js',
+      ),
+      '@shopify/flash-list': path.resolve(projectRoot, 'stubs/expo-go/flash-list.js'),
+    }
+  : null;
+
+if (expoGoCompat) {
+  // eslint-disable-next-line no-console
+  console.log('[metro] EXPO_GO_COMPAT=1 — stubbing mmkv/nitro/voice/widgets/flash-list for Expo Go');
+}
+
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(projectRoot);
 
@@ -37,6 +62,13 @@ config.resolver.extraNodeModules = {
 // Also handle @siteweave/core-logic package resolution
 const originalResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (expoGoStubs && expoGoStubs[moduleName]) {
+    return {
+      type: 'sourceFile',
+      filePath: expoGoStubs[moduleName],
+    };
+  }
+
   // Force React-related modules to resolve from the mobile app's node_modules
   // This prevents "Invalid hook call" errors from multiple React instances
   if (

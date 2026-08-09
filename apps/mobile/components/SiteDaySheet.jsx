@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   Alert,
-  Image,
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
@@ -25,20 +24,28 @@ import BottomSheet from './ui/BottomSheet';
 import { ProjectChipPicker } from './ui/ProjectPicker';
 import { Text } from './ui/Text';
 import PressableWithFade from './PressableWithFade';
+import PhotoStatusThumb from './PhotoStatusThumb';
 import { colors, spacing, radius, touch } from '../theme';
-
-const IMAGE_MEDIA_TYPES = ImagePicker.MediaType?.Images
-  ? [ImagePicker.MediaType.Images]
-  : (ImagePicker.MediaTypeOptions?.Images ?? ['images']);
 import { enqueueOfflineAction } from '../utils/offlineQueue';
 import { uploadSiteDayPhotoFromUri } from '../utils/uploadSiteDayPhoto';
+import { alertPhotoUploadFailed } from '../utils/photoUploadFeedback';
 import { useVoiceDictation } from '../hooks/useVoiceDictation';
 import { recordSiteDayPost } from '../utils/siteDayStreak';
 import { signalReviewPromptOpportunity } from '../utils/reviewPromptEvents';
 import { useHaptics } from '../hooks/useHaptics';
 import { useCollapsibleList, ShowMoreToggle } from './ui/CollapsibleList';
+import { IMAGE_MEDIA_TYPES } from '../utils/imagePickerMediaTypes';
+import { loadFormDraft, saveFormDraft, clearFormDraft } from '../utils/formDrafts';
+import {
+  runAfterInteractionsAsync,
+  useAfterSheetDismiss,
+} from '../utils/runAfterSheetDismiss';
 
 const BLOCKER_CATEGORIES = ['delay', 'safety', 'quality'];
+
+function newLocalPhotoId() {
+  return `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function contactKey(contact) {
   return contact?.id || contact?.email || contact?.name || '';
@@ -68,6 +75,7 @@ export default function SiteDaySheet({
 }) {
   const { t, i18n } = useTranslation();
   const haptics = useHaptics();
+  const { scheduleAfterDismiss, handleDismissed, clearPending } = useAfterSheetDismiss();
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [sections, setSections] = useState(emptySections);
   const [photos, setPhotos] = useState([]);
@@ -75,10 +83,14 @@ export default function SiteDaySheet({
   const [drafting, setDrafting] = useState(false);
   const [userEdited, setUserEdited] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [pickerSuspended, setPickerSuspended] = useState(false);
   const [projectContacts, setProjectContacts] = useState([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const initialSnapshotRef = useRef(null);
+  const pickerGenerationRef = useRef(0);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   const projectOptions = useMemo(() => projects.filter((p) => p?.id), [projects]);
 
@@ -127,6 +139,15 @@ export default function SiteDaySheet({
     setProjectContacts([]);
     setDetailsExpanded(false);
     initialSnapshotRef.current = null;
+    let cancelled = false;
+    loadFormDraft('site_day', 'last').then((draft) => {
+      if (cancelled || !draft?.data?.selectedProjectId) return;
+      const stillValid = projectOptions.some((p) => p.id === draft.data.selectedProjectId);
+      if (stillValid) setSelectedProjectId(draft.data.selectedProjectId);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [visible, projectOptions]);
 
   useEffect(() => {
@@ -139,11 +160,12 @@ export default function SiteDaySheet({
         const projectTasks = tasks.filter((task) => task.project_id === selectedProjectId);
         const completedToday = projectTasks.filter(wasCompletedToday);
 
-        const [weatherImpacts, issuesResult] = await Promise.all([
+        const [weatherImpacts, issuesResult, savedDraft] = await Promise.all([
           listWeatherImpactsForProject(supabase, selectedProjectId, organizationId).catch(() => []),
           fetchProjectIssues(supabase, selectedProjectId, { statusFilter: 'open', limit: 10 }).catch(
             () => ({ issues: [] }),
           ),
+          loadFormDraft('site_day', selectedProjectId),
         ]);
 
         const todayWeather = (weatherImpacts || []).filter(weatherImpactIsToday);
@@ -160,19 +182,41 @@ export default function SiteDaySheet({
             weather: built.weather,
             blockers: built.blockers,
           };
-          setSections(built);
-          setUserEdited(false);
+          const savedNotes = savedDraft?.data?.notes;
+          if (savedNotes && String(savedNotes).trim()) {
+            setSections({ ...built, notes: savedNotes });
+            setUserEdited(true);
+          } else {
+            setSections(built);
+            setUserEdited(false);
+          }
         }
       } finally {
         if (!cancelled) setDrafting(false);
       }
     };
-
     loadDraft();
     return () => {
       cancelled = true;
     };
   }, [visible, selectedProjectId, supabase, organizationId, tasks]);
+
+  useEffect(() => {
+    if (!visible || !selectedProjectId) return undefined;
+    const handle = setTimeout(() => {
+      const notes = String(sections.notes || '').trim();
+      if (!notes && !userEdited) {
+        clearFormDraft('site_day', selectedProjectId);
+        return;
+      }
+      saveFormDraft('site_day', selectedProjectId, {
+        notes: sections.notes || '',
+        selectedProjectId,
+      });
+      saveFormDraft('site_day', 'last', { selectedProjectId });
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [visible, selectedProjectId, sections.notes, userEdited]);
 
   useEffect(() => {
     if (!visible || !selectedProjectId || !supabase) {
@@ -252,66 +296,159 @@ export default function SiteDaySheet({
     });
   };
 
-  const pickPhoto = async (source) => {
-    if (!selectedProjectId || !supabase) return;
-    const permission =
-      source === 'camera'
-        ? await ImagePicker.requestCameraPermissionsAsync()
-        : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(t('common.error'), t('mobile.issue_photo_permission'));
+  const pickPhoto = async (source, { retryLocalId, retryUri } = {}) => {
+    if (!visibleRef.current || !selectedProjectId || !supabase) {
+      setPickerSuspended(false);
       return;
     }
-    const result =
-      source === 'camera'
-        ? await ImagePicker.launchCameraAsync({
-            mediaTypes: IMAGE_MEDIA_TYPES,
-            quality: 0.8,
-            allowsEditing: false,
-          })
-        : await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: IMAGE_MEDIA_TYPES,
-            quality: 0.8,
-            allowsEditing: false,
-          });
-
-    if (result.canceled || !result.assets?.[0]?.uri) return;
-
-    setUploadingPhoto(true);
+    const generation = ++pickerGenerationRef.current;
+    let localId = retryLocalId || null;
+    let localUri = retryUri || null;
     try {
+      if (!localUri) {
+        if (source === 'camera') {
+          const permission = await ImagePicker.requestCameraPermissionsAsync();
+          if (!permission.granted) {
+            Alert.alert(t('common.error'), t('mobile.issue_photo_permission'));
+            return;
+          }
+        }
+        if (!visibleRef.current || generation !== pickerGenerationRef.current) return;
+        const result =
+          source === 'camera'
+            ? await ImagePicker.launchCameraAsync({
+                mediaTypes: IMAGE_MEDIA_TYPES,
+                quality: 0.8,
+                allowsEditing: false,
+              })
+            : await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: IMAGE_MEDIA_TYPES,
+                quality: 0.8,
+                allowsEditing: false,
+              });
+
+        if (!visibleRef.current || generation !== pickerGenerationRef.current) return;
+        if (result.canceled || !result.assets?.[0]?.uri) return;
+        localUri = result.assets[0].uri;
+      }
+
+      localId = localId || newLocalPhotoId();
+      markEdited();
+      setPhotos((prev) => {
+        const without = prev.filter((p) => p.localId !== localId);
+        return [
+          ...without,
+          {
+            localId,
+            localUri,
+            url: null,
+            file_name: null,
+            status: 'uploading',
+          },
+        ];
+      });
+      setUploadingPhoto(true);
+
       const uploaded = await uploadSiteDayPhotoFromUri(supabase, {
         projectId: selectedProjectId,
-        uri: result.assets[0].uri,
+        uri: localUri,
       });
-      markEdited();
-      setPhotos((prev) => [...prev, uploaded]);
+      if (!visibleRef.current || generation !== pickerGenerationRef.current) return;
+      setPhotos((prev) =>
+        prev.map((p) =>
+          p.localId === localId
+            ? {
+                ...p,
+                ...uploaded,
+                localUri,
+                status: 'ready',
+              }
+            : p,
+        ),
+      );
       haptics.success();
-    } catch (err) {
-      console.error('Site day photo upload failed:', err);
-      Alert.alert(t('common.error'), t('mobile.site_day_photo_failed'));
+    } catch (error) {
+      console.error('Site day photo pick/upload failed:', error);
+      if (localId) {
+        setPhotos((prev) =>
+          prev.map((p) => (p.localId === localId ? { ...p, status: 'failed' } : p)),
+        );
+      }
+      alertPhotoUploadFailed({
+        t,
+        message: error?.message || t('mobile.site_day_photo_failed'),
+        onRetry: () => {
+          void pickPhoto(source, { retryLocalId: localId, retryUri: localUri });
+        },
+        onRetake: () => {
+          if (localId) {
+            setPhotos((prev) => prev.filter((p) => p.localId !== localId));
+          }
+          void runAfterInteractionsAsync(() => pickPhoto(source));
+        },
+      });
     } finally {
       setUploadingPhoto(false);
+      if (generation === pickerGenerationRef.current) setPickerSuspended(false);
     }
   };
 
   const openPhotoPicker = () => {
-    if (uploadingPhoto || loading) return;
+    if (uploadingPhoto || loading || pickerSuspended) return;
     if (!selectedProjectId) return;
-    Alert.alert(t('mobile.site_day_add_photo'), undefined, [
-      { text: t('common.cancel'), style: 'cancel' },
-      { text: 'Take photo', onPress: () => pickPhoto('camera') },
-      { text: 'Choose from library', onPress: () => pickPhoto('library') },
-    ]);
+    scheduleAfterDismiss(() => {
+      let sourceSelected = false;
+      Alert.alert(t('mobile.site_day_add_photo'), undefined, [
+        {
+          text: t('common.cancel'),
+          style: 'cancel',
+          onPress: () => setPickerSuspended(false),
+        },
+        {
+          text: t('mobile.photo_take', { defaultValue: 'Take photo' }),
+          onPress: () => {
+            sourceSelected = true;
+            void runAfterInteractionsAsync(() => pickPhoto('camera'));
+          },
+        },
+        {
+          text: t('mobile.photo_library', { defaultValue: 'Choose from library' }),
+          onPress: () => {
+            sourceSelected = true;
+            void runAfterInteractionsAsync(() => pickPhoto('library'));
+          },
+        },
+      ], {
+        cancelable: true,
+        onDismiss: () => {
+          if (!sourceSelected) setPickerSuspended(false);
+        },
+      });
+    }, () => setPickerSuspended(true));
   };
 
   const handlePost = async () => {
     if (!supabase || !userId || !organizationId || !selectedProjectId || !hasSectionContent) return;
 
+    if (photos.some((p) => p.status === 'uploading')) {
+      Alert.alert(
+        t('mobile.photo_still_uploading_title', { defaultValue: 'Photo still uploading' }),
+        t('mobile.photo_still_uploading_message', {
+          defaultValue: 'Wait a moment for the photo to finish, then post.',
+        }),
+      );
+      return;
+    }
+
+    const readyPhotos = photos
+      .filter((p) => p.status === 'ready' && p.url)
+      .map(({ url, caption, file_name }) => ({ url, caption: caption || '', file_name }));
+
     setLoading(true);
     const structuredPayload = {
       log_date: todayIso(),
       sections,
-      photos,
+      photos: readyPhotos,
     };
     const streamPayload = {
       project_id: selectedProjectId,
@@ -321,8 +458,8 @@ export default function SiteDaySheet({
       title: t('mobile.site_day_post_title'),
       body: submitBody,
       payload: structuredPayload,
-      file_url: photos[0]?.url || null,
-      file_name: photos[0]?.file_name || null,
+      file_url: readyPhotos[0]?.url || null,
+      file_name: readyPhotos[0]?.file_name || null,
     };
 
     try {
@@ -331,12 +468,16 @@ export default function SiteDaySheet({
       signalReviewPromptOpportunity();
       Alert.alert(t('common.success'), t('mobile.site_day_posted'));
       haptics.success();
+      await clearFormDraft('site_day', selectedProjectId);
+      await clearFormDraft('site_day', 'last');
       onPosted?.();
       onClose?.();
     } catch (error) {
       console.error('Site day post failed:', error);
       await enqueueOfflineAction({ type: 'create_stream_post', payload: streamPayload });
       await recordSiteDayPost(userId);
+      await clearFormDraft('site_day', selectedProjectId);
+      await clearFormDraft('site_day', 'last');
       Alert.alert(t('mobile.offline_queued_title'), t('mobile.site_day_queued'));
       onClose?.();
     } finally {
@@ -351,16 +492,41 @@ export default function SiteDaySheet({
   };
 
   const showCompactPassive = passiveReady && !detailsExpanded;
+  const sheetVisible = visible && !pickerSuspended;
+
+  useEffect(() => {
+    if (!visible) {
+      pickerGenerationRef.current += 1;
+      setPickerSuspended(false);
+      clearPending();
+      return;
+    }
+    // Always clear a stuck suspend when the sheet is (re)opened — otherwise
+    // sheetVisible stays false and project chips never receive presses.
+    setPickerSuspended(false);
+    clearPending();
+  }, [visible, clearPending]);
+
+  useEffect(() => {
+    if (!pickerSuspended) return undefined;
+    // Failsafe: never leave the sheet unmounted forever after a native picker handoff.
+    const timer = setTimeout(() => {
+      setPickerSuspended(false);
+    }, 15000);
+    return () => clearTimeout(timer);
+  }, [pickerSuspended]);
 
   return (
     <>
       <BottomSheet
-        visible={visible}
+        visible={sheetVisible}
         title={t('mobile.site_day_title')}
         onClose={onClose}
+        onDismissed={handleDismissed}
+        dismissWithoutAnimation={pickerSuspended}
         primaryLabel={passiveReady ? t('mobile.site_day_post_ready') : t('mobile.site_day_post')}
         onPrimary={handlePost}
-        primaryDisabled={loading || drafting || !hasSectionContent || !selectedProjectId}
+        primaryDisabled={loading || drafting || !hasSectionContent || !selectedProjectId || pickerSuspended}
         primaryLoading={loading}
         snap="large"
         expandOnFocus
@@ -380,7 +546,7 @@ export default function SiteDaySheet({
                 projects={projectOptions}
                 selectedId={selectedProjectId}
                 onSelect={setSelectedProjectId}
-                disabled={loading || drafting}
+                disabled={loading}
                 collapseWhenHidden={visible}
                 hideWhenSingle={false}
                 testID="site-day-project-picker"
@@ -590,7 +756,19 @@ export default function SiteDaySheet({
                 {photos.length > 0 ? (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
                     {photos.map((photo, i) => (
-                      <Image key={photo.url || i} source={{ uri: photo.url }} style={styles.photoThumb} />
+                      <PhotoStatusThumb
+                        key={photo.localId || photo.url || i}
+                        uri={photo.localUri || photo.url}
+                        status={photo.status === 'uploading' ? 'uploading' : photo.status === 'failed' ? 'failed' : 'ready'}
+                        onRetry={() => {
+                          void pickPhoto('camera', {
+                            retryLocalId: photo.localId,
+                            retryUri: photo.localUri,
+                          });
+                        }}
+                        testID={`site-day-photo-${i}`}
+                        accessibilityLabel={t('mobile.site_day_photos')}
+                      />
                     ))}
                   </ScrollView>
                 ) : null}
@@ -709,11 +887,4 @@ const styles = StyleSheet.create({
   },
   addPhotoText: { fontWeight: '600', color: colors.textMuted },
   photoScroll: { marginTop: spacing.sm },
-  photoThumb: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.card,
-    marginRight: spacing.sm,
-    backgroundColor: colors.surfaceMuted,
-  },
 });

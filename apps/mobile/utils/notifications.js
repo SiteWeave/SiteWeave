@@ -334,7 +334,7 @@ export async function acknowledgeNotification(supabase, options = {}) {
  * When a new user_notification row arrives (from stream/task edge fn), show a local banner in foreground.
  * Push still delivered via Expo when app is backgrounded.
  */
-export function subscribeUserNotificationInserts(supabase, userId, userEmail) {
+export function subscribeUserNotificationInserts(supabase, userId, userEmail, onInsert) {
   if (!supabase || !userId) return () => {};
 
   const channel = supabase
@@ -354,6 +354,7 @@ export function subscribeUserNotificationInserts(supabase, userId, userEmail) {
         ) {
           return;
         }
+        onInsert?.(row);
         await scheduleLocalNotification(row.title || 'SiteWeave', row.body || '', {
           project_id: row.project_id,
           screen: row.metadata?.screen,
