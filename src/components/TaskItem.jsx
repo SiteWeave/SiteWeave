@@ -30,6 +30,8 @@ const TaskItem = memo(function TaskItem({
     onCopyGuestLink = null,
     pingingTaskId = null,
     project = null,
+    focusAssign = false,
+    onFocusAssignConsumed = null,
 }) {
     const { i18n, t } = useTranslation();
     /** @type {[TaskPanel, (p: TaskPanel) => void]} */
@@ -70,6 +72,13 @@ const TaskItem = memo(function TaskItem({
             syncDraftsFromTask();
         }
     }, [task, panel, syncDraftsFromTask]);
+
+    useEffect(() => {
+        if (!focusAssign) return;
+        setPanel('assign');
+        setHoverExpanded(true);
+        onFocusAssignConsumed?.();
+    }, [focusAssign, onFocusAssignConsumed]);
 
     useEffect(() => {
         if (!panel) return undefined;
@@ -600,6 +609,7 @@ const TaskItem = memo(function TaskItem({
     return (
         <li
             ref={rootRef}
+            data-task-id={task.id}
             draggable
             onDragStart={handleTaskRowDragStart}
             onMouseEnter={handleRowMouseEnter}

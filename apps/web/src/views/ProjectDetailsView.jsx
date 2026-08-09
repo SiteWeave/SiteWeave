@@ -49,7 +49,10 @@ import ProjectSidebarPhases from '../components/phases/ProjectSidebarPhases';
 import ProjectModal from '../components/ProjectModal';
 import ProjectSmartNotificationsCard from '../components/ProjectSmartNotificationsCard';
 import ProjectSmartNotificationsModal from '../components/ProjectSmartNotificationsModal';
-import TasksDispatchRail from '../components/TasksDispatchRail';
+import TasksDispatchRail, {
+    getActionAnchorDate,
+    isInActionWindow,
+} from '../components/TasksDispatchRail';
 import ShareModal from '../components/ShareModal';
 import SaveAsTemplateModal from '../components/SaveAsTemplateModal';
 import MsProjectImportModal from '../components/MsProjectImportModal';
@@ -315,8 +318,10 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const canCreateProjects = projectPerms.can_create_projects === true;
     const canManageProgressReports = projectPerms.can_manage_progress_reports === true;
     const canEditTasks = projectPerms.can_edit_tasks === true;
+    const canAssignTasks = projectPerms.can_assign_tasks === true;
     const { canPing, canProgressReports } = useWorkspaceTier();
     const [upgradeFeature, setUpgradeFeature] = useState(null);
+    const [focusAssignTaskId, setFocusAssignTaskId] = useState(null);
 
     const phaseControl = useProjectPhases(project?.id, project);
     const {
@@ -1094,39 +1099,66 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         return Math.round(((calendarPct - actualPct) / 100) * scheduleTimeline.schedule_day_total);
     }, [scheduleTimeline, summaryOverallProgress]);
 
-    const dispatchReadyTasks = useMemo(() => {
-        const compareIsoDateAsc = (left, right) => {
-            if (!left && !right) return 0;
-            if (!left) return 1;
-            if (!right) return -1;
-            if (left < right) return -1;
-            if (left > right) return 1;
-            return 0;
-        };
-        return allTasks
-            .filter((task) => getTaskWorkflowKey(task) === 'can_start')
-            .sort((a, b) => {
-                const byStart = compareIsoDateAsc(a.start_date, b.start_date);
-                if (byStart !== 0) return byStart;
-                return (a.text || '').localeCompare(b.text || '', undefined, { sensitivity: 'base' });
-            });
-    }, [allTasks, getTaskWorkflowKey]);
+    const compareActionAnchorAsc = useCallback((left, right) => {
+        const leftAnchor = getActionAnchorDate(left);
+        const rightAnchor = getActionAnchorDate(right);
+        if (!leftAnchor && !rightAnchor) return 0;
+        if (!leftAnchor) return 1;
+        if (!rightAnchor) return -1;
+        if (leftAnchor < rightAnchor) return -1;
+        if (leftAnchor > rightAnchor) return 1;
+        return (left.text || '').localeCompare(right.text || '', undefined, { sensitivity: 'base' });
+    }, []);
 
-    const dispatchWaitingTasks = useMemo(() => {
+    const actionPingTasks = useMemo(() => {
         return allTasks
-            .filter((task) => getTaskWorkflowKey(task) === 'waiting')
-            .sort((a, b) => (a.text || '').localeCompare(b.text || '', undefined, { sensitivity: 'base' }));
-    }, [allTasks, getTaskWorkflowKey]);
+            .filter((task) => {
+                if (!task.assignee_id) return false;
+                if (!isInActionWindow(task)) return false;
+                const key = getTaskWorkflowKey(task);
+                return key === 'can_start' || key === 'in_progress';
+            })
+            .sort(compareActionAnchorAsc);
+    }, [allTasks, getTaskWorkflowKey, compareActionAnchorAsc]);
 
-    const getDispatchBlockerLabel = useCallback(
+    const actionNeedsOwnerTasks = useMemo(() => {
+        return allTasks
+            .filter((task) => {
+                if (task.assignee_id) return false;
+                if (!isInActionWindow(task)) return false;
+                const key = getTaskWorkflowKey(task);
+                return key === 'can_start' || key === 'in_progress';
+            })
+            .sort(compareActionAnchorAsc);
+    }, [allTasks, getTaskWorkflowKey, compareActionAnchorAsc]);
+
+    const handleActionAssignTask = useCallback(
         (task) => {
-            const unmet = dependencyWarnings[task.id]?.unmetPredecessors || [];
-            if (!unmet.length) return null;
-            if (unmet.length === 1) return unmet[0].text;
-            return `${unmet[0].text} +${unmet.length - 1}`;
+            if (!task?.id || !canEditTasks) return;
+            const key = getTaskWorkflowKey(task);
+            setTaskFilter(key === 'in_progress' ? 'in_progress' : 'can_start');
+            setFocusAssignTaskId(task.id);
+            requestAnimationFrame(() => {
+                taskFilterBarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                window.setTimeout(() => {
+                    document
+                        .querySelector(`[data-task-id="${task.id}"]`)
+                        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 80);
+            });
         },
-        [dependencyWarnings],
+        [canEditTasks, getTaskWorkflowKey],
     );
+
+    const handleActionReviewWeather = useCallback(() => {
+        if (!pendingUnappliedWeatherImpacts.length) return;
+        setSelectedWeatherImpact(pendingUnappliedWeatherImpacts[0]);
+        setShowWeatherImpactModal(true);
+    }, [pendingUnappliedWeatherImpacts]);
+
+    const clearFocusAssignTaskId = useCallback(() => {
+        setFocusAssignTaskId(null);
+    }, []);
 
     const photoModalTask = useMemo(
         () => (photoModalTaskId ? allTasks.find((t) => t.id === photoModalTaskId) : null),
@@ -3449,6 +3481,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                                     onShareSmsConsentLink={handleShareSmsConsentLink}
                                                                                     pingingTaskId={pingingTaskId}
                                                                                     project={project}
+                                                                                    focusAssign={focusAssignTaskId === row.task.id}
+                                                                                    onFocusAssignConsumed={clearFocusAssignTaskId}
                                                                                 />
                                                                             ),
                                                                         )}
@@ -3524,9 +3558,11 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                                     : undefined
                                                                             }
                                                                             onShareSmsConsentLink={handleShareSmsConsentLink}
-                                                                                    pingingTaskId={pingingTaskId}
-                                                                                    project={project}
-                                                                                />
+                                                                            pingingTaskId={pingingTaskId}
+                                                                            project={project}
+                                                                            focusAssign={focusAssignTaskId === row.task.id}
+                                                                            onFocusAssignConsumed={clearFocusAssignTaskId}
+                                                                        />
                                                                     ),
                                                                 )}
                                                             </ul>
@@ -3585,18 +3621,15 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                 <div className="flex w-full max-w-[17.5rem] flex-col gap-3 xl:sticky xl:top-4 xl:justify-self-end">
                                     {allTasks.length > 0 ? (
                                         <TasksDispatchRail
-                                            readyTasks={dispatchReadyTasks}
-                                            waitingTasks={dispatchWaitingTasks}
-                                            getBlockerLabel={getDispatchBlockerLabel}
-                                            onSeeAllWaiting={() => {
-                                                setTaskFilter('waiting');
-                                                requestAnimationFrame(() => {
-                                                    taskFilterBarRef.current?.scrollIntoView({
-                                                        behavior: 'smooth',
-                                                        block: 'nearest',
-                                                    });
-                                                });
-                                            }}
+                                            pingTasks={actionPingTasks}
+                                            needsOwnerTasks={actionNeedsOwnerTasks}
+                                            pendingWeatherCount={pendingUnappliedWeatherImpacts.length}
+                                            canShowPing={canAssignTasks}
+                                            canAssign={canEditTasks}
+                                            canReviewWeather={canEditProjects}
+                                            onPingTask={handlePingAssignee}
+                                            onAssignTask={handleActionAssignTask}
+                                            onReviewWeather={handleActionReviewWeather}
                                         />
                                     ) : null}
                                     {canEditProjects ? (
