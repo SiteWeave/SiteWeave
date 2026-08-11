@@ -491,6 +491,7 @@ function ProjectModal({ onClose, onSave, isLoading = false, project = null }) {
                             setStartDate(start);
                             setDueDate(end);
                         }}
+                        onSave={() => {}}
                         presets={datePresets}
                         className="mb-4"
                         elevated

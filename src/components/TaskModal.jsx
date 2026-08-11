@@ -237,6 +237,7 @@ function TaskModal({
                                     setStartDate(start);
                                     setDueDate(end);
                                 }}
+                                onSave={() => {}}
                                 presets={datePresets}
                                 elevated
                             />
@@ -419,6 +420,12 @@ function TaskModal({
                                         selectedIds={selectedPredecessorTaskIds}
                                         onChange={setSelectedPredecessorTaskIds}
                                         inputClassName={fieldClass}
+                                        phasesById={
+                                          Array.isArray(projectPhases)
+                                            ? new Map(projectPhases.map((p) => [p.id, p]))
+                                            : null
+                                        }
+                                        referenceDate={dueDate || startDate || ''}
                                     />
                                 </div>
                             </div>

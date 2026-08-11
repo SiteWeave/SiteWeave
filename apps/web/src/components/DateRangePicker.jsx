@@ -42,6 +42,7 @@ function DateRangePicker({
   onChange,
   label = 'Date range',
   id,
+  /** React node, or `({ goToMonth, goToToday }) => node` to control the visible month. */
   presets = null,
   className = '',
   compact = false,
@@ -199,13 +200,27 @@ function DateRangePicker({
   const summary = formatRangeLabel(startValue, endValue);
   const labelId = id || 'task-date-range';
   const year = new Date().getFullYear();
+  const sm = size === 'sm';
 
   const pickerStyle = {
     '--rdp-accent-color': 'var(--sw-color-accent-dark, #2563eb)',
     '--rdp-accent-background-color': 'var(--sw-color-accent-soft-border, #dbeafe)',
+    ...(sm
+      ? {
+          // Compact sizing without transform+clip (which hid weeks 5–6).
+          '--rdp-day-height': '2rem',
+          '--rdp-day-width': '2rem',
+          '--rdp-day_button-height': '1.75rem',
+          '--rdp-day_button-width': '1.75rem',
+          '--rdp-nav_button-height': '1.75rem',
+          '--rdp-nav_button-width': '1.75rem',
+          '--rdp-nav-height': '2rem',
+          '--rdp-weekday-padding': '0.25rem 0',
+          '--rdp-months-gap': '0.5rem',
+          fontSize: '12px',
+        }
+      : {}),
   };
-
-  const sm = size === 'sm';
 
   const popoverClassName = `overflow-visible border border-gray-200 bg-white shadow-xl ${
     sm
@@ -235,47 +250,18 @@ function DateRangePicker({
           {presetContent}
         </div>
       ) : null}
-      <div
-        className={`relative z-0 ${
-          sm ? 'overflow-hidden' : `overflow-x-auto ${compact ? 'pr-0.5' : ''}`
-        }`}
-      >
-        {sm ? (
-          // Clip scaled DayPicker so its pre-transform hit box cannot cover Clear/Save.
-          <div className="relative w-full overflow-hidden" style={{ height: 208 }}>
-            <div
-              className="origin-top-left pointer-events-auto"
-              style={{
-                transform: 'scale(0.82)',
-                width: '121.95%',
-              }}
-            >
-              <DayPicker
-                mode="range"
-                selected={selected}
-                onSelect={handleSelect}
-                month={month}
-                onMonthChange={setMonth}
-                numberOfMonths={numberOfMonths}
-                captionLayout="dropdown"
-                fromYear={year - 3}
-                toYear={year + 12}
-              />
-            </div>
-          </div>
-        ) : (
-          <DayPicker
-            mode="range"
-            selected={selected}
-            onSelect={handleSelect}
-            month={month}
-            onMonthChange={setMonth}
-            numberOfMonths={numberOfMonths}
-            captionLayout="dropdown"
-            fromYear={year - 3}
-            toYear={year + 12}
-          />
-        )}
+      <div className={`relative z-0 ${sm ? '' : `overflow-x-auto ${compact ? 'pr-0.5' : ''}`}`}>
+        <DayPicker
+          mode="range"
+          selected={selected}
+          onSelect={handleSelect}
+          month={month}
+          onMonthChange={setMonth}
+          numberOfMonths={numberOfMonths}
+          captionLayout="dropdown"
+          fromYear={year - 3}
+          toYear={year + 12}
+        />
       </div>
       <div
         className={
@@ -294,7 +280,6 @@ function DateRangePicker({
             e.stopPropagation();
             onChange({ start: '', end: '' });
             onClear?.();
-            setPickerOpen(false);
           }}
           className={
             sm

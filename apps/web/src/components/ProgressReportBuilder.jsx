@@ -65,11 +65,13 @@ const SECTION_DEFS = [
   { key: 'phase_changes', labelKey: 'section_phase_changes' },
   { key: 'vitals', labelKey: 'section_vitals' },
   { key: 'weekly_plan', labelKey: 'section_weekly_plan' },
+  { key: 'pm_actions', labelKey: 'section_pm_actions' },
 ];
 
 const DETAIL_TOGGLE_DEFS = [
   { key: 'show_assignees', labelKey: 'toggle_assignees', default: false },
   { key: 'show_dates', labelKey: 'toggle_dates', default: false },
+  { key: 'show_start_dates', labelKey: 'toggle_start_dates', default: false },
   { key: 'show_who_changed', labelKey: 'toggle_who_changed', default: false },
   { key: 'show_phase_delta', labelKey: 'toggle_phase_delta', default: false },
   { key: 'show_task_phase', labelKey: 'toggle_task_phase', default: false },
@@ -82,14 +84,39 @@ const DETAIL_TOGGLE_DEFS = [
   { key: 'client_friendly_labels', labelKey: 'toggle_friendly_labels', default: true },
 ];
 
+const DETAIL_GROUP_DEFS = [
+  {
+    id: 'task_details',
+    labelKey: 'detail_group_task_details',
+    keys: ['show_assignees', 'show_dates', 'show_start_dates', 'show_who_changed', 'show_task_phase'],
+  },
+  {
+    id: 'progress_issues',
+    labelKey: 'detail_group_progress_issues',
+    keys: ['show_phase_delta', 'show_blockers'],
+  },
+  {
+    id: 'schedule_weather',
+    labelKey: 'detail_group_schedule_weather',
+    keys: ['show_weather_impacts', 'show_schedule_adjustments', 'keep_original_completion_date'],
+  },
+  {
+    id: 'extras',
+    labelKey: 'detail_group_extras',
+    keys: ['include_task_photos', 'include_daily_site_logs', 'client_friendly_labels'],
+  },
+];
+
 const DEFAULT_SECTIONS = {
   status_changes: true,
   task_completion: true,
   phase_changes: true,
   vitals: true,
   weekly_plan: true,
+  pm_actions: true,
   show_assignees: false,
   show_dates: false,
+  show_start_dates: false,
   show_who_changed: false,
   show_phase_delta: false,
   show_task_phase: false,
@@ -120,6 +147,7 @@ function ProgressReportBuilder({
   const projects = state.projects || [];
   const { addToast } = useToast();
   const [showBranding, setShowBranding] = useState(false);
+  const [openDetailGroup, setOpenDetailGroup] = useState('task_details');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [recipients, setRecipients] = useState([]);
@@ -191,15 +219,27 @@ function ProgressReportBuilder({
     [t]
   );
 
-  const detailToggles = useMemo(
-    () =>
-      DETAIL_TOGGLE_DEFS.map(({ key, labelKey, hintKey, default: defaultOn }) => ({
+  const detailToggleByKey = useMemo(() => {
+    const map = {};
+    DETAIL_TOGGLE_DEFS.forEach(({ key, labelKey, hintKey, default: defaultOn }) => {
+      map[key] = {
         key,
         label: t(builderKey(labelKey)),
         hint: hintKey ? t(builderKey(hintKey)) : null,
         default: defaultOn,
+      };
+    });
+    return map;
+  }, [t]);
+
+  const detailGroups = useMemo(
+    () =>
+      DETAIL_GROUP_DEFS.map((group) => ({
+        ...group,
+        label: t(builderKey(group.labelKey)),
+        toggles: group.keys.map((key) => detailToggleByKey[key]).filter(Boolean),
       })),
-    [t]
+    [t, detailToggleByKey]
   );
 
   const [formData, setFormData] = useState({
@@ -307,6 +347,7 @@ function ProgressReportBuilder({
             weekly_plan: legacyWeeklyPlanValue !== false,
             show_assignees:         base.show_assignees         ?? true,
             show_dates:             base.show_dates             ?? true,
+            show_start_dates:       base.show_start_dates       ?? false,
             show_who_changed:       base.show_who_changed       ?? true,
             show_phase_delta:       base.show_phase_delta       ?? true,
             show_task_phase:        base.show_task_phase        ?? true,
@@ -470,7 +511,6 @@ function ProgressReportBuilder({
     <div className="flex flex-col lg:flex-row gap-6">
       {/* ── Left column: form ── */}
       <div className="flex-1 space-y-4">
-
         {/* Card 1: Report setup */}
         <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-5">
           <h2 className="text-base font-semibold text-gray-900">{t(builderKey('report_setup'))}</h2>
@@ -732,26 +772,68 @@ function ProgressReportBuilder({
 
               <div className="border-t border-gray-100 pt-4">
                 <p className="text-sm font-medium text-gray-700 mb-1">{t(builderKey('detail_level'))}</p>
-                <p className="text-xs text-gray-400 mb-3">
+                <p className="text-xs text-gray-500 mb-3">
                   {t(builderKey('detail_level_hint'))}
                 </p>
-                <div className="space-y-3">
-                  {detailToggles.map(({ key, label, hint }) => (
-                    <label key={key} className="flex items-start gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!!formData.report_sections[key]}
-                        onChange={(e) => updateSection(key, e.target.checked)}
-                        className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-sm text-gray-700">{label}</span>
-                        {hint ? (
-                          <span className="mt-0.5 block text-xs text-gray-500 leading-snug">{hint}</span>
+                <div className="space-y-2">
+                  {detailGroups.map((group) => {
+                    const onCount = group.toggles.filter(
+                      ({ key }) => !!formData.report_sections[key],
+                    ).length;
+                    const total = group.toggles.length;
+                    const isOpen = openDetailGroup === group.id;
+                    return (
+                      <div
+                        key={group.id}
+                        className="rounded-lg border border-gray-200 overflow-hidden"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenDetailGroup((prev) => (prev === group.id ? null : group.id))
+                          }
+                          className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left bg-white hover:bg-gray-50"
+                          aria-expanded={isOpen}
+                        >
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium text-gray-800">{group.label}</span>
+                            <span className="block text-xs text-gray-500 mt-0.5">
+                              {t(builderKey('detail_group_on_count'), { on: onCount, total })}
+                            </span>
+                          </span>
+                          <svg
+                            className={`w-4 h-4 shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {isOpen ? (
+                          <div className="border-t border-gray-200 bg-gray-50/80 px-3 py-3 space-y-3">
+                            {group.toggles.map(({ key, label, hint }) => (
+                              <label key={key} className="flex items-start gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={!!formData.report_sections[key]}
+                                  onChange={(e) => updateSection(key, e.target.checked)}
+                                  className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="min-w-0">
+                                  <span className="block text-sm text-gray-700">{label}</span>
+                                  {hint ? (
+                                    <span className="mt-0.5 block text-xs text-gray-500 leading-snug">{hint}</span>
+                                  ) : null}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
                         ) : null}
-                      </span>
-                    </label>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </>
@@ -818,8 +900,8 @@ function ProgressReportBuilder({
       </div>
 
       {/* ── Right column: preview ── */}
-      <div className="w-full lg:w-[min(480px,40vw)] flex-shrink-0">
-        <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 sticky top-4">
+      <div className="w-full lg:w-[min(560px,46vw)] flex-shrink-0">
+        <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 sticky top-4 max-h-[calc(90dvh-2rem)] overflow-y-auto">
           <ProgressReportPreview
             formData={formData}
             projectId={projectId}

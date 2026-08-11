@@ -162,6 +162,7 @@ export * from './services/progressReportService.js';
 export * from './utils/projectSmartNotifications.js';
 export * from './services/brandingService.js';
 export * from './services/weatherImpactsService.js';
+export * from './services/pmActionsService.js';
 export * from './services/scheduleAdjustmentsService.js';
 export * from './services/profilePhotosService.js';
 export * from './services/workStatusService.js';

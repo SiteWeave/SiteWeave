@@ -767,7 +767,6 @@ const TaskItem = memo(function TaskItem({
                                                 setDraftStart(start);
                                                 setDraftDue(end);
                                             }}
-                                            onClear={() => saveScheduleDraft('', '')}
                                             onSave={({ start, end }) => saveScheduleDraft(start, end)}
                                             trigger={
                                                 <button

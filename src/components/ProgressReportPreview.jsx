@@ -1,10 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  getLocalizedProjectStatus,
-  normalizeStatusDisplay,
-  PROJECT_STATUS_CANONICAL,
-} from '@siteweave/i18n';
 import { useAppContext, supabaseClient } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import {
@@ -12,8 +7,11 @@ import {
   computeProjectScheduleTimeline,
   listWeatherImpactsForProject,
   listScheduleAdjustmentsForProject,
+  listPmActionsInWindow,
+  mergePmActionsNotes,
   resolveReportProjectEndDate,
   resolveReportScheduleDueDate,
+  getOrganizationBranding,
 } from '@siteweave/core-logic';
 import { dedupeTasksById } from '../utils/taskDedupe';
 import {
@@ -22,34 +20,12 @@ import {
   dedupeTasksForLastWeekDone,
   dedupeWeeklyPlanRowsByDisplay,
 } from '../utils/taskDuplicateDiagnostics';
+import {
+  generateStandardReportEmail,
+  generateExecutiveReportEmail,
+} from '../utils/progressReportEmailTemplates';
+import { buildPreviewEmailPayload } from '../utils/mapProgressReportPreviewToEmail';
 import LoadingSpinner from './LoadingSpinner';
-
-const SITEWEAVE_LOGO_URL = 'https://app.siteweave.org/logo.svg';
-
-function TaskPhaseTag({ show, name }) {
-  if (!show || !name) return null;
-  return (
-    <span
-      className="ml-1.5 inline-block align-middle max-w-[140px] truncate rounded border border-gray-200 bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-600"
-      title={name}
-    >
-      {name}
-    </span>
-  );
-}
-
-function TaskProjectNameTag({ name }) {
-  if (!name) return null;
-  return (
-    <span className="ml-1.5 inline-block align-middle max-w-[160px] truncate text-[10px] font-medium text-gray-400">
-      ({name})
-    </span>
-  );
-}
-
-function isOpenableImageUrl(url) {
-  return typeof url === 'string' && /^https?:\/\//i.test(url);
-}
 
 function parsePreviewDay(value) {
   if (!value) return null;
@@ -106,7 +82,7 @@ function computeOrgProjectPreviewSlice({
           phase_name: phaseLabelForTask(t),
           photos: showTaskPhotos
             ? (t.task_photos || t.photos || [])
-                .slice(0, 2)
+                .slice(0, 3)
                 .map((photo) => {
                   const thumb = photo.thumbnail_url || photo.preview_url || photo.full_url || null;
                   const full = photo.full_url || photo.thumbnail_url || photo.preview_url || null;
@@ -136,7 +112,7 @@ function computeOrgProjectPreviewSlice({
         seen.add(renderedKey);
         return true;
       })
-      .slice(0, 6);
+      .slice(0, 10);
   })();
 
   const lastWeekDone = dedupeLastWeekDoneRowsByDisplay(
@@ -148,7 +124,7 @@ function computeOrgProjectPreviewSlice({
           return completedAt && completedAt >= oneWeekAgo && completedAt < todayDay;
         }),
     )
-      .slice(0, 6)
+      .slice(0, 10)
       .map((t) => ({
         text: t.text,
         project_id: t.project_id,
@@ -174,7 +150,7 @@ function computeOrgProjectPreviewSlice({
         assignee: getTaskAssigneeName(t),
         phase_name: phaseLabelForTask(t),
       })),
-  ).slice(0, 6);
+  ).slice(0, 10);
 
   const nextWeekPlan = dedupeWeeklyPlanRowsByDisplay(
     scoped
@@ -191,7 +167,7 @@ function computeOrgProjectPreviewSlice({
         assignee: getTaskAssigneeName(t),
         phase_name: phaseLabelForTask(t),
       })),
-  ).slice(0, 6);
+  ).slice(0, 10);
 
   const totalTaskCount = scoped.length;
   const completedTaskCount = scoped.filter((t) => t?.completed).length;
@@ -243,302 +219,6 @@ function computeOrgProjectPreviewSlice({
   };
 }
 
-/** One standard progress-report block (vitals through weekly plan). */
-function StandardPreviewSections({
-  data,
-  reportSections,
-  locale,
-  translateStatus,
-  showTaskPhaseTag,
-  showTaskPhotos,
-  showProjectNameOnTasks,
-  t,
-}) {
-  const d = data;
-  const p = (key, opts) => t(`progressReports.preview.${key}`, opts);
-
-  const formatTaskStartDate = (value) => {
-    const parsed = parsePreviewDay(value);
-    if (!parsed) return value ? `starts ${value}` : '';
-    return `starts ${parsed.toLocaleDateString(locale, { month: 'long', day: 'numeric', year: 'numeric' })}`;
-  };
-
-  const formatScheduleDate = (value) => formatTaskStartDate(value);
-
-  return (
-    <>
-      {reportSections.vitals !== false && d.vitals && (
-        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 border border-gray-200 rounded-lg bg-gray-50 px-4 py-3 text-center">
-          <div>
-            <p className="text-base font-bold text-gray-900 tabular-nums leading-tight">
-              {d.vitals.tasks_completed_count ?? 0} / {d.vitals.open_tasks_count ?? 0}
-            </p>
-            <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-400 mt-1">{p('done_vs_open')}</p>
-          </div>
-          {d.vitals.project_end_date && (
-            <div className="sm:border-l sm:border-gray-200 sm:pl-8">
-              <p className="text-base font-bold text-gray-800 leading-tight">
-                {new Date(d.vitals.project_end_date + (String(d.vitals.project_end_date).length <= 10 ? 'T12:00:00' : '')).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })}
-              </p>
-              <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-400 mt-1">{p('latest_task')}</p>
-            </div>
-          )}
-          {d.vitals.schedule_day_total != null && (
-            <div className="sm:border-l sm:border-gray-200 sm:pl-8">
-              <p className="text-base font-bold text-gray-800 leading-tight tabular-nums">
-                {d.vitals.schedule_day_current} / {d.vitals.schedule_day_total} days
-              </p>
-              <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-400 mt-1">{p('progress_days')}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {reportSections.status_changes !== false && (d.status_changes || []).length > 0 && (
-        <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/80 p-3">
-          <h2 className="text-sm font-semibold text-emerald-900 mb-2 uppercase tracking-wide">{p('status_update')}</h2>
-          {(d.status_changes || []).map((change, i) => (
-            <div key={i} className="p-2.5 bg-white border border-emerald-200 rounded mb-2 last:mb-0">
-              <p className="font-medium text-gray-900 text-sm">{change.project_name}</p>
-              <p className="text-xs text-gray-700 mt-0.5">
-                <span className="line-through text-gray-400">{translateStatus(change.old_status)}</span>
-                <span className="mx-1.5 text-emerald-600">→</span>
-                <strong className="text-emerald-800">{translateStatus(change.new_status)}</strong>
-                {reportSections.show_who_changed && change.changed_by && (
-                  <span className="ml-1.5 text-gray-400">· {change.changed_by}</span>
-                )}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {reportSections.task_completion !== false && (d.completed_tasks || []).length > 0 && (
-        <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/80 p-3">
-          <h2 className="text-sm font-semibold text-emerald-900 mb-2 uppercase tracking-wide">{p('completed_work')}</h2>
-          {(reportSections.show_assignees || reportSections.show_dates) && !showTaskPhotos ? (
-            <table className="w-full text-sm">
-              <tbody>
-                {(d.completed_tasks || []).map((task, i) => (
-                  <tr key={i} className="border-b border-emerald-100 last:border-0">
-                    <td className="py-1.5 pr-2 text-emerald-600 font-bold w-4">✓</td>
-                    <td className="py-1.5 text-gray-800">
-                      {task.text}
-                      <TaskPhaseTag show={showTaskPhaseTag} name={task.phase_name} />
-                    </td>
-                    {reportSections.show_assignees && task.assignee && (
-                      <td className="py-1.5 pl-2 text-gray-400 text-xs text-right whitespace-nowrap">@{task.assignee}</td>
-                    )}
-                    {reportSections.show_dates && task.completed_at && (
-                      <td className="py-1.5 pl-2 text-gray-400 text-xs text-right whitespace-nowrap">
-                        {new Date(task.completed_at).toLocaleDateString(locale)}
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <ul className="space-y-3">
-              {(d.completed_tasks || []).map((task, i) => (
-                <li key={i} className="rounded-md border border-emerald-100 bg-white p-2.5 text-sm text-gray-800">
-                  <div className="flex items-start gap-2">
-                    <span className="text-emerald-600 font-bold shrink-0">✓</span>
-                    <div className="flex-1">
-                      <p className="inline">
-                        {task.text}
-                        <TaskPhaseTag show={showTaskPhaseTag} name={task.phase_name} />
-                        {showProjectNameOnTasks ? <TaskProjectNameTag name={task.project_name} /> : null}
-                      </p>
-                      {(task.assignee || task.completed_at) && (
-                        <p className="mt-1 text-xs text-gray-400">
-                          {task.assignee ? `@${task.assignee}` : ''}
-                          {task.assignee && task.completed_at ? ' · ' : ''}
-                          {task.completed_at ? new Date(task.completed_at).toLocaleDateString(locale) : ''}
-                        </p>
-                      )}
-                      {showTaskPhotos && Array.isArray(task.photos) && task.photos.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {task.photos.map((photo, photoIndex) => {
-                            const imageUrl = photo.thumbnail_url || photo.full_url;
-                            const linkUrl = photo.full_url || photo.thumbnail_url;
-                            const content = (
-                              <>
-                                <img
-                                  src={imageUrl}
-                                  alt={photo.caption || task.text}
-                                  className="h-20 w-24 rounded border border-gray-200 object-cover"
-                                />
-                                {photo.caption && (
-                                  <p className="mt-1 max-w-24 text-[11px] text-gray-500">{photo.caption}</p>
-                                )}
-                              </>
-                            );
-                            return isOpenableImageUrl(linkUrl) ? (
-                              <a
-                                key={photoIndex}
-                                href={linkUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="block"
-                              >
-                                {content}
-                              </a>
-                            ) : (
-                              <span key={photoIndex} className="block">
-                                {content}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
-      {reportSections.phase_changes !== false && (d.phase_progress || []).length > 0 && (
-        <div className="rounded-lg border-2 border-blue-200 bg-blue-50/80 p-3">
-          <h2 className="text-sm font-semibold text-blue-900 mb-2 uppercase tracking-wide">{p('phase_progress')}</h2>
-          {(d.phase_progress || []).map((phase, i) => (
-            <div key={i} className="mb-2.5 last:mb-0">
-              <div className="flex justify-between text-xs mb-1">
-                <span className="font-medium text-gray-700">{phase.name}</span>
-                <span className="text-blue-600 font-semibold">
-                  {reportSections.show_phase_delta && phase.old_progress != null
-                    ? `${phase.old_progress}% → ${phase.progress}%`
-                    : `${phase.progress}%`}
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-1.5">
-                <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${phase.progress}%` }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {reportSections.show_weather_impacts && (d.weather_impacts || []).length > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-          <h2 className="text-sm font-semibold text-amber-900 mb-2 uppercase tracking-wide">{p('weather_impacts')}</h2>
-          <ul className="space-y-2">
-            {(d.weather_impacts || []).map((impact, i) => (
-              <li key={i} className="text-sm text-amber-900">
-                <span className="font-semibold">{impact.title || p('weather_impact_fallback')}</span>
-                {showProjectNameOnTasks && impact.project_name ? (
-                  <span className="text-gray-500 font-normal"> ({impact.project_name})</span>
-                ) : null}
-                {typeof impact.days_lost === 'number'
-                  ? ` — ${t('weather.impact_days_lost', { count: impact.days_lost })}`
-                  : ''}
-                {impact.schedule_shift_applied
-                  ? ` · ${t('weather.schedule_updated')}`
-                  : ` · ${t('weather.logged_only')}`}
-                {impact.description ? (
-                  <span className="block text-xs text-amber-800 mt-1">{impact.description}</span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {reportSections.show_schedule_adjustments && (d.schedule_adjustments || []).length > 0 && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-          <h2 className="text-sm font-semibold text-emerald-900 mb-2 uppercase tracking-wide">{p('schedule_improvements')}</h2>
-          <ul className="space-y-2">
-            {(d.schedule_adjustments || []).map((adj, i) => (
-              <li key={i} className="text-sm text-emerald-900">
-                <span className="font-semibold">{adj.note || p('schedule_adjustment_fallback')}</span>
-                {showProjectNameOnTasks && adj.project_name ? (
-                  <span className="text-gray-500 font-normal"> ({adj.project_name})</span>
-                ) : null}
-                {typeof adj.applied_workdays === 'number'
-                  ? ` — ${p(adj.applied_workdays === 1 ? 'workdays_pulled_one' : 'workdays_pulled_other', { count: adj.applied_workdays })}`
-                  : ''}
-                {adj.planned_finish && adj.actual_finish ? (
-                  <span className="block text-xs text-emerald-800 mt-1">
-                    {t('scheduleAdjustments.planned_finish')} {formatScheduleDate(adj.planned_finish)}
-                    {' · '}
-                    {t('scheduleAdjustments.actual_finish')} {formatScheduleDate(adj.actual_finish)}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {reportSections.weekly_plan !== false && (
-        <div className="rounded-lg border border-gray-200 p-3 space-y-3">
-          <h2 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{p('weekly_plan')}</h2>
-
-          <div>
-            <h3 className="text-xs font-semibold text-emerald-800 mb-1">{p('last_week')}</h3>
-            {(d.last_week_done || []).length > 0 ? (
-              <ul className="space-y-1">
-                {(d.last_week_done || []).map((task, i) => (
-                  <li key={`last-${i}`} className="text-sm text-gray-700">
-                    <span className="inline">{task.text}</span>
-                    <TaskPhaseTag show={showTaskPhaseTag} name={task.phase_name} />
-                    {showProjectNameOnTasks ? <TaskProjectNameTag name={task.project_name} /> : null}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-xs text-gray-500">{p('no_completed_last_week')}</p>
-            )}
-          </div>
-
-          <div>
-            <h3 className="text-xs font-semibold text-blue-800 mb-1">{p('this_week')}</h3>
-            {(d.this_week_plan || []).length > 0 ? (
-              <ul className="space-y-1">
-                {(d.this_week_plan || []).map((task, i) => (
-                  <li key={`this-${i}`} className="text-sm text-gray-700">
-                    <span className="inline">{task.text}</span>
-                    <TaskPhaseTag show={showTaskPhaseTag} name={task.phase_name} />
-                    {showProjectNameOnTasks ? <TaskProjectNameTag name={task.project_name} /> : null}
-                    {task.start_date && (
-                      <span className="text-gray-400 ml-1.5 text-xs">{formatTaskStartDate(task.start_date)}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-xs text-gray-500">{p('no_tasks_this_week')}</p>
-            )}
-          </div>
-
-          <div>
-            <h3 className="text-xs font-semibold text-indigo-800 mb-1">{p('next_week')}</h3>
-            {(d.next_week_plan || []).length > 0 ? (
-              <ul className="space-y-1">
-                {(d.next_week_plan || []).map((task, i) => (
-                  <li key={`next-${i}`} className="text-sm text-gray-700">
-                    <span className="inline">{task.text}</span>
-                    <TaskPhaseTag show={showTaskPhaseTag} name={task.phase_name} />
-                    {showProjectNameOnTasks ? <TaskProjectNameTag name={task.project_name} /> : null}
-                    {task.start_date && (
-                      <span className="text-gray-400 ml-1.5 text-xs">{formatTaskStartDate(task.start_date)}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-xs text-gray-500">{p('no_tasks_next_week')}</p>
-            )}
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
 /**
  * Progress Report Preview Component
  * Shows a live preview of the email using real org/project data where available.
@@ -554,9 +234,52 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
   const [previewPhases, setPreviewPhases] = useState([]);
   const [previewWeatherImpacts, setPreviewWeatherImpacts] = useState([]);
   const [previewScheduleAdjustments, setPreviewScheduleAdjustments] = useState([]);
+  const [previewDailySiteLogs, setPreviewDailySiteLogs] = useState([]);
+  const [previewStatusChanges, setPreviewStatusChanges] = useState([]);
+  const [previewBlockers, setPreviewBlockers] = useState([]);
+  const [previewPmActions, setPreviewPmActions] = useState(null);
+  const [orgBranding, setOrgBranding] = useState({
+    logo_url: null,
+    primary_color: '#3B82F6',
+    secondary_color: '#10B981',
+    company_footer: '',
+    email_signature: '',
+  });
+  const [emailHtml, setEmailHtml] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [isBuildingHtml, setIsBuildingHtml] = useState(false);
+  const iframeRef = useRef(null);
 
   const previewMode = formData?.report_audience_type === 'executive' ? 'executive' : 'standard';
   const showScheduleAdjustments = formData?.report_sections?.show_schedule_adjustments === true;
+
+  useEffect(() => {
+    const orgId = state.currentOrganization?.id;
+    if (!orgId) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const branding = await getOrganizationBranding(supabaseClient, orgId);
+        if (cancelled) return;
+        setOrgBranding({
+          logo_url: branding?.logo_url || null,
+          primary_color: branding?.primary_color || '#3B82F6',
+          secondary_color: branding?.secondary_color || '#10B981',
+          company_footer: branding?.company_footer || '',
+          email_signature: branding?.email_signature || '',
+          organization_name: state.currentOrganization?.name || '',
+        });
+      } catch {
+        if (!cancelled) {
+          setOrgBranding((prev) => ({
+            ...prev,
+            organization_name: state.currentOrganization?.name || '',
+          }));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [state.currentOrganization?.id, state.currentOrganization?.name]);
 
   /** Schedule row + builder prop — both needed so phase names resolve in the preview */
   const effectiveProjectId = formData?.project_id ?? projectIdProp ?? null;
@@ -696,6 +419,179 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
     return () => ac.abort();
   }, [showScheduleAdjustments, effectiveProjectId, effectiveIncludedProjectIds, state.currentOrganization?.id]);
 
+  const includeDailySiteLogs = formData?.report_sections?.include_daily_site_logs === true;
+  const showBlockers = formData?.report_sections?.show_blockers === true;
+
+  React.useEffect(() => {
+    if (!includeDailySiteLogs) {
+      setPreviewDailySiteLogs([]);
+      return undefined;
+    }
+    const orgId = state.currentOrganization?.id;
+    const pid = effectiveProjectId;
+    const ids = pid ? [pid] : effectiveIncludedProjectIds;
+    if (!orgId || !ids.length) {
+      setPreviewDailySiteLogs([]);
+      return undefined;
+    }
+    const periodStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const periodEnd = new Date().toISOString();
+    const ac = new AbortController();
+    (async () => {
+      const { data, error } = await supabaseClient
+        .from('project_stream_posts')
+        .select('id, project_id, title, body, payload, file_url, file_name, created_at, projects!project_stream_posts_project_id_fkey(name)')
+        .eq('organization_id', orgId)
+        .eq('post_type', 'daily_log')
+        .in('project_id', ids)
+        .gte('created_at', periodStart)
+        .lte('created_at', periodEnd)
+        .order('created_at', { ascending: true });
+      if (ac.signal.aborted) return;
+      if (error) {
+        setPreviewDailySiteLogs([]);
+        return;
+      }
+      setPreviewDailySiteLogs(
+        (data || []).map((row) => ({
+          id: row.id,
+          project_id: row.project_id,
+          project_name: row.projects?.name || null,
+          title: row.title,
+          body: row.body,
+          payload: row.payload,
+          file_url: row.file_url || null,
+          file_name: row.file_name || null,
+          created_at: row.created_at,
+        })),
+      );
+    })();
+    return () => ac.abort();
+  }, [includeDailySiteLogs, effectiveProjectId, effectiveIncludedProjectIds, state.currentOrganization?.id]);
+
+  React.useEffect(() => {
+    const orgId = state.currentOrganization?.id;
+    const pid = effectiveProjectId;
+    const ids = pid ? [pid] : effectiveIncludedProjectIds;
+    if (!orgId || !ids.length) {
+      setPreviewStatusChanges([]);
+      return undefined;
+    }
+    const periodStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const periodEnd = new Date().toISOString();
+    const ac = new AbortController();
+    (async () => {
+      let q = supabaseClient
+        .from('activity_log')
+        .select('id, project_id, entity_type, entity_name, action, details, created_at, user_name')
+        .eq('organization_id', orgId)
+        .eq('entity_type', 'project')
+        .eq('action', 'updated')
+        .gte('created_at', periodStart)
+        .lte('created_at', periodEnd)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (pid) q = q.eq('project_id', pid);
+      else q = q.in('project_id', ids);
+      const { data, error } = await q;
+      if (ac.signal.aborted) return;
+      if (error) {
+        setPreviewStatusChanges([]);
+        return;
+      }
+      const changes = [];
+      for (const activity of data || []) {
+        let det = activity.details;
+        if (typeof det === 'string') {
+          try { det = JSON.parse(det); } catch { det = {}; }
+        }
+        det = det && typeof det === 'object' ? det : {};
+        if (det.status == null && det.new_status == null) continue;
+        changes.push({
+          project_id: activity.project_id,
+          project_name: activity.entity_name || 'Project',
+          old_status: det.old_status || det.previous_status || '',
+          new_status: det.new_status || det.status || '',
+          changed_by: activity.user_name || null,
+          changed_at: activity.created_at,
+        });
+      }
+      setPreviewStatusChanges(changes);
+    })();
+    return () => ac.abort();
+  }, [effectiveProjectId, effectiveIncludedProjectIds, state.currentOrganization?.id]);
+
+  React.useEffect(() => {
+    if (!showBlockers) {
+      setPreviewBlockers([]);
+      return undefined;
+    }
+    const orgId = state.currentOrganization?.id;
+    const pid = effectiveProjectId;
+    const ids = pid ? [pid] : effectiveIncludedProjectIds;
+    if (!orgId || !ids.length) {
+      setPreviewBlockers([]);
+      return undefined;
+    }
+    const ac = new AbortController();
+    (async () => {
+      let q = supabaseClient
+        .from('project_issues')
+        .select('id, title, status, project_id, resolved_at')
+        .eq('organization_id', orgId)
+        .is('resolved_at', null)
+        .order('created_at', { ascending: false })
+        .limit(12);
+      if (pid) q = q.eq('project_id', pid);
+      else q = q.in('project_id', ids);
+      const { data, error } = await q;
+      if (ac.signal.aborted) return;
+      if (error) {
+        setPreviewBlockers([]);
+        return;
+      }
+      setPreviewBlockers((data || []).map((row) => row.title || 'Issue').filter(Boolean));
+    })();
+    return () => ac.abort();
+  }, [showBlockers, effectiveProjectId, effectiveIncludedProjectIds, state.currentOrganization?.id]);
+
+  React.useEffect(() => {
+    const orgId = state.currentOrganization?.id;
+    const pid = effectiveProjectId;
+    const ids = pid ? [pid] : effectiveIncludedProjectIds;
+    const includePm = formData?.report_sections?.pm_actions !== false;
+    if (!includePm || !orgId || !ids.length) {
+      setPreviewPmActions(null);
+      return undefined;
+    }
+    // Match generate-progress-report default window (min 7 days ending now).
+    const endMs = Date.now();
+    const startMs = endMs - 7 * 24 * 60 * 60 * 1000;
+    const periodStart = new Date(startMs).toISOString().slice(0, 10);
+    const periodEnd = new Date(endMs).toISOString().slice(0, 10);
+    const ac = new AbortController();
+    (async () => {
+      try {
+        const rows = await listPmActionsInWindow(supabaseClient, {
+          projectIds: ids,
+          startDate: periodStart,
+          endDate: periodEnd,
+          organizationId: orgId,
+        });
+        if (ac.signal.aborted) return;
+        setPreviewPmActions(mergePmActionsNotes(rows));
+      } catch {
+        if (!ac.signal.aborted) setPreviewPmActions(null);
+      }
+    })();
+    return () => ac.abort();
+  }, [
+    effectiveProjectId,
+    effectiveIncludedProjectIds,
+    state.currentOrganization?.id,
+    formData?.report_sections?.pm_actions,
+  ]);
+
   React.useEffect(() => {
     if (effectiveProjectId) {
       setOrgTasks(null);
@@ -761,8 +657,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
   const showTaskPhaseTag = Boolean(reportSections.show_task_phase);
   const includeTaskPhotosInReport =
     formData?.report_audience_type === 'internal' || reportSections.include_task_photos === true;
-  // Preview should always surface available task photos so users can verify visuals.
-  const showTaskPhotos = true;
+  const showTaskPhotos = includeTaskPhotosInReport;
   const selectedProject = effectiveProjectId
     ? projects.find((p) => String(p.id) === String(effectiveProjectId))
     : null;
@@ -820,7 +715,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
           phase_name: phaseLabelForTask(t),
           photos: showTaskPhotos
             ? (t.task_photos || t.photos || [])
-                .slice(0, 2)
+                .slice(0, 3)
                 .map((photo) => {
                   const thumb = photo.thumbnail_url || photo.preview_url || photo.full_url || null;
                   const full = photo.full_url || photo.thumbnail_url || photo.preview_url || null;
@@ -851,7 +746,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
         seen.add(renderedKey);
         return true;
       })
-      .slice(0, 6);
+      .slice(0, 10);
   })();
 
   const parseDay = (value) => {
@@ -877,7 +772,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
           return completedAt && completedAt >= oneWeekAgo && completedAt < todayDay;
         }),
     )
-      .slice(0, 6)
+      .slice(0, 10)
       .map((t) => ({
         text: t.text,
         project_id: t.project_id,
@@ -903,7 +798,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
         assignee: getTaskAssigneeName(t),
         phase_name: phaseLabelForTask(t),
       })),
-  ).slice(0, 6);
+  ).slice(0, 10);
 
   const nextWeekPlan = dedupeWeeklyPlanRowsByDisplay(
     scopedTasks
@@ -920,7 +815,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
         assignee: getTaskAssigneeName(t),
         phase_name: phaseLabelForTask(t),
       })),
-  ).slice(0, 6);
+  ).slice(0, 10);
 
   const totalTaskCount = scopedTasks.length;
   const completedTaskCount = scopedTasks.filter((t) => t?.completed).length;
@@ -1027,17 +922,6 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
         || t('progressReports.builder.untitled_project'),
     }));
 
-  const orgAggregateVitals = React.useMemo(() => {
-    if (selectedProject) return null;
-    const tot = scopedTasks.length;
-    const done = scopedTasks.filter((t) => t?.completed).length;
-    return {
-      project_count: effectiveIncludedProjectIds.length,
-      tasks_completed_count: done,
-      open_tasks_count: Math.max(0, tot - done),
-    };
-  }, [selectedProject, scopedTasks, effectiveIncludedProjectIds]);
-
   const orgProjectPreviewSlices = React.useMemo(() => {
     if (selectedProject) return null;
     return effectiveIncludedProjectIds.map((pid) => {
@@ -1100,9 +984,20 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
     last_week_done: lastWeekDone,
     this_week_plan: thisWeekPlan,
     next_week_plan: nextWeekPlan,
-    status_changes: [],
+    status_changes: previewStatusChanges,
     completed_tasks: completedTasks,
     phase_progress: phaseProgressPreview,
+    daily_site_logs: includeDailySiteLogs ? previewDailySiteLogs : [],
+    blockers: showBlockers ? previewBlockers : [],
+    pm_actions: reportSections.pm_actions !== false ? previewPmActions : null,
+    snapshot_open_tasks: scopedTasks
+      .filter((t) => !t?.completed)
+      .slice(0, 10)
+      .map((t) => ({
+        text: t.text,
+        phase_name: phaseLabelForTask(t),
+        due_date: t.due_date || null,
+      })),
   };
 
   const getPreviewData = (data, mode) => {
@@ -1240,6 +1135,9 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
         executive_summary,
         at_a_glance: atAGlance,
         key_highlights: highlights.slice(0, 5),
+        weather_impacts: data.weather_impacts,
+        schedule_adjustments: data.schedule_adjustments,
+        pm_actions: data.pm_actions,
       };
     }
     // standard — return all data; template flags control what to render
@@ -1248,51 +1146,74 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
 
   const previewData = getPreviewData(baseData, previewMode);
 
-  const clientFriendly = reportSections.client_friendly_labels !== false;
-  const translateStatus = (status) => {
-    if (!status) return '';
-    if (!clientFriendly) {
-      return getLocalizedProjectStatus(status, t);
-    }
-    const canonical = normalizeStatusDisplay(status);
-    const friendlyByCanonical = {
-      [PROJECT_STATUS_CANONICAL.in_progress]: p('status_in_progress'),
-      [PROJECT_STATUS_CANONICAL.on_hold]: p('status_on_hold'),
-      [PROJECT_STATUS_CANONICAL.completed]: p('status_completed'),
-    };
-    return friendlyByCanonical[canonical] || getLocalizedProjectStatus(status, t);
-  };
+  useEffect(() => {
+    setIsBuildingHtml(true);
+    const timer = setTimeout(() => {
+      try {
+        const { schedule, branding, reportData } = buildPreviewEmailPayload({
+          previewData,
+          formData,
+          branding: orgBranding,
+          previewMode,
+          orgProjectPreviewSlices,
+          selectedProject,
+          p,
+          t,
+        });
+        const generated = previewMode === 'executive'
+          ? generateExecutiveReportEmail(reportData, schedule, branding)
+          : generateStandardReportEmail(reportData, schedule, branding);
+        setEmailHtml(generated.html || '');
+        setEmailSubject(generated.subject || '');
+      } catch (err) {
+        console.error('Progress report preview HTML build failed', err);
+        setEmailHtml('');
+      } finally {
+        setIsBuildingHtml(false);
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+    // previewData is rebuilt each render; depend on the inputs that feed it
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    formData,
+    previewMode,
+    orgBranding,
+    orgProjectPreviewSlices,
+    selectedProject,
+    previewData.organization_name,
+    previewData.project_name,
+    previewData.start_date,
+    previewData.end_date,
+    previewData.executive_summary,
+    previewData.at_a_glance,
+    previewData.key_highlights,
+    previewData.vitals,
+    previewData.status_changes,
+    previewData.completed_tasks,
+    previewData.phase_progress,
+    previewData.last_week_done,
+    previewData.this_week_plan,
+    previewData.next_week_plan,
+    previewData.weather_impacts,
+    previewData.schedule_adjustments,
+    previewData.daily_site_logs,
+    previewData.blockers,
+    previewData.pm_actions,
+    t,
+    i18n?.language,
+  ]);
 
-  const subjectName = previewMode === 'executive'
-    ? previewData.organization_name || t('navigation.organization')
-    : previewData.project_name || previewData.organization_name || p('your_project');
-
-  const defaultSubject = previewMode === 'executive'
-    ? p('brief_subject', { name: subjectName })
-    : p('progress_subject', { name: subjectName });
-
-  const renderExecutiveHighlight = (item) => {
-    switch (item?.type) {
-      case 'period_completed':
-        return `${item.count} ${p('done_all_time').toLowerCase()}`;
-      case 'schedule':
-        return `${p('schedule_business_days')}: ${item.current}/${item.total}${
-          item.pct != null ? ` (${item.pct}%)` : ''
-        }`;
-      case 'schedule_adjustments':
-        return `${item.count} ${p('schedule_improvements')}`;
-      case 'last_week':
-        return `${item.count} — ${p('last_week')}`;
-      case 'this_week':
-        return `${item.count} — ${p('this_week')}`;
-      case 'next_week':
-        return `${item.count} — ${p('next_week')}`;
-      case 'open_tasks':
-        return `${item.count} ${p('not_complete').toLowerCase()} · ${item.projects} ${t('progressReports.builder.projects_in_report').toLowerCase()}`;
-      case 'weather':
-        return `${item.count} ${p('weather_impacts')}`;
-      default:
-        return '';
+  const resizeIframe = () => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!doc?.body) return;
+      const height = Math.max(doc.body.scrollHeight, doc.documentElement?.scrollHeight || 0, 240);
+      iframe.style.height = `${height}px`;
+    } catch {
+      // cross-origin / sandbox edge cases — leave default height
     }
   };
 
@@ -1307,10 +1228,16 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
   });
+  const subjectDisplay = formData.custom_subject || emailSubject || (
+    previewMode === 'executive'
+      ? p('brief_subject', { name: previewData.organization_name || t('navigation.organization') })
+      : p('progress_subject', {
+        name: previewData.project_name || previewData.organization_name || p('your_project'),
+      })
+  );
 
   return (
     <div className="space-y-4">
-      {/* Controls — single header row */}
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-semibold text-gray-900 min-w-0">
           {p('preview_title')}:{' '}
@@ -1320,10 +1247,11 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
         </p>
 
         {scheduleId && (
-          <button type="button"
+          <button
+            type="button"
             onClick={handleSendTest}
             disabled={isSendingTest}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+            className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center gap-2 btn-smooth"
           >
             {isSendingTest ? (
               <>
@@ -1332,7 +1260,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
               </>
             ) : (
               <>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
                 {p('send_test')}
@@ -1342,15 +1270,13 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
         )}
       </div>
 
-      {/* Outlook-style email frame */}
-      <div className="border border-gray-300 rounded-lg overflow-hidden bg-[#f3f3f3] shadow-inner">
-        {/* Email header */}
+      <div className="border border-gray-300 rounded-lg overflow-hidden bg-[#e8eaed] shadow-inner">
         <div className="bg-white border-b border-gray-200 px-3 py-2.5">
           {[
             { label: p('email_from'), value: fromDisplay },
             { label: p('email_to'), value: toDisplay },
             { label: p('email_date'), value: dateDisplay },
-            { label: p('email_subject'), value: formData.custom_subject || defaultSubject, bold: true },
+            { label: p('email_subject'), value: subjectDisplay, bold: true },
           ].map(({ label, value, bold }) => (
             <div key={label} className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-700 mt-1 first:mt-0">
               <span className="shrink-0 font-medium text-gray-500 w-14">{label}</span>
@@ -1359,166 +1285,29 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
           ))}
         </div>
 
-        {/* Message body */}
-        <div className="bg-white p-4 min-h-[200px]">
-          <div className="max-w-[600px] mx-auto font-sans text-[15px] text-gray-800 leading-relaxed">
-            <div className="space-y-4">
-              {/* Title + period */}
-              <div>
-                <p
-                  className="text-xl font-bold text-gray-900 leading-snug"
-                  style={{ fontFamily: 'Calibri, Segoe UI, sans-serif' }}
-                >
-                  {previewMode === 'executive' ? p('mode_brief') : p('progress_update')}
-                  <span className="text-gray-400 font-semibold"> — </span>
-                  <span className="font-semibold text-blue-600">
-                    {previewData.project_name || previewData.organization_name || p('your_project')}
-                  </span>
-                </p>
-                <p className="text-sm text-gray-600 mt-2">
-                  {new Date(previewData.start_date).toLocaleDateString(locale)} –{' '}
-                  {new Date(previewData.end_date).toLocaleDateString(locale)}
-                </p>
-              </div>
-
-              {/* Personal message */}
-              {formData.custom_message && (
-                <div className="p-3 bg-blue-50 border-l-4 border-blue-500 rounded">
-                  <p className="text-sm text-gray-700">{formData.custom_message}</p>
-                </div>
-              )}
-
-              {/* ── EXECUTIVE ── */}
-              {previewMode === 'executive' && (
-                <>
-                  {previewData.executive_summary && (
-                    <div className="rounded-lg border-2 border-blue-200 bg-blue-50/90 p-4">
-                      <h2 className="text-base font-semibold text-blue-900 mb-2">{p('executive_summary')}</h2>
-                      <p className="text-sm text-blue-900">{previewData.executive_summary}</p>
-                    </div>
-                  )}
-                  {previewData.at_a_glance && (
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                      <h2 className="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">{p('at_a_glance')}</h2>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { label: p('on_track'), val: previewData.at_a_glance.on_track || 0, cls: 'bg-green-50 border-green-200', textCls: 'text-green-800', subCls: 'text-green-700' },
-                          { label: p('at_risk'), val: previewData.at_a_glance.at_risk || 0, cls: 'bg-amber-50 border-amber-200', textCls: 'text-amber-800', subCls: 'text-amber-700' },
-                          { label: p('behind'), val: previewData.at_a_glance.behind || 0, cls: 'bg-red-50 border-red-200', textCls: 'text-red-800', subCls: 'text-red-700' },
-                        ].map(({ label, val, cls, textCls, subCls }) => (
-                          <div key={label} className={`p-3 border rounded text-center ${cls}`}>
-                            <p className={`text-2xl font-bold ${textCls}`}>{val}</p>
-                            <p className={`text-xs mt-0.5 font-medium ${subCls}`}>{label}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {Array.isArray(previewData.key_highlights) && previewData.key_highlights.length > 0 && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                      <h2 className="text-sm font-semibold text-amber-900 mb-2 uppercase tracking-wide">{p('key_highlights')}</h2>
-                      <ul className="space-y-1.5">
-                        {previewData.key_highlights.map((h, i) => (
-                          <li key={i} className="flex items-start gap-2 text-sm text-amber-900">
-                            <span className="text-amber-500 font-bold shrink-0">•</span>
-                            <span>{renderExecutiveHighlight(h)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* ── STANDARD: single project vs stacked per-project (org) ── */}
-              {previewMode === 'standard' && selectedProject && (
-                <StandardPreviewSections
-                  data={previewData}
-                  reportSections={reportSections}
-                  locale={locale}
-                  translateStatus={translateStatus}
-                  showTaskPhaseTag={showTaskPhaseTag}
-                  showTaskPhotos={showTaskPhotos}
-                  showProjectNameOnTasks={false}
-                  t={t}
-                />
-              )}
-              {previewMode === 'standard' && !selectedProject && orgProjectPreviewSlices && (
-                <>
-                  {reportSections.vitals !== false && orgAggregateVitals && (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 mb-4">
-                      <p className="text-sm text-slate-800 leading-snug">
-                        <span className="font-semibold">{orgAggregateVitals.project_count}</span>
-                        {' '}
-                        {t('progressReports.builder.projects_in_report').toLowerCase()}
-                        <span className="text-slate-400 mx-1.5">·</span>
-                        <span className="font-semibold tabular-nums">{orgAggregateVitals.tasks_completed_count}</span>
-                        {' '}
-                        {p('done_all_time').toLowerCase()}
-                        <span className="text-slate-400 mx-1.5">·</span>
-                        <span className="font-semibold tabular-nums">{orgAggregateVitals.open_tasks_count}</span>
-                        {' '}
-                        {p('not_complete').toLowerCase()}
-                      </p>
-                    </div>
-                  )}
-                  <div className="space-y-5">
-                    {orgProjectPreviewSlices.map(({ id, project, slice }) => (
-                      <section
-                        key={id}
-                        className="rounded-lg border border-gray-200 bg-gray-50/90 p-3 sm:p-4 shadow-sm space-y-4"
-                      >
-                        <div className="border-b border-gray-200 pb-2">
-                          <h2 className="text-base font-bold text-gray-900">
-                            {project?.name || t('progressReports.builder.untitled_project')}
-                          </h2>
-                          {project?.status ? (
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              {p('status_label', { status: translateStatus(project.status) })}
-                            </p>
-                          ) : null}
-                        </div>
-                        <StandardPreviewSections
-                          data={slice}
-                          reportSections={reportSections}
-                          locale={locale}
-                          translateStatus={translateStatus}
-                          showTaskPhaseTag={showTaskPhaseTag}
-                          showTaskPhotos={showTaskPhotos}
-                          showProjectNameOnTasks={false}
-                          t={t}
-                        />
-                      </section>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              <div className="pt-4 mt-2 border-t border-gray-200 text-center">
-                <div className="inline-flex items-center gap-2.5 text-left max-w-full">
-                  <img
-                    src={SITEWEAVE_LOGO_URL}
-                    alt="SiteWeave"
-                    className="w-9 h-9 shrink-0"
-                    width={36}
-                    height={36}
-                  />
-                  <div className="min-w-0">
-                    <p className="text-[11px] text-gray-400 m-0 leading-snug">{p('generated_by')}</p>
-                    <p className="text-[11px] text-gray-400 m-0 mt-0.5 leading-snug">
-                      {state.currentOrganization?.name || t('navigation.organization')}
-                    </p>
-                  </div>
-                </div>
-              </div>
+        <div className="bg-[#fafafa] min-h-[240px] relative">
+          {isBuildingHtml && !emailHtml ? (
+            <div className="flex items-center justify-center py-16 text-sm text-gray-500">
+              {p('preview_loading_html')}
             </div>
-          </div>
+          ) : null}
+          {emailHtml ? (
+            <iframe
+              ref={iframeRef}
+              title={p('preview_title')}
+              srcDoc={emailHtml}
+              sandbox="allow-same-origin"
+              onLoad={resizeIframe}
+              className="w-full border-0 bg-white block"
+              style={{ minHeight: 240 }}
+            />
+          ) : !isBuildingHtml ? (
+            <div className="flex items-center justify-center py-16 text-sm text-gray-500">
+              {p('preview_loading_html')}
+            </div>
+          ) : null}
         </div>
       </div>
-
-      <p className="text-xs text-gray-400 italic">
-        {selectedProject ? p('preview_hint_project') : p('preview_hint_org')}
-      </p>
     </div>
   );
 }

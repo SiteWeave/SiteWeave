@@ -5,17 +5,26 @@ import {
   formatLeadDaysList,
 } from '@siteweave/core-logic';
 
-function CheckRow({ checked, label }) {
-  return (
-    <div
-      className={`flex items-center gap-2.5 rounded-full px-3 py-2 text-sm ${
-        checked ? 'bg-[#eef9e8] text-gray-900' : 'bg-gray-50 text-gray-600'
-      }`}
-    >
+/** Soft emerald — less neon than the old #3CEB7A lime. */
+const ON_GREEN = '#34C78B';
+const ON_GREEN_SOFT = '#e9f8f0';
+
+function CheckRow({ checked, label, disabled = false, onToggle }) {
+  const interactive = typeof onToggle === 'function' && !disabled;
+  const className = `flex w-full items-center gap-2.5 rounded-full px-3 py-2 text-left text-sm transition-colors ${
+    checked ? 'text-gray-900' : 'bg-gray-50 text-gray-600'
+  } ${interactive ? 'hover:brightness-[0.98] active:scale-[0.99]' : ''} ${
+    disabled ? 'opacity-60' : ''
+  }`;
+  const style = checked ? { backgroundColor: ON_GREEN_SOFT } : undefined;
+
+  const content = (
+    <>
       <span
         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] ${
-          checked ? 'bg-[#3CEB7A] text-white' : 'border border-gray-300 bg-white'
+          checked ? 'text-white' : 'border border-gray-300 bg-white'
         }`}
+        style={checked ? { backgroundColor: ON_GREEN } : undefined}
         aria-hidden
       >
         {checked ? (
@@ -29,7 +38,29 @@ function CheckRow({ checked, label }) {
         ) : null}
       </span>
       <span className="min-w-0 leading-snug">{label}</span>
-    </div>
+    </>
+  );
+
+  if (!interactive) {
+    return (
+      <div className={className} style={style}>
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onToggle(!checked)}
+      className={className}
+      style={style}
+    >
+      {content}
+    </button>
   );
 }
 
@@ -42,11 +73,13 @@ export default function ProjectSmartNotificationsCard({
   canEdit = false,
   onConfigure,
   onToggleEnabled,
+  onToggleDependency,
   variant = 'block',
   className = '',
 }) {
   const { t } = useTranslation();
   const [toggling, setToggling] = useState(false);
+  const [togglingRow, setTogglingRow] = useState(null);
   const settings = useMemo(
     () => resolveProjectSmartNotificationSettings(project, organization),
     [project, organization],
@@ -56,6 +89,7 @@ export default function ProjectSmartNotificationsCard({
   const isOn = settings.enabled;
   const isRail = variant === 'rail';
   const isInline = variant === 'inline';
+  const busy = toggling || togglingRow != null;
 
   const description = isOn
     ? t('projectDetail.smart_notifications_on_summary', {
@@ -65,14 +99,31 @@ export default function ProjectSmartNotificationsCard({
         defaultValue: "Off — crews won't get start or unlock emails.",
       });
 
-  const handleToggle = async () => {
-    if (!canEdit || !onToggleEnabled || toggling) return;
-    setToggling(true);
+  const runToggle = async (key, fn) => {
+    if (!canEdit || !fn || busy) return;
+    setTogglingRow(key);
+    if (key === 'master') setToggling(true);
     try {
-      await onToggleEnabled(!isOn);
+      await fn();
     } finally {
       setToggling(false);
+      setTogglingRow(null);
     }
+  };
+
+  const handleToggle = () => {
+    if (!onToggleEnabled) return;
+    runToggle('master', () => onToggleEnabled(!isOn));
+  };
+
+  const handleToggleStart = (next) => {
+    if (!onToggleEnabled) return;
+    runToggle('start', () => onToggleEnabled(next));
+  };
+
+  const handleToggleUnlock = (next) => {
+    if (!onToggleDependency) return;
+    runToggle('unlock', () => onToggleDependency(next));
   };
 
   const toggle = canEdit && onToggleEnabled ? (
@@ -81,11 +132,12 @@ export default function ProjectSmartNotificationsCard({
       role="switch"
       aria-checked={isOn}
       aria-label={t('projectDetail.smart_notifications_toggle_aria')}
-      disabled={toggling}
+      disabled={busy}
       onClick={handleToggle}
-      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:opacity-60 ${
-        isOn ? 'bg-[#3CEB7A]' : 'bg-gray-300'
+      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:opacity-60 ${
+        isOn ? '' : 'bg-gray-300'
       }`}
+      style={isOn ? { backgroundColor: ON_GREEN } : undefined}
     >
       <span
         className={`inline-block h-[22px] w-[22px] transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
@@ -114,17 +166,18 @@ export default function ProjectSmartNotificationsCard({
         {isOn ? (
           <div className="mt-3 space-y-1.5">
             <CheckRow
-              checked
+              checked={settings.enabled}
+              disabled={busy || !canEdit}
+              onToggle={canEdit && onToggleEnabled ? handleToggleStart : undefined}
               label={t('projectDetail.smart_notifications_row_start', {
                 days: leadDaysLabel,
-                defaultValue: 'Remind crew before start ({{days}}d)',
               })}
             />
             <CheckRow
               checked={settings.dependencyEnabled}
-              label={t('projectDetail.smart_notifications_row_unlock', {
-                defaultValue: 'Email when a blocker clears',
-              })}
+              disabled={busy || !canEdit}
+              onToggle={canEdit && onToggleDependency ? handleToggleUnlock : undefined}
+              label={t('projectDetail.smart_notifications_row_unlock')}
             />
             {canEdit && onConfigure ? (
               <button

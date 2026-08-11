@@ -86,7 +86,7 @@ export default function StreamComposer({
       setDrafting(true);
       try {
         const projectTasks = (tasks || []).filter((task) => task.project_id === projectId);
-        const completedToday = projectTasks.filter(wasCompletedToday);
+        const completedToday = projectTasks.filter((task) => wasCompletedToday(task));
 
         const [weatherImpacts, issuesResult] = await Promise.all([
           listWeatherImpactsForProject(supabaseClient, projectId, organizationId).catch(() => []),
@@ -95,7 +95,7 @@ export default function StreamComposer({
           ),
         ]);
 
-        const todayWeather = (weatherImpacts || []).filter(weatherImpactIsToday);
+        const todayWeather = (weatherImpacts || []).filter((impact) => weatherImpactIsToday(impact));
         const built = buildSiteDaySections({
           completedTasks: completedToday,
           weatherImpacts: todayWeather,

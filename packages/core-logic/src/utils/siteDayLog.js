@@ -2,8 +2,12 @@
  * Site Day / daily log helpers — structured payload, body text, passive-ready detection.
  */
 
+function resolveDate(date) {
+  return date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
+}
+
 export function todayIso(date = new Date()) {
-  return date.toISOString().split('T')[0];
+  return resolveDate(date).toISOString().split('T')[0];
 }
 
 export function wasCompletedToday(task, date = new Date()) {
@@ -185,7 +189,7 @@ export async function fetchDailyLogsForReportPeriod(supabase, projectIds, organi
 
   let query = supabase
     .from('project_stream_posts')
-    .select('id, project_id, author_id, title, body, payload, created_at, projects!project_stream_posts_project_id_fkey(name)')
+    .select('id, project_id, author_id, title, body, payload, file_url, file_name, created_at, projects!project_stream_posts_project_id_fkey(name)')
     .eq('organization_id', organizationId)
     .eq('post_type', 'daily_log')
     .in('project_id', ids)
@@ -208,6 +212,8 @@ export async function fetchDailyLogsForReportPeriod(supabase, projectIds, organi
     title: row.title,
     body: row.body,
     payload: row.payload,
+    file_url: row.file_url || null,
+    file_name: row.file_name || null,
     created_at: row.created_at,
   }));
 }

@@ -90,9 +90,11 @@ function resolveSections(schedule) {
     phase_changes:    s.phase_changes    !== false,
     vitals:           s.vitals           !== false,
     weekly_plan:      weeklySetting      !== false,
+    pm_actions:       s.pm_actions       !== false,
     // detail-level toggles (default off = clean client-facing output)
     show_assignees:         s.show_assignees        === true,
     show_dates:             s.show_dates            === true,
+    show_start_dates:       s.show_start_dates      === true,
     show_who_changed:       s.show_who_changed      === true,
     show_phase_delta:       s.show_phase_delta      === true,
     show_blockers:          s.show_blockers         === true,
@@ -238,13 +240,13 @@ function weeklyPlanHtml(reportData, primary, sections, showWeeklyProjectTag = tr
     <div style="margin-bottom:14px;">
       <p style="margin:0 0 6px;color:#1e3a8a;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Here is what we are doing this week</p>
       ${thisWeek.length
-        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${thisWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}${wkProj(task)}${task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(formatReadableDate(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
+        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${thisWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}${wkProj(task)}${sections.show_start_dates && task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(formatReadableDate(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
         : '<p style="margin:0;color:#6b7280;font-size:13px;">No tasks scheduled this week.</p>'}
     </div>
     <div>
       <p style="margin:0 0 6px;color:#3730a3;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Here is what we will do next week</p>
       ${nextWeek.length
-        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${nextWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}${wkProj(task)}${task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(formatReadableDate(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
+        ? `<ul style="margin:0;padding-left:18px;color:#374151;">${nextWeek.map((task) => `<li style="margin-bottom:6px;font-size:13px;line-height:1.5;">${escapeHtml(task.text || 'Task')}${taskPhaseTagHtml(task, sections, primary)}${wkProj(task)}${sections.show_start_dates && task.start_date ? `<span style="color:#9ca3af;font-size:11px;"> (starts ${escapeHtml(formatReadableDate(task.start_date))})</span>` : ''}</li>`).join('')}</ul>`
         : '<p style="margin:0;color:#6b7280;font-size:13px;">No tasks scheduled for next week.</p>'}
     </div>
   </div>`;
@@ -382,7 +384,7 @@ function formatLogDate(createdAt) {
   return formatDate(createdAt);
 }
 
-function dailyLogBodyForEmail(log, audienceType) {
+function parseDailyLogPayload(log) {
   let payload = log?.payload;
   if (typeof payload === 'string') {
     try {
@@ -391,6 +393,11 @@ function dailyLogBodyForEmail(log, audienceType) {
       payload = null;
     }
   }
+  return payload && typeof payload === 'object' ? payload : null;
+}
+
+function dailyLogBodyForEmail(log, audienceType) {
+  const payload = parseDailyLogPayload(log);
   const sections = payload?.sections;
   if (!sections || typeof sections !== 'object') return log?.body || '';
 
@@ -418,6 +425,43 @@ function dailyLogBodyForEmail(log, audienceType) {
   return lines.join('\n') || log?.body || '';
 }
 
+/** Normalize site-day payload photos (and file_url fallback) for taskPhotosHtml. */
+function dailyLogPhotosForEmail(log) {
+  const payload = parseDailyLogPayload(log);
+  const raw = Array.isArray(payload?.photos) ? payload.photos : [];
+  const photos = raw
+    .map((photo) => {
+      if (!photo) return null;
+      if (typeof photo === 'string') {
+        const url = photo.trim();
+        if (!url) return null;
+        return { thumbnail_url: url, full_url: url, caption: null };
+      }
+      const url = String(photo.url || photo.full_url || photo.thumbnail_url || '').trim();
+      if (!url) return null;
+      return {
+        thumbnail_url: photo.thumbnail_url || url,
+        full_url: photo.full_url || photo.url || url,
+        caption: photo.caption || null,
+        is_completion_photo: false,
+      };
+    })
+    .filter(Boolean);
+
+  if (!photos.length && log?.file_url) {
+    const url = String(log.file_url).trim();
+    if (url) {
+      photos.push({
+        thumbnail_url: url,
+        full_url: url,
+        caption: null,
+        is_completion_photo: false,
+      });
+    }
+  }
+  return photos;
+}
+
 function dailySiteLogsHtml(reportData, schedule, primary) {
   const logs = reportData.daily_site_logs || [];
   if (!logs.length) return '';
@@ -429,6 +473,7 @@ function dailySiteLogsHtml(reportData, schedule, primary) {
     ${sectionHeading('Daily site logs', primary)}
     ${logs.map((log) => {
       const body = escapeHtml(dailyLogBodyForEmail(log, audienceType)).replace(/\n/g, '<br>');
+      const photos = dailyLogPhotosForEmail(log);
       const projectLine = showProjectNames && log.project_name
         ? `<p style="margin:0 0 4px;font-size:12px;color:#6b7280;">${escapeHtml(log.project_name)}</p>`
         : '';
@@ -436,8 +481,39 @@ function dailySiteLogsHtml(reportData, schedule, primary) {
         ${projectLine}
         <p style="margin:0 0 6px;font-size:12px;font-weight:600;color:#374151;">${escapeHtml(formatLogDate(log.created_at))}</p>
         <p style="margin:0;font-size:13px;line-height:1.6;color:#374151;white-space:pre-wrap;">${body}</p>
+        ${photos.length ? taskPhotosHtml(photos) : ''}
       </div>`;
     }).join('')}
+  </div>`;
+}
+
+function pmActionsHtml(reportData, schedule, primary) {
+  const resolved = resolveSections(schedule);
+  if (resolved.pm_actions === false) return '';
+  const pm = reportData?.pm_actions;
+  if (!pm || typeof pm !== 'object') return '';
+  const blocks = [
+    { key: 'rfi_notes', title: 'RFIs' },
+    { key: 'long_lead_time_notes', title: 'Long lead time' },
+    { key: 'change_orders_notes', title: 'Change orders' },
+    { key: 'submittals_notes', title: 'Submittals' },
+  ]
+    .map(({ key, title }) => {
+      const value = String(pm[key] || '').trim();
+      if (!value) return '';
+      return `
+    <div style="margin-bottom:16px;">
+      <p style="margin:0 0 6px;color:#374151;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(title)}</p>
+      <p style="margin:0;color:#374151;font-size:14px;line-height:1.7;white-space:pre-wrap;">${escapeHtml(value)}</p>
+    </div>`;
+    })
+    .filter(Boolean)
+    .join('');
+  if (!blocks) return '';
+  return `
+  <div style="margin-bottom:28px;">
+    ${sectionHeading('PM Actions', primary)}
+    ${blocks}
   </div>`;
 }
 
@@ -587,6 +663,8 @@ function standardReportSectionsHtml(reportData, schedule, branding, options = {}
 
     ${sections.include_daily_site_logs && reportData.daily_site_logs?.length ? dailySiteLogsHtml(reportData, schedule, primary) : ''}
 
+    ${pmActionsHtml(reportData, schedule, primary)}
+
     ${includeBlockersAndNextSteps ? blockersAndNextStepsHtml(reportData, primary, sections) : ''}
   `;
 
@@ -603,7 +681,7 @@ function generateStandardReportEmail(reportData, schedule, branding) {
   const slices = Array.isArray(reportData.org_project_slices) ? reportData.org_project_slices : null;
   const customMsg = schedule.custom_message ? `
     <div style="background-color:#f0f9ff;border-left:4px solid ${secondary};padding:14px 16px;margin-bottom:28px;border-radius:0 4px 4px 0;">
-      <p style="margin:0;color:#1e40af;font-size:14px;line-height:1.7;">${escapeHtml(schedule.custom_message)}</p>
+      <p style="margin:0;color:#1e40af;font-size:14px;line-height:1.7;white-space:pre-wrap;">${escapeHtml(schedule.custom_message)}</p>
     </div>` : '';
 
   let body;
@@ -711,6 +789,7 @@ function generateExecutiveReportEmail(reportData, schedule, branding) {
 
     ${sections.show_weather_impacts && reportData.weather_impacts?.length ? weatherImpactsHtml(reportData, primary) : ''}
     ${sections.show_schedule_adjustments && reportData.schedule_adjustments?.length ? scheduleAdjustmentsHtml(reportData, primary) : ''}
+    ${pmActionsHtml(reportData, schedule, primary)}
 
     ${reportData.project_summary?.length ? `
     <div style="margin-bottom:28px;">
@@ -767,6 +846,21 @@ function generateTextVersion(reportData, schedule, period) {
   text += `${period}\n\n`;
 
   if (schedule.custom_message) text += `${schedule.custom_message}\n\n`;
+  const pmActions = sections.pm_actions !== false ? (reportData.pm_actions || null) : null;
+  if (pmActions) {
+    const parts = [
+      { key: 'rfi_notes', title: 'RFIs' },
+      { key: 'long_lead_time_notes', title: 'Long lead time' },
+      { key: 'change_orders_notes', title: 'Change orders' },
+      { key: 'submittals_notes', title: 'Submittals' },
+    ]
+      .map(({ key, title }) => {
+        const value = String(pmActions[key] || '').trim();
+        return value ? `${title}:\n${value}` : '';
+      })
+      .filter(Boolean);
+    if (parts.length) text += `PM Actions\n${parts.join('\n\n')}\n\n`;
+  }
 
   const appendOrgVitalsSummary = () => {
     if (!reportData.vitals) return;
@@ -847,7 +941,7 @@ function generateTextVersion(reportData, schedule, period) {
       text += `\nHere's what we are doing this week:\n`;
       if (data.this_week_plan?.length) {
         data.this_week_plan.forEach((t) => {
-          text += `- ${t.text || 'Task'}${phaseTxt(t)}${wkProj(t)}${t.start_date ? ` (starts ${formatReadableDate(t.start_date)})` : ''}\n`;
+          text += `- ${t.text || 'Task'}${phaseTxt(t)}${wkProj(t)}${sections.show_start_dates && t.start_date ? ` (starts ${formatReadableDate(t.start_date)})` : ''}\n`;
         });
       } else {
         text += `- No tasks scheduled this week.\n`;
@@ -855,7 +949,7 @@ function generateTextVersion(reportData, schedule, period) {
       text += `\nHere's what we will do next week:\n`;
       if (data.next_week_plan?.length) {
         data.next_week_plan.forEach((t) => {
-          text += `- ${t.text || 'Task'}${phaseTxt(t)}${wkProj(t)}${t.start_date ? ` (starts ${formatReadableDate(t.start_date)})` : ''}\n`;
+          text += `- ${t.text || 'Task'}${phaseTxt(t)}${wkProj(t)}${sections.show_start_dates && t.start_date ? ` (starts ${formatReadableDate(t.start_date)})` : ''}\n`;
         });
       } else {
         text += `- No tasks scheduled for next week.\n`;

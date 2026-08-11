@@ -572,6 +572,7 @@ function WeatherImpactModal({
                                         setStartDate(start);
                                         setEndDate(end || start);
                                     }}
+                                    onSave={() => {}}
                                     presets={datePresets}
                                     compact
                                     elevated

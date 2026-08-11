@@ -572,6 +572,25 @@ CREATE INDEX IF NOT EXISTS idx_weather_impacts_project_id ON public.weather_impa
 CREATE INDEX IF NOT EXISTS idx_weather_impacts_organization_id ON public.weather_impacts(organization_id);
 CREATE INDEX IF NOT EXISTS idx_weather_impacts_created_at ON public.weather_impacts(created_at DESC);
 
+-- PM Actions (optional project notes for progress reports)
+CREATE TABLE IF NOT EXISTS project_pm_actions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    as_of_date DATE NOT NULL DEFAULT (CURRENT_DATE),
+    rfi_notes TEXT,
+    long_lead_time_notes TEXT,
+    change_orders_notes TEXT,
+    submittals_notes TEXT,
+    created_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (project_id, as_of_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_pm_actions_project_id ON public.project_pm_actions(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_pm_actions_org_date ON public.project_pm_actions(organization_id, as_of_date DESC);
+
 -- Tasks Table
 CREATE TABLE IF NOT EXISTS tasks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -3066,6 +3085,7 @@ ALTER TABLE project_contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_issues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_phases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE weather_impacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_pm_actions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE task_photos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
@@ -4189,6 +4209,41 @@ USING (
        OR (select get_user_role()) = 'Admin'
        OR created_by_user_id = (select auth.uid())
   )
+);
+
+-- ============================================================================
+-- PROJECT_PM_ACTIONS TABLE POLICIES
+-- ============================================================================
+
+CREATE POLICY "Users can see pm actions for accessible projects"
+ON public.project_pm_actions
+FOR SELECT
+USING (
+  project_id IN (SELECT id FROM public.projects)
+);
+
+CREATE POLICY "Users can create pm actions for accessible projects"
+ON public.project_pm_actions
+FOR INSERT
+WITH CHECK (
+  project_id IN (SELECT id FROM public.projects)
+);
+
+CREATE POLICY "Users can update pm actions for accessible projects"
+ON public.project_pm_actions
+FOR UPDATE
+USING (
+  project_id IN (SELECT id FROM public.projects)
+)
+WITH CHECK (
+  project_id IN (SELECT id FROM public.projects)
+);
+
+CREATE POLICY "Users can delete pm actions for accessible projects"
+ON public.project_pm_actions
+FOR DELETE
+USING (
+  project_id IN (SELECT id FROM public.projects)
 );
 
 -- ============================================================================

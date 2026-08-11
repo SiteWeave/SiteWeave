@@ -422,6 +422,7 @@ function BuildPath({
                                                         end_date: end || null,
                                                     })
                                                 }
+                                                onSave={() => {}}
                                             />
                                         </div>
                                     </PermissionGuard>
@@ -504,6 +505,7 @@ export function PhaseModal({ phase, onClose, onSave, isLoading }) {
                         startValue={formData.start_date}
                         endValue={formData.end_date}
                         onChange={({ start, end }) => applyScheduleRange(start, end)}
+                        onSave={() => {}}
                         elevated
                         presets={
                             <ScheduleDatePresets t={t} onSelectRange={applyScheduleRange} />

@@ -7,6 +7,7 @@ import {
   collectProgressReportPhotoGroups,
   fetchImageBytesForPdf,
   type ProgressReportPhotoGroup,
+  type ProgressReportPhotoRef,
 } from './progressReportPdf.ts'
 
 type Branding = {
@@ -20,6 +21,7 @@ type Branding = {
 type ScheduleLike = {
   name?: string | null
   custom_subject?: string | null
+  custom_message?: string | null
   report_audience_type?: string | null
   report_sections?: Record<string, unknown> | null
 }
@@ -107,8 +109,10 @@ function resolveSections(schedule: ScheduleLike) {
     phase_changes: s.phase_changes !== false,
     vitals: s.vitals !== false,
     weekly_plan: weeklySetting !== false,
+    pm_actions: s.pm_actions !== false,
     show_assignees: s.show_assignees === true,
     show_dates: s.show_dates === true,
+    show_start_dates: s.show_start_dates === true,
     show_who_changed: s.show_who_changed === true,
     show_phase_delta: s.show_phase_delta === true,
     show_blockers: s.show_blockers === true,
@@ -117,8 +121,89 @@ function resolveSections(schedule: ScheduleLike) {
     keep_original_completion_date: s.keep_original_completion_date !== false,
     include_task_photos:
       schedule.report_audience_type === 'internal' || s.include_task_photos === true,
+    include_daily_site_logs: s.include_daily_site_logs === true,
     show_task_phase: s.show_task_phase === true,
   }
+}
+
+function parseDailyLogPayload(log: any): Record<string, unknown> | null {
+  let payload = log?.payload
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload)
+    } catch {
+      payload = null
+    }
+  }
+  return payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
+}
+
+function dailyLogBodyLines(log: any, audienceType: string | null | undefined): string[] {
+  const payload = parseDailyLogPayload(log)
+  const sections = payload?.sections as Record<string, any> | undefined
+  if (!sections || typeof sections !== 'object') {
+    const body = String(log?.body || '').trim()
+    return body ? [body] : []
+  }
+
+  const isClient = audienceType !== 'internal'
+  const lines: string[] = []
+
+  for (const row of sections.work_completed || []) {
+    if (row?.title) lines.push(`• ${row.title}`)
+  }
+  for (const row of sections.weather || []) {
+    if (row?.summary) lines.push(`• Weather: ${row.summary}`)
+  }
+  if (!isClient) {
+    for (const row of sections.blockers || []) {
+      if (row?.title) lines.push(`• Issue: ${row.title}`)
+    }
+  }
+  for (const row of sections.crew_on_site || []) {
+    const label = [row.trade, row.name].filter(Boolean).join(' — ')
+    if (label) lines.push(`• Crew: ${label}`)
+  }
+  const notes = typeof sections.notes === 'string' ? sections.notes.trim() : ''
+  if (notes) lines.push(notes)
+
+  if (!lines.length) {
+    const body = String(log?.body || '').trim()
+    return body ? [body] : []
+  }
+  return lines
+}
+
+function dailyLogPhotosForPdf(log: any): ProgressReportPhotoRef[] {
+  const payload = parseDailyLogPayload(log)
+  const raw = Array.isArray(payload?.photos) ? payload.photos : []
+  const photos: ProgressReportPhotoRef[] = []
+
+  for (const photo of raw) {
+    if (!photo) continue
+    if (typeof photo === 'string') {
+      const url = photo.trim()
+      if (!url) continue
+      photos.push({ thumbnail_url: url, full_url: url, caption: null })
+      continue
+    }
+    const url = String(photo.url || photo.full_url || photo.thumbnail_url || '').trim()
+    if (!url) continue
+    photos.push({
+      thumbnail_url: photo.thumbnail_url || url,
+      full_url: photo.full_url || photo.url || url,
+      caption: photo.caption || null,
+      is_completion_photo: false,
+    })
+  }
+
+  if (!photos.length && log?.file_url) {
+    const url = String(log.file_url).trim()
+    if (url) {
+      photos.push({ thumbnail_url: url, full_url: url, caption: null, is_completion_photo: false })
+    }
+  }
+  return photos
 }
 
 function wrapText(text: string, font: PDFFont, fontSize: number, maxWidth: number): string[] {
@@ -435,6 +520,12 @@ export async function buildBrandedProgressReportPdf(opts: {
   })
   ctx.cursorY -= 18
 
+  const customMessage = String(opts.schedule.custom_message || '').trim()
+  if (customMessage) {
+    drawTextLines(ctx, customMessage, { size: 11, color: ink, gap: 14 })
+    ctx.cursorY -= 8
+  }
+
   const slices = Array.isArray(data.org_project_slices)
     ? (data.org_project_slices as Record<string, unknown>[])
     : null
@@ -598,7 +689,9 @@ export async function buildBrandedProgressReportPdf(opts: {
           }
           for (const t of rows.slice(0, 12)) {
             const start =
-              t.start_date && (label === 'This week' || label === 'Next week')
+              sections.show_start_dates &&
+              t.start_date &&
+              (label === 'This week' || label === 'Next week')
                 ? ` (starts ${formatReadableDate(t.start_date)})`
                 : ''
             drawBullet(ctx, `${String(t.text || t.title || 'Task')}${start}`)
@@ -669,6 +762,51 @@ export async function buildBrandedProgressReportPdf(opts: {
         }
       }
     }
+
+    const pmActions = sections.pm_actions === false ? null : ((block.pm_actions || null) as Record<string, unknown> | null)
+    const pmLines = [
+      { key: 'rfi_notes', title: 'RFIs' },
+      { key: 'long_lead_time_notes', title: 'Long lead time' },
+      { key: 'change_orders_notes', title: 'Change orders' },
+      { key: 'submittals_notes', title: 'Submittals' },
+    ]
+      .map((section) => {
+        const value = String(pmActions?.[section.key] || '').trim()
+        return value ? { title: section.title, value } : null
+      })
+      .filter(Boolean) as { title: string; value: string }[]
+    if (pmLines.length) {
+      drawSectionHeading(ctx, 'PM Actions')
+      for (const section of pmLines) {
+        drawTextLines(ctx, section.title, { font: bold, size: 11, color: ink, gap: 14 })
+        drawTextLines(ctx, section.value, { size: 11, color: ink, gap: 14 })
+        ctx.cursorY -= 4
+      }
+      ctx.cursorY -= 4
+    }
+  }
+
+  const drawPmActionsOnly = (block: Record<string, unknown>) => {
+    const pmActions = sections.pm_actions === false ? null : ((block.pm_actions || null) as Record<string, unknown> | null)
+    const pmLines = [
+      { key: 'rfi_notes', title: 'RFIs' },
+      { key: 'long_lead_time_notes', title: 'Long lead time' },
+      { key: 'change_orders_notes', title: 'Change orders' },
+      { key: 'submittals_notes', title: 'Submittals' },
+    ]
+      .map((section) => {
+        const value = String(pmActions?.[section.key] || '').trim()
+        return value ? { title: section.title, value } : null
+      })
+      .filter(Boolean) as { title: string; value: string }[]
+    if (!pmLines.length) return
+    drawSectionHeading(ctx, 'PM Actions')
+    for (const section of pmLines) {
+      drawTextLines(ctx, section.title, { font: bold, size: 11, color: ink, gap: 14 })
+      drawTextLines(ctx, section.value, { size: 11, color: ink, gap: 14 })
+      ctx.cursorY -= 4
+    }
+    ctx.cursorY -= 4
   }
 
   if (opts.schedule.report_audience_type === 'executive') {
@@ -683,6 +821,7 @@ export async function buildBrandedProgressReportPdf(opts: {
       drawSectionHeading(ctx, 'Key highlights')
       for (const h of highlights) drawBullet(ctx, String(h))
     }
+    drawPmActionsOnly(data)
   } else if (slices && slices.length > 0) {
     drawVitals(data.vitals as Record<string, unknown> | undefined)
     drawTextLines(ctx, `${slices.length} project(s) in this report`, {
@@ -696,6 +835,41 @@ export async function buildBrandedProgressReportPdf(opts: {
     }
   } else {
     await drawStandardBlock(data)
+  }
+
+  // Daily site logs (optional section) — include payload photos when present.
+  if (sections.include_daily_site_logs) {
+    const logs = Array.isArray(data.daily_site_logs) ? (data.daily_site_logs as any[]) : []
+    if (logs.length > 0) {
+      drawSectionHeading(ctx, 'Daily site logs')
+      const showProjectNames = !data.project_id && logs.some((l) => l?.project_name)
+      for (const log of logs) {
+        if (showProjectNames && log?.project_name) {
+          drawTextLines(ctx, String(log.project_name), {
+            font: ctx.bold,
+            size: 10,
+            color: muted,
+            gap: 13,
+          })
+        }
+        if (log?.created_at) {
+          drawTextLines(ctx, formatDate(log.created_at), {
+            font: ctx.bold,
+            size: 10,
+            color: ink,
+            gap: 13,
+          })
+        }
+        for (const line of dailyLogBodyLines(log, opts.schedule.report_audience_type)) {
+          drawTextLines(ctx, line, { size: 11, color: ink, gap: 14 })
+        }
+        const photos = dailyLogPhotosForPdf(log)
+        if (photos.length > 0) {
+          await drawPhotoStrip(ctx, { label: '', photos })
+        }
+        ctx.cursorY -= 8
+      }
+    }
   }
 
   // Appendix photos if completed tasks didn't include them but groups exist

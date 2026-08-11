@@ -60,6 +60,8 @@ import ProgressReportModal from '../components/ProgressReportModal';
 import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
 import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import WeatherImpactModal from '../components/WeatherImpactModal';
+import PmActionsModal from '../components/PmActionsModal';
+import PmActionsBanner from '../components/PmActionsBanner';
 import WeatherDelayMarker from '../components/WeatherDelayMarker';
 import ScheduleGainReviewModal from '../components/ScheduleGainReviewModal';
 import { applyScheduleToWeatherImpact } from '../utils/weatherScheduleApply';
@@ -262,6 +264,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [applyingWeatherImpactId, setApplyingWeatherImpactId] = useState(null);
     const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
+    const [showPmActionsModal, setShowPmActionsModal] = useState(false);
+    const [pmActionsBannerKey, setPmActionsBannerKey] = useState(0);
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [showSmartNotificationsModal, setShowSmartNotificationsModal] = useState(false);
     const [smartNotifActivateOnOpen, setSmartNotifActivateOnOpen] = useState(false);
@@ -285,6 +289,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [dependencyDrawerTaskId, setDependencyDrawerTaskId] = useState(null);
     const [drawerPredecessorQuery, setDrawerPredecessorQuery] = useState('');
     const [drawerSuccessorQuery, setDrawerSuccessorQuery] = useState('');
+    const [drawerShowAfterDueDate, setDrawerShowAfterDueDate] = useState(false);
     const [activeDependencyPicker, setActiveDependencyPicker] = useState(null);
     const [toolbarMenu, setToolbarMenu] = useState(null);
     const toolbarMenuRef = useRef(null);
@@ -392,6 +397,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     useEffect(() => {
         setDrawerPredecessorQuery('');
         setDrawerSuccessorQuery('');
+        setDrawerShowAfterDueDate(false);
         setActiveDependencyPicker(null);
     }, [dependencyDrawerTaskId]);
 
@@ -900,6 +906,33 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 nextEnabled
                     ? t('projectDetail.smart_notifications_enabled_toast')
                     : t('projectDetail.smart_notifications_disabled_toast'),
+                'success',
+            );
+        } catch (error) {
+            addToast(handleApiError(error, t('toast.error_updating_project', { message: error.message })), 'error');
+        }
+    }, [project, state.user?.id, dispatch, addToast, t]);
+
+    const handleToggleDependencyNotifications = useCallback(async (nextEnabled) => {
+        if (!project?.id) return;
+        try {
+            const payload = {
+                dependency_notifications_enabled: nextEnabled,
+                updated_by_user_id: state.user?.id,
+                updated_at: new Date().toISOString(),
+            };
+            const { data: updatedProject, error } = await supabaseClient
+                .from('projects')
+                .update(payload)
+                .eq('id', project.id)
+                .select()
+                .single();
+            if (error) throw error;
+            dispatch({ type: 'UPDATE_PROJECT', payload: updatedProject });
+            addToast(
+                nextEnabled
+                    ? t('projectDetail.smart_notifications_unlock_enabled_toast')
+                    : t('projectDetail.smart_notifications_unlock_disabled_toast'),
                 'success',
             );
         } catch (error) {
@@ -2730,17 +2763,34 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         () => new Set((dependencyDrawerMeta?.successors || []).map((dep) => dep.successor_task_id)),
         [dependencyDrawerMeta]
     );
+    const phasesById = useMemo(() => {
+        const m = new Map();
+        (projectPhases || []).forEach((p) => m.set(p.id, p));
+        return m;
+    }, [projectPhases]);
+    const drawerReferenceDate = useMemo(() => {
+        const task = dependencyDrawerTask;
+        return task?.due_date || task?.start_date || '';
+    }, [dependencyDrawerTask]);
     const filterDrawerTasks = useCallback((query, idsToExclude) => {
         const normalizedQuery = query.trim().toLowerCase();
+        const ref = drawerReferenceDate;
         return allTasks
             .filter((task) => task.id !== dependencyDrawerTaskId && !idsToExclude.has(task.id))
             .filter((task) => {
                 if (!normalizedQuery) return true;
                 const assigneeName = task.contacts?.name || '';
-                return `${task.text} ${assigneeName}`.toLowerCase().includes(normalizedQuery);
+                const phaseName = phasesById.get(task.project_phase_id)?.name || '';
+                return `${task.text} ${assigneeName} ${phaseName}`.toLowerCase().includes(normalizedQuery);
             })
-            .slice(0, 8);
-    }, [allTasks, dependencyDrawerTaskId]);
+            .filter((task) => {
+                if (drawerShowAfterDueDate || !ref) return true;
+                const candidateKey = task.due_date || task.start_date || '';
+                if (!candidateKey) return true;
+                return candidateKey <= ref;
+            })
+            .slice(0, normalizedQuery ? 40 : 12);
+    }, [allTasks, dependencyDrawerTaskId, drawerReferenceDate, drawerShowAfterDueDate, phasesById]);
     const predecessorCandidateTasks = useMemo(
         () => filterDrawerTasks(drawerPredecessorQuery, linkedPredecessorIds),
         [drawerPredecessorQuery, filterDrawerTasks, linkedPredecessorIds]
@@ -3012,6 +3062,17 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 />
             )}
 
+            {showPmActionsModal && project && (
+                <PmActionsModal
+                    project={project}
+                    onSaved={() => setPmActionsBannerKey((n) => n + 1)}
+                    onClose={() => {
+                        setShowPmActionsModal(false);
+                        setPmActionsBannerKey((n) => n + 1);
+                    }}
+                />
+            )}
+
             {showScheduleGainModal && project && selectedScheduleAdjustment ? (
                 <ScheduleGainReviewModal
                     project={project}
@@ -3259,6 +3320,16 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                             className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                                                         >
                                                             {t('projectDetail.weather_schedule_impact')}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setShowPmActionsModal(true);
+                                                                setToolbarMenu(null);
+                                                            }}
+                                                            className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                                        >
+                                                            {t('projectDetail.pm_actions.menu')}
                                                         </button>
                                                     </div>
                                                 )}
@@ -3619,6 +3690,11 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             </div>
                             {(allTasks.length > 0 || canEditProjects) ? (
                                 <div className="flex w-full max-w-[17.5rem] flex-col gap-3 xl:sticky xl:top-4 xl:justify-self-end">
+                                    <PmActionsBanner
+                                        projectId={project?.id}
+                                        refreshKey={pmActionsBannerKey}
+                                        onOpen={() => setShowPmActionsModal(true)}
+                                    />
                                     {allTasks.length > 0 ? (
                                         <TasksDispatchRail
                                             pingTasks={actionPingTasks}
@@ -3639,6 +3715,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                             organization={state.currentOrganization}
                                             canEdit={canEditProjects}
                                             onToggleEnabled={handleToggleSmartNotifications}
+                                            onToggleDependency={handleToggleDependencyNotifications}
                                             onConfigure={({ activate } = {}) => {
                                                 setSmartNotifActivateOnOpen(Boolean(activate));
                                                 setShowSmartNotificationsModal(true);
@@ -3742,7 +3819,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                         </button>
                                         {activeDependencyPicker === 'predecessor' && (
                                             <div className="absolute left-0 top-[calc(100%+0.5rem)] z-20 w-full max-w-sm overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
-                                                <div className="p-3">
+                                                <div className="p-3 space-y-2">
                                                     <input
                                                         type="search"
                                                         value={drawerPredecessorQuery}
@@ -3751,10 +3828,21 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none"
                                                         autoFocus
                                                     />
+                                                    {Boolean(drawerReferenceDate) && (
+                                                        <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={drawerShowAfterDueDate}
+                                                                onChange={(e) => setDrawerShowAfterDueDate(e.target.checked)}
+                                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                            />
+                                                            <span>Show tasks after due date</span>
+                                                        </label>
+                                                    )}
                                                 </div>
                                                 <div className="max-h-72 overflow-y-auto border-t border-gray-100 px-2 py-2">
                                                     {!drawerPredecessorQuery.trim() && (
-                                                        <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Recent Tasks</p>
+                                                        <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Tasks</p>
                                                     )}
                                                     <div className="space-y-1">
                                                         {predecessorCandidateTasks.map((task) => (
@@ -3768,7 +3856,14 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                 }}
                                                                 className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
                                                             >
-                                                                <span className="ui-ellipsis-1">{task.text}</span>
+                                                                <span className="min-w-0">
+                                                                    <span className="ui-ellipsis-1 block">{task.text}</span>
+                                                                    {phasesById.get(task.project_phase_id)?.name ? (
+                                                                        <span className="ui-ellipsis-1 mt-0.5 block text-[11px] text-gray-400">
+                                                                            {phasesById.get(task.project_phase_id).name}
+                                                                        </span>
+                                                                    ) : null}
+                                                                </span>
                                                                 <span className="shrink-0 text-xs font-medium text-amber-600">Add</span>
                                                             </button>
                                                         ))}
@@ -3820,7 +3915,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                         </button>
                                         {activeDependencyPicker === 'successor' && (
                                             <div className="absolute left-0 top-[calc(100%+0.5rem)] z-20 w-full max-w-sm overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
-                                                <div className="p-3">
+                                                <div className="p-3 space-y-2">
                                                     <input
                                                         type="search"
                                                         value={drawerSuccessorQuery}
@@ -3829,10 +3924,21 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none"
                                                         autoFocus
                                                     />
+                                                    {Boolean(drawerReferenceDate) && (
+                                                        <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={drawerShowAfterDueDate}
+                                                                onChange={(e) => setDrawerShowAfterDueDate(e.target.checked)}
+                                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                            />
+                                                            <span>Show tasks after due date</span>
+                                                        </label>
+                                                    )}
                                                 </div>
                                                 <div className="max-h-72 overflow-y-auto border-t border-gray-100 px-2 py-2">
                                                     {!drawerSuccessorQuery.trim() && (
-                                                        <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Recent Tasks</p>
+                                                        <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Tasks</p>
                                                     )}
                                                     <div className="space-y-1">
                                                         {successorCandidateTasks.map((task) => (
@@ -3846,7 +3952,14 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                                 }}
                                                                 className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
                                                             >
-                                                                <span className="ui-ellipsis-1">{task.text}</span>
+                                                                <span className="min-w-0">
+                                                                    <span className="ui-ellipsis-1 block">{task.text}</span>
+                                                                    {phasesById.get(task.project_phase_id)?.name ? (
+                                                                        <span className="ui-ellipsis-1 mt-0.5 block text-[11px] text-gray-400">
+                                                                            {phasesById.get(task.project_phase_id).name}
+                                                                        </span>
+                                                                    ) : null}
+                                                                </span>
                                                                 <span className="shrink-0 text-xs font-medium text-rose-500">Add</span>
                                                             </button>
                                                         ))}

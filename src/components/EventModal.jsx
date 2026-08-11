@@ -506,6 +506,7 @@ function EventModal({ onClose, onSave, onDelete, event = null, date, isLoading =
                                 setStartDate(start);
                                 setEndDate(end || start);
                             }}
+                            onSave={() => {}}
                             presets={datePresets}
                             elevated
                         />
