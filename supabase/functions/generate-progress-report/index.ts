@@ -1109,6 +1109,9 @@ serve(async (req) => {
     }
 
     // ── Last / this / next week buckets (rolling 7-day windows) ──────────────
+    // "This week" = open tasks whose schedule overlaps [today, today+7), including
+    // in-progress work that started earlier. "Next week" = tasks that start in
+    // [today+7, today+14) so continuing work is not listed twice.
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const oneWeekMs = 7 * 24 * 60 * 60 * 1000
@@ -1122,6 +1125,14 @@ serve(async (req) => {
       if (Number.isNaN(d.getTime())) return null
       d.setHours(0, 0, 0, 0)
       return d
+    }
+
+    const taskOverlapsWindow = (task: any, windowStart: Date, windowEnd: Date) => {
+      const start = taskStartDate(task.start_date)
+      if (!start) return false
+      const end = taskStartDate(computeTaskEndDate(task) ?? undefined)
+      if (!end) return false
+      return start < windowEnd && end >= windowStart
     }
 
     const taskCompletedAt = (task: any): Date | null => {
@@ -1169,10 +1180,7 @@ serve(async (req) => {
 
     const thisWeekPlan = dedupeWeeklyPlanRowsByDisplay(
       openTasks
-        .filter((t: any) => {
-          const d = taskStartDate(t.start_date)
-          return d != null && d >= today && d < thisWeekEnd
-        })
+        .filter((t: any) => taskOverlapsWindow(t, today, thisWeekEnd))
         .sort((a: any, b: any) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
         .map((t: any) => ({
           text: t.text,

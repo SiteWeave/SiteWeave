@@ -35,6 +35,27 @@ function parsePreviewDay(value) {
   return d;
 }
 
+/** Effective task end: due_date, else start_date + duration_days - 1, else start_date. */
+function previewTaskEndDate(task) {
+  if (typeof task?.due_date === 'string' && task.due_date.length > 0) return task.due_date;
+  if (typeof task?.start_date !== 'string' || task.start_date.length === 0) return null;
+  const durationRaw = Number(task.duration_days);
+  const durationDays = Number.isFinite(durationRaw) ? Math.max(1, Math.trunc(durationRaw)) : 1;
+  const start = parsePreviewDay(task.start_date);
+  if (!start) return null;
+  const end = new Date(start.getTime() + (durationDays - 1) * 24 * 60 * 60 * 1000);
+  return end.toISOString().slice(0, 10);
+}
+
+/** True when an open task's schedule overlaps [windowStart, windowEnd). */
+function taskOverlapsPreviewWindow(task, windowStart, windowEnd) {
+  const start = parsePreviewDay(task?.start_date);
+  if (!start) return false;
+  const end = parsePreviewDay(previewTaskEndDate(task));
+  if (!end) return false;
+  return start < windowEnd && end >= windowStart;
+}
+
 function buildPhaseNameMapFromList(phases) {
   const m = {};
   (phases || []).forEach((p) => {
@@ -138,10 +159,7 @@ function computeOrgProjectPreviewSlice({
   const thisWeekPlan = dedupeWeeklyPlanRowsByDisplay(
     scoped
       .filter((t) => !t?.completed)
-      .filter((t) => {
-        const d = parsePreviewDay(t.start_date);
-        return d && d >= todayDay && d < thisWeekEnd;
-      })
+      .filter((t) => taskOverlapsPreviewWindow(t, todayDay, thisWeekEnd))
       .map((t) => ({
         text: t.text,
         start_date: t.start_date || null,
@@ -786,10 +804,7 @@ function ProgressReportPreview({ formData, recipients, scheduleId, projectId: pr
   const thisWeekPlan = dedupeWeeklyPlanRowsByDisplay(
     scopedTasks
       .filter((t) => !t?.completed)
-      .filter((t) => {
-        const d = parseDay(t.start_date);
-        return d && d >= todayDay && d < thisWeekEnd;
-      })
+      .filter((t) => taskOverlapsPreviewWindow(t, todayDay, thisWeekEnd))
       .map((t) => ({
         text: t.text,
         start_date: t.start_date || null,
