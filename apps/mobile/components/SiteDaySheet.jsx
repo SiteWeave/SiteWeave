@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import {
   createStreamPost,
@@ -34,7 +33,7 @@ import { recordSiteDayPost } from '../utils/siteDayStreak';
 import { signalReviewPromptOpportunity } from '../utils/reviewPromptEvents';
 import { useHaptics } from '../hooks/useHaptics';
 import { useCollapsibleList, ShowMoreToggle } from './ui/CollapsibleList';
-import { IMAGE_MEDIA_TYPES } from '../utils/imagePickerMediaTypes';
+import { pickPhotos } from '../utils/pickPhotos';
 import { loadFormDraft, saveFormDraft, clearFormDraft } from '../utils/formDrafts';
 import {
   runAfterInteractionsAsync,
@@ -158,7 +157,7 @@ export default function SiteDaySheet({
       setDrafting(true);
       try {
         const projectTasks = tasks.filter((task) => task.project_id === selectedProjectId);
-        const completedToday = projectTasks.filter(wasCompletedToday);
+        const completedToday = projectTasks.filter((task) => wasCompletedToday(task));
 
         const [weatherImpacts, issuesResult, savedDraft] = await Promise.all([
           listWeatherImpactsForProject(supabase, selectedProjectId, organizationId).catch(() => []),
@@ -168,7 +167,7 @@ export default function SiteDaySheet({
           loadFormDraft('site_day', selectedProjectId),
         ]);
 
-        const todayWeather = (weatherImpacts || []).filter(weatherImpactIsToday);
+        const todayWeather = (weatherImpacts || []).filter((impact) => weatherImpactIsToday(impact));
 
         const built = buildSiteDaySections({
           completedTasks: completedToday,
@@ -302,88 +301,124 @@ export default function SiteDaySheet({
       return;
     }
     const generation = ++pickerGenerationRef.current;
-    let localId = retryLocalId || null;
-    let localUri = retryUri || null;
     try {
-      if (!localUri) {
-        if (source === 'camera') {
-          const permission = await ImagePicker.requestCameraPermissionsAsync();
-          if (!permission.granted) {
+      let assets;
+      if (retryUri) {
+        assets = [{ uri: retryUri, localId: retryLocalId }];
+      } else {
+        try {
+          assets = await pickPhotos({ mode: source, t });
+        } catch (error) {
+          if (error?.code === 'CAMERA_PERMISSION_DENIED') {
             Alert.alert(t('common.error'), t('mobile.issue_photo_permission'));
             return;
           }
+          throw error;
         }
-        if (!visibleRef.current || generation !== pickerGenerationRef.current) return;
-        const result =
-          source === 'camera'
-            ? await ImagePicker.launchCameraAsync({
-                mediaTypes: IMAGE_MEDIA_TYPES,
-                quality: 0.8,
-                allowsEditing: false,
-              })
-            : await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: IMAGE_MEDIA_TYPES,
-                quality: 0.8,
-                allowsEditing: false,
-              });
-
-        if (!visibleRef.current || generation !== pickerGenerationRef.current) return;
-        if (result.canceled || !result.assets?.[0]?.uri) return;
-        localUri = result.assets[0].uri;
       }
 
-      localId = localId || newLocalPhotoId();
+      if (!visibleRef.current || generation !== pickerGenerationRef.current) return;
+      if (!assets?.length) return;
+
       markEdited();
+      setUploadingPhoto(true);
+
+      const queued = assets.map((asset) => ({
+        localId: asset.localId || newLocalPhotoId(),
+        localUri: asset.uri,
+      }));
+
       setPhotos((prev) => {
-        const without = prev.filter((p) => p.localId !== localId);
+        const retryIds = new Set(queued.map((q) => q.localId));
+        const without = prev.filter((p) => !retryIds.has(p.localId));
         return [
           ...without,
-          {
+          ...queued.map(({ localId, localUri }) => ({
             localId,
             localUri,
             url: null,
             file_name: null,
             status: 'uploading',
-          },
+          })),
         ];
       });
-      setUploadingPhoto(true);
 
-      const uploaded = await uploadSiteDayPhotoFromUri(supabase, {
-        projectId: selectedProjectId,
-        uri: localUri,
-      });
-      if (!visibleRef.current || generation !== pickerGenerationRef.current) return;
-      setPhotos((prev) =>
-        prev.map((p) =>
-          p.localId === localId
-            ? {
-                ...p,
-                ...uploaded,
-                localUri,
-                status: 'ready',
-              }
-            : p,
-        ),
-      );
-      haptics.success();
-    } catch (error) {
-      console.error('Site day photo pick/upload failed:', error);
-      if (localId) {
-        setPhotos((prev) =>
-          prev.map((p) => (p.localId === localId ? { ...p, status: 'failed' } : p)),
-        );
+      const failures = [];
+      for (const item of queued) {
+        if (!visibleRef.current || generation !== pickerGenerationRef.current) return;
+        try {
+          const uploaded = await uploadSiteDayPhotoFromUri(supabase, {
+            projectId: selectedProjectId,
+            uri: item.localUri,
+          });
+          if (!visibleRef.current || generation !== pickerGenerationRef.current) return;
+          setPhotos((prev) =>
+            prev.map((p) =>
+              p.localId === item.localId
+                ? {
+                    ...p,
+                    ...uploaded,
+                    localUri: item.localUri,
+                    status: 'ready',
+                  }
+                : p,
+            ),
+          );
+          haptics.success();
+        } catch (error) {
+          console.error('Site day photo upload failed:', error);
+          if (!visibleRef.current || generation !== pickerGenerationRef.current) return;
+          setPhotos((prev) =>
+            prev.map((p) =>
+              p.localId === item.localId ? { ...p, status: 'failed' } : p,
+            ),
+          );
+          failures.push({ ...item, error });
+        }
       }
+
+      if (failures.length === 1) {
+        const failed = failures[0];
+        alertPhotoUploadFailed({
+          t,
+          message: failed.error?.message || t('mobile.site_day_photo_failed'),
+          onRetry: () => {
+            void pickPhoto(source, {
+              retryLocalId: failed.localId,
+              retryUri: failed.localUri,
+            });
+          },
+          onRetake: () => {
+            setPhotos((prev) => prev.filter((p) => p.localId !== failed.localId));
+            void runAfterInteractionsAsync(() => pickPhoto(source));
+          },
+        });
+      } else if (failures.length > 1) {
+        alertPhotoUploadFailed({
+          t,
+          message: t('mobile.site_day_photos_failed', {
+            defaultValue: '{{count}} photos did not upload. Tap a thumbnail to retry.',
+            count: failures.length,
+          }),
+          onRetry: () => {
+            void pickPhoto(source, {
+              retryLocalId: failures[0].localId,
+              retryUri: failures[0].localUri,
+            });
+          },
+          onRetake: () => {
+            const failedIds = new Set(failures.map((f) => f.localId));
+            setPhotos((prev) => prev.filter((p) => !failedIds.has(p.localId)));
+            void runAfterInteractionsAsync(() => pickPhoto(source));
+          },
+        });
+      }
+    } catch (error) {
+      console.error('Site day photo pick failed:', error);
       alertPhotoUploadFailed({
         t,
         message: error?.message || t('mobile.site_day_photo_failed'),
-        onRetry: () => {
-          void pickPhoto(source, { retryLocalId: localId, retryUri: localUri });
-        },
         onRetake: () => {
-          if (localId) {
-            setPhotos((prev) => prev.filter((p) => p.localId !== localId));
-          }
           void runAfterInteractionsAsync(() => pickPhoto(source));
         },
       });
@@ -398,14 +433,14 @@ export default function SiteDaySheet({
     if (!selectedProjectId) return;
     scheduleAfterDismiss(() => {
       let sourceSelected = false;
-      Alert.alert(t('mobile.site_day_add_photo'), undefined, [
+      Alert.alert(t('mobile.site_day_add_photo', { defaultValue: 'Add photos' }), undefined, [
         {
           text: t('common.cancel'),
           style: 'cancel',
           onPress: () => setPickerSuspended(false),
         },
         {
-          text: t('mobile.photo_take', { defaultValue: 'Take photo' }),
+          text: t('mobile.photo_take', { defaultValue: 'Take photos' }),
           onPress: () => {
             sourceSelected = true;
             void runAfterInteractionsAsync(() => pickPhoto('camera'));

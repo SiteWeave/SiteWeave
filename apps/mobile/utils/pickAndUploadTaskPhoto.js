@@ -1,17 +1,19 @@
-import * as ImagePicker from 'expo-image-picker';
 import { uploadTaskPhotoSet } from '@siteweave/core-logic';
 import { uriToUploadPayload } from './imageUpload';
 import { jpegFileName, prepareTaskPhotoForUpload } from './prepareTaskPhoto';
-import { IMAGE_MEDIA_TYPES } from './imagePickerMediaTypes';
+import { pickPhotos } from './pickPhotos';
 import { withOneRetry } from './withOneRetry';
 
 /**
- * Pick from camera or library and attach a photo to a task.
+ * Pick from camera or library and attach one or more photos to a task.
+ * Library supports multi-select; camera can take several shots in a row.
  * Callers must dismiss any RN Modal before invoking this — native pickers stacked
  * over Modals hang on some iOS/Android devices.
  *
  * @param {object} options
- * @param {(uri: string) => void} [options.onLocalReady] - Fired as soon as a local URI exists (before upload).
+ * @param {(uri: string, meta?: { index: number, total: number }) => void} [options.onLocalReady]
+ * @param {() => void} [options.onAssetSelected]
+ * @param {(key: string, opts?: object) => string} [options.t]
  */
 export async function pickAndUploadTaskPhoto({
   supabase,
@@ -22,6 +24,7 @@ export async function pickAndUploadTaskPhoto({
   isCompletionPhoto = false,
   onLocalReady,
   onAssetSelected,
+  t = (key, opts) => opts?.defaultValue || key,
 }) {
   if (!task?.id || !task?.project_id || !organizationId || !supabase) {
     throw new Error('Task photo upload is missing project or organization context.');
@@ -30,52 +33,64 @@ export async function pickAndUploadTaskPhoto({
     throw new Error('You must be signed in to attach photos.');
   }
 
-  if (mode === 'camera') {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
+  let assets;
+  try {
+    assets = await pickPhotos({ mode, t });
+  } catch (error) {
+    if (error?.code === 'CAMERA_PERMISSION_DENIED') {
       throw new Error('Camera permission is required to take task photos.');
+    }
+    throw error;
+  }
+
+  if (!assets.length) return null;
+
+  onAssetSelected?.();
+
+  const uploaded = [];
+  let lastError = null;
+  for (let index = 0; index < assets.length; index += 1) {
+    const asset = assets[index];
+    onLocalReady?.(asset.uri, { index, total: assets.length });
+
+    try {
+      const prepared = await prepareTaskPhotoForUpload(asset.uri);
+      const originalFile = await uriToUploadPayload(prepared.uri, {
+        mimeType: prepared.mimeType,
+        fileName: jpegFileName(asset.fileName),
+      });
+
+      await withOneRetry(() =>
+        uploadTaskPhotoSet(supabase, {
+          taskId: task.id,
+          organizationId,
+          projectId: task.project_id,
+          originalFile,
+          thumbnailFile: null,
+          uploadedByUserId: userId,
+          capturedAt: new Date().toISOString(),
+          isCompletionPhoto,
+        }),
+      );
+
+      uploaded.push({ localUri: asset.uri, uploaded: true });
+    } catch (error) {
+      lastError = error;
+      console.error('Task photo upload failed:', error);
     }
   }
 
-  const result =
-    mode === 'camera'
-      ? await ImagePicker.launchCameraAsync({
-          mediaTypes: IMAGE_MEDIA_TYPES,
-          quality: 0.8,
-          allowsEditing: false,
-        })
-      : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: IMAGE_MEDIA_TYPES,
-          quality: 0.8,
-          allowsEditing: false,
-        });
+  if (!uploaded.length) {
+    throw lastError || new Error('Could not upload photos.');
+  }
 
-  if (result.canceled || !result.assets?.[0]) return null;
-
-  const asset = result.assets[0];
-  onLocalReady?.(asset.uri);
-  onAssetSelected?.();
-
-  const prepared = await prepareTaskPhotoForUpload(asset.uri);
-  const originalFile = await uriToUploadPayload(prepared.uri, {
-    mimeType: prepared.mimeType,
-    fileName: jpegFileName(asset.fileName),
-  });
-
-  await withOneRetry(() =>
-    uploadTaskPhotoSet(supabase, {
-      taskId: task.id,
-      organizationId,
-      projectId: task.project_id,
-      originalFile,
-      thumbnailFile: null,
-      uploadedByUserId: userId,
-      capturedAt: new Date().toISOString(),
-      isCompletionPhoto,
-    }),
-  );
-
-  return { localUri: asset.uri, uploaded: true };
+  return {
+    localUri: uploaded[uploaded.length - 1]?.localUri || assets[0].uri,
+    count: uploaded.length,
+    failedCount: assets.length - uploaded.length,
+    uploaded: true,
+    items: uploaded,
+  };
 }
 
 /**

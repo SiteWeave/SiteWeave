@@ -206,6 +206,7 @@ export function useTaskPhotoAttach({
           userId,
           mode,
           isCompletionPhoto: pendingCompletionRef.current,
+          t,
           onLocalReady: (uri) => {
             gotLocal = true;
             lastLocalByTaskRef.current[task.id] = uri;

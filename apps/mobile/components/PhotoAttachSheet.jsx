@@ -20,7 +20,7 @@ export default function PhotoAttachSheet({
   return (
     <BottomSheet
       visible={visible}
-      title={t('mobile.add_photo')}
+      title={t('mobile.add_photos', { defaultValue: 'Add photos' })}
       onClose={onClose}
       onDismissed={onDismissed}
       dismissWithoutAnimation={dismissWithoutAnimation}
@@ -28,7 +28,7 @@ export default function PhotoAttachSheet({
     >
       <View style={[styles.actions, { paddingBottom: sheetListEndPadding(sheetInsets) }]}>
         <Button
-          label={t('mobile.photo_take', { defaultValue: 'Take photo' })}
+          label={t('mobile.photo_take', { defaultValue: 'Take photos' })}
           onPress={onCamera}
           disabled={uploading}
           testID="photo-camera"
