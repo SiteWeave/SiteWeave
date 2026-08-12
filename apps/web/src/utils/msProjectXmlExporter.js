@@ -8,7 +8,7 @@ import {
   buildFederalHolidayMap,
   inclusiveBusinessDaysInRange,
   toIsoDateUtc,
-} from '../../../../packages/core-logic/src/utils/usBusinessCalendar.js';
+} from '@siteweave/core-logic';
 import {
   mapDependencyTypeToMsLinkType,
   mapLagDaysToLinkLag,

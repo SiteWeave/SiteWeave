@@ -23,6 +23,7 @@ export {
   workdaysGainedBetween,
   buildFederalHolidayMap,
   businessDaysBetween,
+  toIsoDateUtc,
 } from './utils/usBusinessCalendar.js';
 
 export {
