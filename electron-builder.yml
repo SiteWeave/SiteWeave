@@ -60,4 +60,4 @@ publish:
   provider: github
   owner: SiteWeave
   repo: SiteWeave
-electronVersion: 38.3.0
+electronVersion: 41.2.0
