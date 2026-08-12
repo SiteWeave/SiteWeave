@@ -152,10 +152,17 @@ jobs:
            find release/win-unpacked -path '*node_modules/electron-updater/package.json' 2>/dev/null | grep -q .; then
           echo "OK: electron-updater found in packaged tree"
         elif [ -f "release/win-unpacked/resources/app.asar" ] && \
-             npx --yes asar list release/win-unpacked/resources/app.asar | grep -q 'node_modules/electron-updater/package.json'; then
+             npx --yes asar extract-file release/win-unpacked/resources/app.asar node_modules/electron-updater/package.json /tmp/eu-pkg.json 2>/dev/null; then
           echo "OK: electron-updater found inside app.asar"
+        elif [ -f "release/win-unpacked/resources/app.asar" ] && \
+             npx --yes asar list release/win-unpacked/resources/app.asar | grep -q 'node_modules/electron-updater'; then
+          echo "OK: electron-updater found inside app.asar (list)"
         else
           echo "ERROR: electron-updater missing from packaged app — would cause updater-unavailable in production"
+          echo "Listing app.asar top-level node_modules (if any):"
+          if [ -f "release/win-unpacked/resources/app.asar" ]; then
+            npx --yes asar list release/win-unpacked/resources/app.asar | grep 'node_modules' | head -n 40 || true
+          fi
           exit 1
         fi
 
