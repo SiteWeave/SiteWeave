@@ -13,6 +13,7 @@ const root = join(__dirname, '..');
 const {
   buildMsProjectXml,
   formatDurationIso,
+  splitDurationByPercent,
   escapeXml,
   sanitizeMsProjectFilename,
   MINUTES_PER_DAY,
@@ -75,6 +76,11 @@ function child(block, tag) {
   assert(mapLinkLagToDays('-9600', '7', 480) === -2, 'negative LinkLag → days');
   assert(formatDurationIso(5) === 'PT40H0M0S', '5 days → PT40H0M0S');
   assert(formatDurationIso(0, true) === 'PT0H0M0S', 'milestone duration is zero');
+  assert(
+    JSON.stringify(splitDurationByPercent(3, 50)) ===
+      JSON.stringify({ totalHours: 24, actualHours: 12, remainingHours: 12 }),
+    '50% of 3 days splits into 12h actual / 12h remaining'
+  );
   assert(escapeXml(`A & B <C> "D"`) === 'A &amp; B &lt;C&gt; &quot;D&quot;', 'XML escaping');
   assert(escapeXml('A\u0001B') === 'AB', 'invalid XML control characters removed');
   assert(sanitizeMsProjectFilename('Roof / Deck?') === 'Roof Deck-schedule.xml', 'filename sanitized');
@@ -267,7 +273,12 @@ assert(mob && child(mob, 'Start') === '2026-06-01T08:00:00', 'start at 08:00');
 assert(mob && child(mob, 'Finish') === '2026-06-03T17:00:00', 'finish at 17:00');
 assert(mob && child(mob, 'Duration') === 'PT24H0M0S', '3-day duration as hours');
 assert(mob && child(mob, 'DurationFormat') === '7', 'duration format days');
+assert(mob && child(mob, 'Work') === 'PT24H0M0S', 'work mirrors duration');
+assert(mob && child(mob, 'RemainingDuration') === 'PT12H0M0S', '50% leaves half remaining');
+assert(mob && child(mob, 'ActualDuration') === 'PT12H0M0S', '50% actual duration');
 assert(mob && child(mob, 'PercentComplete') === '50', 'percent complete');
+assert(mob && child(mob, 'PercentWorkComplete') === '50', 'percent work complete');
+assert(mob && child(mob, 'ActualStart') === '2026-06-01T08:00:00', 'partial progress has ActualStart');
 assert(mob && child(mob, 'Contact') === 'Casey &amp; Co', 'assignee contact escaped');
 
 const mile = tasks.find((t) => child(t, 'Name') === 'Slab complete');
@@ -276,6 +287,8 @@ assert(mile && child(mile, 'Duration') === 'PT0H0M0S', 'milestone zero duration'
 
 const done = tasks.find((t) => child(t, 'Name') === 'Foundation pour');
 assert(done && child(done, 'PercentComplete') === '100', 'completed → 100%');
+assert(done && child(done, 'RemainingDuration') === 'PT0H0M0S', 'completed has zero remaining');
+assert(done && child(done, 'ActualFinish'), 'completed has ActualFinish');
 
 const excavate = tasks.find((t) => child(t, 'Name') === 'Excavate');
 assert(excavate && excavate.includes('<PredecessorLink>'), 'successor has predecessor link');

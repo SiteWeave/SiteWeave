@@ -81,6 +81,7 @@ function toMsDateTime(dateOnly, time) {
 
 /**
  * Inclusive working-day duration in ISO 8601 (PT#H0M0S).
+ * Microsoft Project expects hour-based durations (not PnD).
  * @param {number} durationDays
  * @param {boolean} isMilestone
  */
@@ -89,8 +90,38 @@ export function formatDurationIso(durationDays, isMilestone = false) {
   const days = Number.isFinite(Number(durationDays))
     ? Math.max(0, Number(durationDays))
     : 1;
-  const hours = Math.round(days * (MINUTES_PER_DAY / 60));
-  return `PT${hours}H0M0S`;
+  return formatDurationHoursIso(Math.round(days * (MINUTES_PER_DAY / 60)));
+}
+
+/**
+ * @param {number} hours
+ */
+export function formatDurationHoursIso(hours) {
+  const safe = Number.isFinite(Number(hours)) ? Math.max(0, Math.round(Number(hours))) : 0;
+  return `PT${safe}H0M0S`;
+}
+
+/**
+ * Split a planned duration into actual / remaining hour parts for % complete.
+ * @param {number} durationDays
+ * @param {number} percentComplete
+ * @param {boolean} isMilestone
+ */
+export function splitDurationByPercent(durationDays, percentComplete, isMilestone = false) {
+  if (isMilestone) {
+    return { totalHours: 0, actualHours: 0, remainingHours: 0 };
+  }
+  const days = Number.isFinite(Number(durationDays))
+    ? Math.max(0, Number(durationDays))
+    : 0;
+  const totalHours = Math.round(days * (MINUTES_PER_DAY / 60));
+  const pct = Math.max(0, Math.min(100, Number(percentComplete) || 0));
+  const actualHours = Math.round((totalHours * pct) / 100);
+  return {
+    totalHours,
+    actualHours,
+    remainingHours: Math.max(0, totalHours - actualHours),
+  };
 }
 
 /**
@@ -115,8 +146,8 @@ function normalizeTaskSchedule(task) {
   if (task.completed) {
     percentComplete = 100;
   } else if (task.percent_complete != null && task.percent_complete !== '') {
-    const p = parseInt(task.percent_complete, 10);
-    if (Number.isFinite(p)) percentComplete = Math.max(0, Math.min(100, p));
+    const p = Number(task.percent_complete);
+    if (Number.isFinite(p)) percentComplete = Math.max(0, Math.min(100, Math.round(p)));
   }
 
   if (task.is_milestone) {
@@ -525,27 +556,64 @@ function renderTaskNode(node, indent = 4) {
   lines.push(el('Priority', '500', indent + 2));
 
   const sched = node.schedule || {};
+  const percentComplete = Math.max(0, Math.min(100, Math.round(Number(sched.percentComplete) || 0)));
+  const isMilestone = Boolean(node.isMilestone) && !node.summary;
+  const hasDuration =
+    isMilestone || sched.durationDays != null || Boolean(sched.start && sched.finish);
+  const durationDays = isMilestone
+    ? 0
+    : Number.isFinite(Number(sched.durationDays))
+      ? Math.max(0, Number(sched.durationDays))
+      : hasDuration
+        ? 1
+        : 0;
+  const split = splitDurationByPercent(durationDays, percentComplete, isMilestone);
+
   if (sched.start) {
     lines.push(el('Start', toMsDateTime(sched.start, '08:00:00'), indent + 2));
   }
   if (sched.finish) {
-    const finishTime = node.isMilestone ? '08:00:00' : '17:00:00';
+    const finishTime = isMilestone ? '08:00:00' : '17:00:00';
     lines.push(el('Finish', toMsDateTime(sched.finish, finishTime), indent + 2));
   }
 
-  const isMilestone = Boolean(node.isMilestone) && !node.summary;
-  if (isMilestone || sched.durationDays != null || (sched.start && sched.finish)) {
-    const dur =
-      isMilestone
-        ? formatDurationIso(0, true)
-        : formatDurationIso(sched.durationDays ?? 1, false);
-    lines.push(el('Duration', dur, indent + 2));
-    lines.push(el('DurationFormat', '7', indent + 2));
+  // MS Project often blanks Duration / % Complete unless RemainingDuration,
+  // ActualDuration, and Work companions are present with the planned Duration.
+  if (hasDuration) {
+    const durationIso = formatDurationHoursIso(split.totalHours);
+    const actualIso = formatDurationHoursIso(split.actualHours);
+    const remainingIso = formatDurationHoursIso(split.remainingHours);
+    lines.push(el('Duration', durationIso, indent + 2));
+    lines.push(el('DurationFormat', '7', indent + 2)); // days
+    lines.push(el('Work', durationIso, indent + 2));
+    lines.push(el('Estimated', '0', indent + 2));
+    lines.push(el('Milestone', isMilestone ? '1' : '0', indent + 2));
+    lines.push(el('Summary', node.summary ? '1' : '0', indent + 2));
+    lines.push(el('FixedCostAccrual', '3', indent + 2));
+    lines.push(el('PercentComplete', String(percentComplete), indent + 2));
+    lines.push(el('PercentWorkComplete', String(percentComplete), indent + 2));
+    if (percentComplete > 0 && sched.start) {
+      lines.push(el('ActualStart', toMsDateTime(sched.start, '08:00:00'), indent + 2));
+    }
+    if (percentComplete >= 100 && sched.finish) {
+      const finishTime = isMilestone ? '08:00:00' : '17:00:00';
+      lines.push(el('ActualFinish', toMsDateTime(sched.finish, finishTime), indent + 2));
+    }
+    lines.push(el('ActualDuration', actualIso, indent + 2));
+    lines.push(el('ActualWork', actualIso, indent + 2));
+    lines.push(el('RegularWork', durationIso, indent + 2));
+    lines.push(el('RemainingDuration', remainingIso, indent + 2));
+    lines.push(el('RemainingWork', remainingIso, indent + 2));
+  } else {
+    lines.push(el('Estimated', '0', indent + 2));
+    lines.push(el('Milestone', isMilestone ? '1' : '0', indent + 2));
+    lines.push(el('Summary', node.summary ? '1' : '0', indent + 2));
+    lines.push(el('FixedCostAccrual', '3', indent + 2));
+    lines.push(el('PercentComplete', String(percentComplete), indent + 2));
+    lines.push(el('PercentWorkComplete', String(percentComplete), indent + 2));
   }
 
-  lines.push(el('Milestone', isMilestone ? '1' : '0', indent + 2));
-  lines.push(el('Summary', node.summary ? '1' : '0', indent + 2));
-  lines.push(el('PercentComplete', String(sched.percentComplete ?? 0), indent + 2));
+  lines.push(el('ConstraintType', '0', indent + 2));
   lines.push(el('CalendarUID', String(SITEWEAVE_CALENDAR_UID), indent + 2));
 
   for (const pred of node.predecessors || []) {

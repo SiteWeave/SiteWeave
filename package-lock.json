@@ -1,12 +1,12 @@
 {
   "name": "siteweave",
-  "version": "1.0.101",
+  "version": "1.0.102",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "siteweave",
-      "version": "1.0.101",
+      "version": "1.0.102",
       "dependencies": {
         "@fullcalendar/core": "^6.1.20",
         "@fullcalendar/daygrid": "^6.1.20",
