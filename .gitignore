@@ -62,6 +62,7 @@ vite.config.ts.timestamp-*
 # Testing
 coverage/
 .nyc_output
+tmp/
 
 # OS files
 .DS_Store

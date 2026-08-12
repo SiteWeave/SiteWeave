@@ -123,7 +123,10 @@ jobs:
         node -e "console.log('Built version:', require('./package.json').version)"
         echo ""
         echo "=== latest.yml content ==="
-        cat release/latest.yml || echo "WARNING: latest.yml not found"
+        cat release/latest.yml || { echo "ERROR: latest.yml not found"; exit 1; }
+        echo ""
+        echo "=== Validate Windows update artifacts ==="
+        node scripts/verify-win-update-artifacts.mjs
         echo ""
         echo "=== CRITICAL: Verify new code is in the built bundle ==="
         if ! grep -ql "ProgressReportBuilder\|createProgressReportSchedule" dist/assets/*.js 2>/dev/null; then
@@ -132,6 +135,29 @@ jobs:
           exit 1
         fi
         echo "OK: Built bundle contains ProgressReport code - fresh build verified."
+        echo ""
+        echo "=== Verify updater packaging in win-unpacked ==="
+        if [ ! -d "release/win-unpacked/resources" ]; then
+          echo "ERROR: release/win-unpacked/resources missing"
+          exit 1
+        fi
+        if [ ! -f "release/win-unpacked/resources/app-update.yml" ]; then
+          echo "ERROR: resources/app-update.yml missing from win-unpacked"
+          exit 1
+        fi
+        echo "OK: app-update.yml present"
+        cat release/win-unpacked/resources/app-update.yml
+        if [ -d "release/win-unpacked/resources/app.asar.unpacked/node_modules/electron-updater" ] || \
+           [ -d "release/win-unpacked/resources/app/node_modules/electron-updater" ] || \
+           find release/win-unpacked -path '*node_modules/electron-updater/package.json' 2>/dev/null | grep -q .; then
+          echo "OK: electron-updater found in packaged tree"
+        elif [ -f "release/win-unpacked/resources/app.asar" ] && \
+             npx --yes asar list release/win-unpacked/resources/app.asar | grep -q 'node_modules/electron-updater/package.json'; then
+          echo "OK: electron-updater found inside app.asar"
+        else
+          echo "ERROR: electron-updater missing from packaged app — would cause updater-unavailable in production"
+          exit 1
+        fi
 
     - name: Delete existing release for tag
       shell: bash

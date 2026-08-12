@@ -1,10 +1,17 @@
-// NOTE: Vite bundles electron/main.cjs as dist-electron/main.cjs (package.json "main"). Keep IPC handlers in sync with main.cjs.
+// DEPRECATED FOR RUNTIME: Vite packages electron/main.cjs → dist-electron/main.cjs.
+// Keep this file only as a historical reference. Do not add new updater behavior here.
+// All desktop auto-update logic lives in electron/main.cjs + electron/updateAvailability.js.
 const { app, BrowserWindow, Menu, shell, protocol, ipcMain, dialog, session } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const { createServer } = require('http');
 const fs = require('fs');
 const { parse } = require('url');
+const {
+  mapUpdateCheckResult,
+  mapUpdateCheckError,
+  isOfflineError,
+} = require('./updateAvailability.js');
 
 app.commandLine.appendSwitch('disk-cache-size', String(100 * 1024 * 1024));
 
@@ -468,12 +475,18 @@ autoUpdater.on('update-downloaded', () => {
 });
 
 autoUpdater.on('error', (error) => {
-  // Only log and send error if it's not a "no update available" error
-  const errorMessage = error?.message || String(error);
-  if (!errorMessage.includes('latest.yml') && !errorMessage.includes('404') && !errorMessage.includes('No published versions')) {
-    console.error('Auto-updater error:', error);
-    mainWindow?.webContents.send('update-error', errorMessage);
+  const payload = mapUpdateCheckError(error, app.getVersion());
+  if (payload.state === 'offline' || isOfflineError(error)) {
+    console.log('Update check offline:', payload.error);
+    mainWindow?.webContents.send('update-offline', payload);
+    return;
   }
+  console.error('Auto-updater error:', payload.error);
+  mainWindow?.webContents.send('update-error', {
+    state: payload.state,
+    message: payload.error,
+    installerUrl: payload.installerUrl,
+  });
 });
 
 // Add download progress tracking
@@ -584,21 +597,12 @@ ipcMain.handle('install-update', () => {
 ipcMain.handle('check-for-updates', async () => {
   try {
     const result = await autoUpdater.checkForUpdates();
-    // Return only serializable data
-    return {
-      success: true,
-      updateInfo: result?.updateInfo ? {
-        version: result.updateInfo.version,
-        releaseDate: result.updateInfo.releaseDate,
-        path: result.updateInfo.path
-      } : null
-    };
+    return mapUpdateCheckResult(result, app.getVersion(), {
+      isPackaged: app.isPackaged === true,
+      isDevServer: process.env.NODE_ENV === 'development',
+    });
   } catch (error) {
-    // Return serializable error
-    return {
-      success: false,
-      error: error.message || String(error)
-    };
+    return mapUpdateCheckError(error, app.getVersion());
   }
 });
 

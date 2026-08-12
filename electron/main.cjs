@@ -34,28 +34,28 @@ async function recoverHttpDiskCache() {
   }
 }
 
-// Try to load electron-updater (may not be available in dev or if not installed)
+const updateAvailability = require('./updateAvailability.js');
+const {
+  UPDATE_STATES,
+  isOfflineError,
+  isRetryableUpdateError,
+  isBenignConcurrentUpdateError,
+  mapUpdateCheckResult,
+  mapUpdateCheckError,
+  buildInstallerUrl,
+  writeExpectedUpdateVersion,
+  clearExpectedUpdateVersion,
+  verifyInstalledUpdate,
+} = updateAvailability;
+
+// Load electron-updater without a silent null-returning mock.
 let autoUpdater = null;
+let updaterLoadError = null;
 try {
   autoUpdater = require('electron-updater').autoUpdater;
 } catch (error) {
-  console.warn('electron-updater not available:', error.message);
-  // Create a mock autoUpdater for dev mode
-  autoUpdater = {
-    checkForUpdatesAndNotify: () => {
-      console.log('Update check skipped (dev mode or electron-updater not available)');
-      return Promise.resolve(null);
-    },
-    checkForUpdates: () => {
-      console.log('Update check skipped (dev mode or electron-updater not available)');
-      return Promise.resolve(null);
-    },
-    quitAndInstall: () => {
-      console.log('Update install skipped (dev mode)');
-    },
-    on: () => {},
-    updateInfo: null
-  };
+  updaterLoadError = error;
+  console.error('electron-updater failed to load:', error?.message || error);
 }
 
 // Prevent multiple instances
@@ -139,41 +139,150 @@ function isTrustedIpcSender(event) {
   }
 }
 
-// Configure auto-updater
-// Only enable auto-download in production builds (not in dev mode)
+// Configure auto-updater only when the real module loaded in a non-dev launch.
 if (!VITE_DEV_SERVER_URL && autoUpdater && typeof autoUpdater.autoDownload !== 'undefined') {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = console;
 }
 
 let updateCheckInFlight = false;
+let lastKnownUpdateInfo = null;
 
-function shouldIgnoreUpdateError(message) {
-  const msg = String(message || '');
-  return (
-    msg.includes('latest.yml') ||
-    msg.includes('404') ||
-    msg.includes('No published versions') ||
-    /already downloading|cancelled|canceled|ENOENT|same version|not available/i.test(msg)
-  );
+function sendUpdaterEvent(channel, payload) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send(channel, payload);
 }
 
-function runUpdateCheck() {
-  if (VITE_DEV_SERVER_URL || !autoUpdater || typeof autoUpdater.checkForUpdatesAndNotify !== 'function') {
-    return;
+function getUpdaterContext() {
+  return {
+    updaterLoadError,
+    isPackaged: app.isPackaged === true,
+    isDevServer: Boolean(VITE_DEV_SERVER_URL),
+  };
+}
+
+async function performUpdateCheck({ notifyRenderer = true, forceUserInitiated = false } = {}) {
+  const currentVersion = app.getVersion();
+  const ctx = getUpdaterContext();
+
+  if (ctx.isDevServer || !ctx.isPackaged) {
+    const payload = mapUpdateCheckResult(null, currentVersion, ctx);
+    if (notifyRenderer && forceUserInitiated) {
+      sendUpdaterEvent('update-check-result', payload);
+    }
+    return payload;
   }
-  if (updateCheckInFlight) return;
-  updateCheckInFlight = true;
-  autoUpdater.checkForUpdatesAndNotify()
-    .catch((error) => {
-      const msg = error?.message || String(error);
-      if (!shouldIgnoreUpdateError(msg)) {
-        console.error('Auto-updater check error:', msg);
-      }
-    })
-    .finally(() => {
-      updateCheckInFlight = false;
+
+  if (updaterLoadError || !autoUpdater || typeof autoUpdater.checkForUpdates !== 'function') {
+    const payload = mapUpdateCheckResult(null, currentVersion, {
+      ...ctx,
+      updaterLoadError: updaterLoadError || new Error('electron-updater is not available'),
     });
+    if (notifyRenderer) {
+      sendUpdaterEvent('update-check-result', payload);
+      sendUpdaterEvent('update-error', {
+        state: payload.state,
+        message: payload.error,
+        installerUrl: payload.installerUrl,
+      });
+    }
+    return payload;
+  }
+
+  if (updateCheckInFlight) {
+    // Let electron-updater share its in-flight promise; do not invent a second check.
+  }
+
+  const runOnce = async () => autoUpdater.checkForUpdates();
+
+  try {
+    updateCheckInFlight = true;
+    const result = await runOnce();
+    const payload = mapUpdateCheckResult(result, currentVersion, ctx);
+    if (payload.updateAvailable && payload.updateInfo) {
+      lastKnownUpdateInfo = payload.updateInfo;
+    }
+    if (notifyRenderer && forceUserInitiated && payload.state === UPDATE_STATES.UP_TO_DATE) {
+      sendUpdaterEvent('update-check-result', payload);
+    }
+    if (notifyRenderer && forceUserInitiated && payload.state === UPDATE_STATES.UPDATE_AVAILABLE) {
+      sendUpdaterEvent('update-check-result', payload);
+    }
+    return payload;
+  } catch (error) {
+    if (isBenignConcurrentUpdateError(error)) {
+      console.log('Update check:', error?.message || error);
+      return {
+        success: true,
+        state: lastKnownUpdateInfo ? UPDATE_STATES.UPDATE_AVAILABLE : UPDATE_STATES.UP_TO_DATE,
+        updateAvailable: Boolean(lastKnownUpdateInfo),
+        currentVersion,
+        latestVersion: lastKnownUpdateInfo?.version || null,
+        updateInfo: lastKnownUpdateInfo,
+        error: null,
+        installerUrl: lastKnownUpdateInfo?.version
+          ? buildInstallerUrl(lastKnownUpdateInfo.version)
+          : null,
+      };
+    }
+
+    if (isRetryableUpdateError(error) && !isOfflineError(error)) {
+      await new Promise((r) => setTimeout(r, 2500));
+      try {
+        const retryResult = await runOnce();
+        const payload = mapUpdateCheckResult(retryResult, currentVersion, ctx);
+        if (payload.updateAvailable && payload.updateInfo) {
+          lastKnownUpdateInfo = payload.updateInfo;
+        }
+        if (notifyRenderer && forceUserInitiated) {
+          sendUpdaterEvent('update-check-result', payload);
+        }
+        return payload;
+      } catch (retryErr) {
+        const payload = mapUpdateCheckError(retryErr, currentVersion);
+        payload.error = `${payload.error} (retry failed)`;
+        if (notifyRenderer) {
+          sendUpdaterEvent('update-check-result', payload);
+          if (payload.state === UPDATE_STATES.OFFLINE) {
+            sendUpdaterEvent('update-offline', payload);
+          } else {
+            sendUpdaterEvent('update-error', {
+              state: payload.state,
+              message: payload.error,
+              installerUrl: payload.installerUrl,
+            });
+          }
+        }
+        return payload;
+      }
+    }
+
+    const payload = mapUpdateCheckError(error, currentVersion);
+    console.error('Auto-updater check error:', payload.error);
+    if (notifyRenderer) {
+      sendUpdaterEvent('update-check-result', payload);
+      if (payload.state === UPDATE_STATES.OFFLINE) {
+        // Auto-check offline stays quiet unless user-initiated.
+        if (forceUserInitiated) sendUpdaterEvent('update-offline', payload);
+      } else {
+        sendUpdaterEvent('update-error', {
+          state: payload.state,
+          message: payload.error,
+          installerUrl: payload.installerUrl,
+        });
+      }
+    }
+    return payload;
+  } finally {
+    updateCheckInFlight = false;
+  }
+}
+
+function runStartupUpdateCheck() {
+  performUpdateCheck({ notifyRenderer: true, forceUserInitiated: false }).catch((err) => {
+    console.error('Startup update check failed:', err?.message || err);
+  });
 }
 
 // Run one check after the renderer attaches update listeners (avoids missing events).
@@ -182,7 +291,11 @@ ipcMain.on('update-listeners-ready', (event) => {
     console.warn('Ignored update-listeners-ready from untrusted sender');
     return;
   }
-  setTimeout(runUpdateCheck, 1500);
+  const installStatus = verifyInstalledUpdate(app.getPath('userData'), app.getVersion());
+  if (installStatus && !installStatus.matched) {
+    sendUpdaterEvent('update-install-failed', installStatus);
+  }
+  setTimeout(runStartupUpdateCheck, 1500);
 });
 
 // OAuth Server for loopback method
@@ -491,7 +604,9 @@ function createMenu() {
         {
           label: 'Check for Updates',
           click: () => {
-            autoUpdater.checkForUpdatesAndNotify();
+            performUpdateCheck({ notifyRenderer: true, forceUserInitiated: true }).catch((err) => {
+              console.error('Menu update check failed:', err?.message || err);
+            });
           }
         }
       ]
@@ -582,47 +697,75 @@ app.on('before-quit', () => {
   stopOAuthServer(); // Stop OAuth server before quitting
 });
 
-// Auto-updater events
-autoUpdater.on('update-available', (info) => {
-  const currentVersion = app.getVersion();
-  const nextVersion = info?.version;
-  if (nextVersion && nextVersion === currentVersion) {
-    return;
-  }
-  mainWindow?.webContents.send('update-available', {
-    version: nextVersion || '',
-    currentVersion,
+// Auto-updater events (only when real module loaded)
+if (autoUpdater && typeof autoUpdater.on === 'function') {
+  autoUpdater.on('update-available', (info) => {
+    const currentVersion = app.getVersion();
+    const nextVersion = info?.version;
+    if (!nextVersion || nextVersion === currentVersion) {
+      return;
+    }
+    lastKnownUpdateInfo = {
+      version: nextVersion,
+      releaseDate: info?.releaseDate || null,
+      path: info?.path || null,
+    };
+    sendUpdaterEvent('update-available', {
+      version: nextVersion,
+      currentVersion,
+      installerUrl: buildInstallerUrl(nextVersion),
+    });
   });
-});
 
-autoUpdater.on('update-downloaded', (info) => {
-  mainWindow?.webContents.send('update-downloaded', {
-    version: info?.version || '',
+  autoUpdater.on('update-downloaded', (info) => {
+    const version = info?.version || lastKnownUpdateInfo?.version || '';
+    if (version) {
+      lastKnownUpdateInfo = {
+        version,
+        releaseDate: info?.releaseDate || lastKnownUpdateInfo?.releaseDate || null,
+        path: info?.path || lastKnownUpdateInfo?.path || null,
+      };
+    }
+    sendUpdaterEvent('update-downloaded', {
+      version,
+      installerUrl: version ? buildInstallerUrl(version) : null,
+    });
   });
-});
 
-autoUpdater.on('update-not-available', () => {
-  mainWindow?.webContents.send('update-not-available');
-});
-
-autoUpdater.on('error', (error) => {
-  const msg = error.message || String(error);
-  if (shouldIgnoreUpdateError(msg)) {
-    console.log('Update check:', msg);
-    return;
-  }
-  console.error('Auto-updater error:', msg);
-  mainWindow?.webContents.send('update-error', msg);
-});
-
-autoUpdater.on('download-progress', (progressObj) => {
-  mainWindow?.webContents.send('update-download-progress', {
-    percent: progressObj.percent,
-    bytesPerSecond: progressObj.bytesPerSecond,
-    transferred: progressObj.transferred,
-    total: progressObj.total
+  autoUpdater.on('update-not-available', (info) => {
+    sendUpdaterEvent('update-not-available', {
+      currentVersion: app.getVersion(),
+      latestVersion: info?.version || app.getVersion(),
+    });
   });
-});
+
+  autoUpdater.on('error', (error) => {
+    if (isBenignConcurrentUpdateError(error)) {
+      console.log('Update check:', error?.message || error);
+      return;
+    }
+    const payload = mapUpdateCheckError(error, app.getVersion());
+    console.error('Auto-updater error:', payload.error);
+    if (payload.state === UPDATE_STATES.OFFLINE) {
+      sendUpdaterEvent('update-offline', payload);
+      return;
+    }
+    sendUpdaterEvent('update-error', {
+      state: payload.state,
+      message: payload.error,
+      installerUrl: payload.installerUrl,
+    });
+  });
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    sendUpdaterEvent('update-download-progress', {
+      percent: progressObj.percent,
+      bytesPerSecond: progressObj.bytesPerSecond,
+      transferred: progressObj.transferred,
+      total: progressObj.total,
+    });
+  });
+}
 
 // IPC handlers
 ipcMain.handle('save-html-as-pdf', async (event, { html, defaultFilename }) => {
@@ -726,53 +869,91 @@ ipcMain.handle('install-update', (event) => {
   if (!isTrustedIpcSender(event)) {
     throw new Error('Untrusted IPC sender');
   }
-  autoUpdater.quitAndInstall();
+  if (!autoUpdater || typeof autoUpdater.quitAndInstall !== 'function') {
+    return {
+      success: false,
+      error: updaterLoadError?.message || 'Updater is not available',
+      installerUrl: buildInstallerUrl(lastKnownUpdateInfo?.version || app.getVersion()),
+    };
+  }
+  const targetVersion = lastKnownUpdateInfo?.version;
+  if (!targetVersion) {
+    return {
+      success: false,
+      error: 'No downloaded update is ready to install.',
+      installerUrl: buildInstallerUrl(app.getVersion()),
+    };
+  }
+  try {
+    writeExpectedUpdateVersion(app.getPath('userData'), targetVersion);
+    // isSilent=false, isForceRunAfter=true so the app relaunches after install.
+    autoUpdater.quitAndInstall(false, true);
+    return { success: true, expectedVersion: targetVersion };
+  } catch (error) {
+    return {
+      success: false,
+      error: error?.message || String(error),
+      installerUrl: buildInstallerUrl(targetVersion),
+    };
+  }
 });
-
-function isRetryableUpdateError(err) {
-  const msg = (err && (err.message || err)) || '';
-  return /504|502|503|ETIMEDOUT|ECONNRESET|network/i.test(String(msg));
-}
 
 ipcMain.handle('check-for-updates', async (event) => {
   if (!isTrustedIpcSender(event)) {
     throw new Error('Untrusted IPC sender');
   }
-  const runCheck = async () => {
-    const result = await autoUpdater.checkForUpdates();
-    const info = result?.updateInfo;
-    const currentVersion = app.getVersion();
-    if (!info || info.version === currentVersion) {
-      return { success: true, updateInfo: null };
-    }
-    return {
-      success: true,
-      updateInfo: {
-        version: info.version,
-        releaseDate: info.releaseDate,
-        path: info.path,
-      },
-    };
-  };
-  try {
-    return await runCheck();
-  } catch (error) {
-    if (isRetryableUpdateError(error)) {
-      await new Promise(r => setTimeout(r, 2500));
-      try {
-        return await runCheck();
-      } catch (retryErr) {
-        return {
-          success: false,
-          error: (retryErr.message || String(retryErr)) + ' (retry failed)'
-        };
-      }
-    }
+  return performUpdateCheck({ notifyRenderer: false, forceUserInitiated: true });
+});
+
+ipcMain.handle('download-update', async (event) => {
+  if (!isTrustedIpcSender(event)) {
+    throw new Error('Untrusted IPC sender');
+  }
+  if (!autoUpdater || typeof autoUpdater.downloadUpdate !== 'function') {
     return {
       success: false,
-      error: error.message || String(error)
+      state: UPDATE_STATES.UPDATER_UNAVAILABLE,
+      error: updaterLoadError?.message || 'Updater is not available',
+      installerUrl: buildInstallerUrl(lastKnownUpdateInfo?.version || app.getVersion()),
     };
   }
+  try {
+    await autoUpdater.downloadUpdate();
+    return { success: true };
+  } catch (error) {
+    const payload = mapUpdateCheckError(error, app.getVersion());
+    return {
+      success: false,
+      state: payload.state,
+      error: payload.error,
+      installerUrl: lastKnownUpdateInfo?.version
+        ? buildInstallerUrl(lastKnownUpdateInfo.version)
+        : payload.installerUrl,
+    };
+  }
+});
+
+ipcMain.handle('open-update-installer', async (event, version) => {
+  if (!isTrustedIpcSender(event)) {
+    throw new Error('Untrusted IPC sender');
+  }
+  const url = buildInstallerUrl(version || lastKnownUpdateInfo?.version || '');
+  return openSafeExternalUrl(url);
+});
+
+ipcMain.handle('get-pending-update-status', (event) => {
+  if (!isTrustedIpcSender(event)) {
+    throw new Error('Untrusted IPC sender');
+  }
+  return verifyInstalledUpdate(app.getPath('userData'), app.getVersion());
+});
+
+ipcMain.handle('clear-pending-update', (event) => {
+  if (!isTrustedIpcSender(event)) {
+    throw new Error('Untrusted IPC sender');
+  }
+  clearExpectedUpdateVersion(app.getPath('userData'));
+  return { success: true };
 });
 
 ipcMain.handle('open-external', (event, url) => {

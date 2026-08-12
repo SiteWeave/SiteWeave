@@ -244,15 +244,11 @@ export function buildScheduleFromMappedRows(opts) {
             // Use the top of the phaseStack — the container is never pushed, so this is
             // always a real phase uid (or null if no phase has been seen yet).
             const parentPhaseSourceUid = phaseStack.length > 0 ? phaseStack[phaseStack.length - 1].uid : null;
-            let taskText = name;
-            if (pct != null && pct > 0 && pct < 100) {
-                taskText = `${name} [Imported at ${pct}% complete]`;
-            }
             const completed = pct != null ? pct >= 100 : false;
-            const percentComplete = completed ? 100 : 0;
+            const percentComplete = pct != null ? pct : 0;
             tasks.push({
                 sourceUid: uid,
-                text: taskText,
+                text: name,
                 start_date: startDate,
                 due_date: dueDate,
                 duration_days: durationDays,
@@ -267,7 +263,7 @@ export function buildScheduleFromMappedRows(opts) {
         if (hasPredecessorMapping) {
             for (const pl of row.predecessorLinks) {
                 const depType = mapMsLinkTypeToDependency(pl.type);
-                const lagDays = mapLinkLagToDays(pl.linkLag, pl.lagFormat);
+                const lagDays = mapLinkLagToDays(pl.linkLag, pl.lagFormat, minutesPerDay);
                 dependencyEdges.push({
                     predUid: pl.predecessorUid,
                     succUid: uid,
@@ -366,18 +362,19 @@ function compressLinearFinishToStartEdges(edges, warnings) {
 }
 
 /**
- * MS Project link type: 0 FF, 1 FS, 2 SS, 3 SF
+ * MSPDI PredecessorLink Type codes (mspdi_pj12.xsd):
+ * 0 = FF, 1 = FS, 2 = SF, 3 = SS
  * @param {string} type
  */
-function mapMsLinkTypeToDependency(type) {
+export function mapMsLinkTypeToDependency(type) {
     const t = parseInt(type, 10);
     switch (t) {
         case 0:
             return 'finish_to_finish';
         case 2:
-            return 'start_to_start';
-        case 3:
             return 'start_to_finish';
+        case 3:
+            return 'start_to_start';
         case 1:
         default:
             return 'finish_to_start';
@@ -385,19 +382,50 @@ function mapMsLinkTypeToDependency(type) {
 }
 
 /**
- * LinkLag is often in tenths of minutes; LagFormat 7 = days (per MS XML). Simplified: treat as days when small integer else 0.
+ * Inverse of mapMsLinkTypeToDependency for export.
+ * @param {string} dependencyType
+ * @returns {number}
+ */
+export function mapDependencyTypeToMsLinkType(dependencyType) {
+    switch (dependencyType) {
+        case 'finish_to_finish':
+            return 0;
+        case 'start_to_finish':
+            return 2;
+        case 'start_to_start':
+            return 3;
+        case 'finish_to_start':
+        default:
+            return 1;
+    }
+}
+
+/**
+ * LinkLag is always stored in tenths of a minute in MSPDI.
+ * LagFormat only controls display (7 = days, 5 = hours, …).
+ * Default calendar: 480 minutes/day → 1 day = 4800 tenths of a minute.
  * @param {string} linkLag
  * @param {string} lagFormat
+ * @param {number} [minutesPerDay=480]
  */
-function mapLinkLagToDays(linkLag, lagFormat) {
+export function mapLinkLagToDays(linkLag, lagFormat, minutesPerDay = 480) {
     const lag = parseInt(linkLag, 10);
-    if (!Number.isFinite(lag)) return 0;
-    const fmt = parseInt(lagFormat, 10);
-    if (fmt === 7) {
-        return lag;
-    }
-    if (fmt === 5) {
-        return lag / 4800;
-    }
-    return lag === 0 ? 0 : lag / 4800;
+    if (!Number.isFinite(lag) || lag === 0) return 0;
+    const perDay = Number.isFinite(minutesPerDay) && minutesPerDay > 0 ? minutesPerDay : 480;
+    const tenthsPerDay = perDay * 10;
+    // LagFormat does not change the unit of LinkLag; always convert from tenths-of-minutes.
+    void lagFormat;
+    return lag / tenthsPerDay;
+}
+
+/**
+ * Convert SiteWeave lag days to MSPDI LinkLag (tenths of a minute).
+ * @param {number} lagDays
+ * @param {number} [minutesPerDay=480]
+ */
+export function mapLagDaysToLinkLag(lagDays, minutesPerDay = 480) {
+    const days = Number(lagDays);
+    if (!Number.isFinite(days) || days === 0) return 0;
+    const perDay = Number.isFinite(minutesPerDay) && minutesPerDay > 0 ? minutesPerDay : 480;
+    return Math.round(days * perDay * 10);
 }

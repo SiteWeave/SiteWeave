@@ -95,6 +95,7 @@ import {
 } from '../utils/taskDependencyService';
 import { mergeWeatherIntoPhaseTasks } from '../utils/weatherTaskTimeline';
 import GanttChart from '../components/GanttChart';
+import { exportProjectToMsProjectXml } from '../utils/msProjectExportService';
 import { useStreamUnread } from '../hooks/useStreamUnread';
 import { useIssuesUnread } from '../hooks/useIssuesUnread';
 import ActivityHistoryPanel from '../components/ActivityHistoryPanel';
@@ -264,6 +265,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [applyingWeatherImpactId, setApplyingWeatherImpactId] = useState(null);
     const [showSaveAsTemplateModal, setShowSaveAsTemplateModal] = useState(false);
     const [showMsProjectImportModal, setShowMsProjectImportModal] = useState(false);
+    const [exportingMsProject, setExportingMsProject] = useState(false);
+    const exportingMsProjectRef = useRef(false);
     const [showPmActionsModal, setShowPmActionsModal] = useState(false);
     const [pmActionsBannerKey, setPmActionsBannerKey] = useState(0);
     const [showProjectModal, setShowProjectModal] = useState(false);
@@ -324,7 +327,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const canManageProgressReports = projectPerms.can_manage_progress_reports === true;
     const canEditTasks = projectPerms.can_edit_tasks === true;
     const canAssignTasks = projectPerms.can_assign_tasks === true;
-    const { canPing, canProgressReports } = useWorkspaceTier();
+    const { canPing, canProgressReports, canExport } = useWorkspaceTier();
     const [upgradeFeature, setUpgradeFeature] = useState(null);
     const [focusAssignTaskId, setFocusAssignTaskId] = useState(null);
 
@@ -767,6 +770,50 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         })();
         return () => ac.abort();
     }, [activeTab, state.selectedProjectId, projectTasksSlice, projectRefreshNonce]);
+
+    const handleExportMsProject = useCallback(async () => {
+        if (!project?.id || exportingMsProjectRef.current) return false;
+        if (!canExport) {
+            setUpgradeFeature('exports');
+            return false;
+        }
+        exportingMsProjectRef.current = true;
+        setExportingMsProject(true);
+        try {
+            const result = await exportProjectToMsProjectXml(supabaseClient, project.id);
+            if (!result.success) {
+                addToast(
+                    t('ms_export.error', { message: result.error || t('ms_export.error_generic') }),
+                    'error'
+                );
+                return false;
+            }
+            if (result.warnings?.length) {
+                const warningKey = result.warnings.length === 1
+                    ? 'ms_export.success_with_warnings_one'
+                    : 'ms_export.success_with_warnings_other';
+                addToast(
+                    t(warningKey, {
+                        filename: result.filename,
+                        count: result.warnings.length,
+                    }),
+                    'info'
+                );
+            } else {
+                addToast(t('ms_export.success', { filename: result.filename }), 'success');
+            }
+            return true;
+        } catch (err) {
+            addToast(
+                t('ms_export.error', { message: err?.message || t('ms_export.error_generic') }),
+                'error'
+            );
+            return false;
+        } finally {
+            exportingMsProjectRef.current = false;
+            setExportingMsProject(false);
+        }
+    }, [project?.id, canExport, addToast, t]);
     
     // Get all project crew members (any contact linked to this project)
     const crewMembers = useMemo(
@@ -3087,29 +3134,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                 />
             ) : null}
 
-            {pendingUnappliedWeatherImpacts.length > 0 && canEditProjects ? (
-                <div className="mb-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-amber-950">
-                        {t(
-                            pendingUnappliedWeatherImpacts.length === 1
-                                ? 'weather.pending_weather_banner_one'
-                                : 'weather.pending_weather_banner_other',
-                            { count: pendingUnappliedWeatherImpacts.length },
-                        )}
-                    </p>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setSelectedWeatherImpact(pendingUnappliedWeatherImpacts[0]);
-                            setShowWeatherImpactModal(true);
-                        }}
-                        className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-900 hover:bg-amber-100"
-                    >
-                        {t('weather.review_weather_delays')}
-                    </button>
-                </div>
-            ) : null}
-
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                 {/* Main content — full width on Gantt and Tasks (sidebar hidden) */}
                 <div
@@ -3192,6 +3216,8 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                         criticalPathIds={ganttCriticalIds}
                                         showCriticalPath={showCriticalPath}
                                         onToggleCriticalPath={setShowCriticalPath}
+                                        onExportMsProject={handleExportMsProject}
+                                        exportingMsProject={exportingMsProject}
                                     />
                                 </div>
                             </div>
@@ -3287,8 +3313,7 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                 )}
                                             </div>
                                         </PermissionGuard>
-                                        <PermissionGuard permission="can_edit_projects">
-                                            <div className="relative">
+                                        <div className="relative">
                                                 <button
                                                     type="button"
                                                     onClick={() => setToolbarMenu((current) => current === 'actions' ? null : 'actions')}
@@ -3299,42 +3324,63 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                     <Icon path="M6 9l6 6 6-6" className="h-4 w-4" />
                                                 </button>
                                                 {toolbarMenu === 'actions' && (
-                                                    <div className="absolute right-0 top-12 z-20 w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
+                                                    <div className="absolute right-0 top-12 z-20 w-60 rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
+                                                        {canEditProjects && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setShowMsProjectImportModal(true);
+                                                                    setToolbarMenu(null);
+                                                                }}
+                                                                className="btn-smooth flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                            >
+                                                                {t('projectDetail.import_ms_project')}
+                                                            </button>
+                                                        )}
                                                         <button
                                                             type="button"
+                                                            disabled={exportingMsProject}
+                                                            aria-busy={exportingMsProject}
+                                                            aria-label={t('gantt.export_ms_project_title')}
+                                                            title={t('gantt.export_ms_project_title')}
                                                             onClick={() => {
-                                                                setShowMsProjectImportModal(true);
                                                                 setToolbarMenu(null);
+                                                                handleExportMsProject();
                                                             }}
-                                                            className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                                            className="btn-smooth flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-wait disabled:opacity-50"
                                                         >
-                                                            {t('projectDetail.import_ms_project')}
+                                                            {exportingMsProject
+                                                                ? t('ms_export.exporting')
+                                                                : t('projectDetail.export_ms_project')}
                                                         </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setSelectedWeatherImpact(null);
-                                                                setShowWeatherImpactModal(true);
-                                                                setToolbarMenu(null);
-                                                            }}
-                                                            className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                                                        >
-                                                            {t('projectDetail.weather_schedule_impact')}
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setShowPmActionsModal(true);
-                                                                setToolbarMenu(null);
-                                                            }}
-                                                            className="flex w-full items-center rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                                                        >
-                                                            {t('projectDetail.pm_actions.menu')}
-                                                        </button>
+                                                        {canEditProjects && (
+                                                            <>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setSelectedWeatherImpact(null);
+                                                                        setShowWeatherImpactModal(true);
+                                                                        setToolbarMenu(null);
+                                                                    }}
+                                                                    className="btn-smooth flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                                >
+                                                                    {t('projectDetail.weather_schedule_impact')}
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setShowPmActionsModal(true);
+                                                                        setToolbarMenu(null);
+                                                                    }}
+                                                                    className="btn-smooth flex w-full items-center rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                                >
+                                                                    {t('projectDetail.pm_actions.menu')}
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 )}
-                                            </div>
-                                        </PermissionGuard>
+                                        </div>
                                         <PermissionGuard permission="can_edit_projects">
                                             <PhasesToolbar
                                                 onOpenSchedule={() => setShowPhasesModal(true)}

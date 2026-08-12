@@ -78,6 +78,8 @@ export default function GanttChart({
   criticalPathIds = [],
   showCriticalPath = true,
   onToggleCriticalPath,
+  onExportMsProject,
+  exportingMsProject = false,
 }) {
   const { t } = useTranslation();
   const chartContainerRef = useRef(null);
@@ -275,12 +277,21 @@ export default function GanttChart({
     ]);
     const csv = [headers.join(','), ...rows.map((r) => r.map((c) => `"${c}"`).join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    link.href = url;
     link.download = 'gantt-tasks.csv';
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(link.href);
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [tasksWithDates, canExport]);
+
+  const handleExportMsProjectClick = useCallback(async () => {
+    if (typeof onExportMsProject === 'function') {
+      await onExportMsProject();
+    }
+  }, [onExportMsProject]);
 
   useEffect(() => {
     const container = chartContainerRef.current;
@@ -335,6 +346,18 @@ export default function GanttChart({
         <p className="max-w-sm text-gray-500">
           {t('gantt.no_dated_tasks_hint')}
         </p>
+        {typeof onExportMsProject === 'function' && (
+          <button
+            type="button"
+            onClick={handleExportMsProjectClick}
+            disabled={exportingMsProject}
+            aria-busy={exportingMsProject}
+            aria-label={t('gantt.export_ms_project_title')}
+            className="app-action-secondary btn-smooth mt-1 rounded-md px-3 py-2 text-sm font-medium disabled:cursor-wait disabled:opacity-50"
+          >
+            {exportingMsProject ? t('ms_export.exporting') : t('gantt.export_ms_project')}
+          </button>
+        )}
       </div>
     );
   }
@@ -374,6 +397,19 @@ export default function GanttChart({
           >
             {t('gantt.export_csv')}
           </button>
+          {typeof onExportMsProject === 'function' && (
+            <button
+              type="button"
+              onClick={handleExportMsProjectClick}
+              disabled={exportingMsProject}
+              aria-busy={exportingMsProject}
+              aria-label={t('gantt.export_ms_project_title')}
+              title={t('gantt.export_ms_project_title')}
+              className="btn-smooth px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-wait disabled:opacity-50"
+            >
+              {exportingMsProject ? t('ms_export.exporting') : t('gantt.export_ms_project')}
+            </button>
+          )}
           <label className="flex items-center gap-2 cursor-pointer px-2 py-1.5 border border-slate-300 rounded-md bg-white">
             <input
               type="checkbox"

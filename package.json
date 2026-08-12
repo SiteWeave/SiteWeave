@@ -1,7 +1,7 @@
 {
   "name": "siteweave",
   "private": true,
-  "version": "1.0.96",
+  "version": "1.0.97",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite",
@@ -17,6 +17,10 @@
     "verify:progress-report-sync": "node scripts/verify-progress-report-sync.mjs",
     "test:progress-report-stability": "node scripts/test-progress-report-stability.mjs",
     "regen:win-update-meta": "node scripts/regen-win-update-metadata.mjs",
+    "test:update-availability": "node scripts/test-update-availability.mjs",
+    "test:ms-project-export": "node scripts/test-ms-project-export.mjs",
+    "verify:ms-project-export:xsd": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-ms-project-export-xsd.ps1",
+    "verify:win-update-artifacts": "node scripts/verify-win-update-artifacts.mjs",
     "check:i18n": "node scripts/check-i18n-keys.mjs",
     "doctor:expo": "npm run doctor --prefix apps/mobile",
     "doctor:react": "react-doctor . --yes --project apps/mobile,apps/web",

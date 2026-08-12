@@ -4,10 +4,58 @@ import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { readFileSync } from 'fs'
+import { readFileSync, copyFileSync, mkdirSync } from 'fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const appVersion = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')).version
+const updateAvailabilitySrc = path.resolve(__dirname, 'electron/updateAvailability.js')
+const updateAvailabilityDist = path.resolve(__dirname, 'dist-electron/updateAvailability.js')
+
+/** Keep update helpers as a real CJS file — Vite/Rollup CJS interop was emptying exports. */
+function copyUpdateAvailabilityPlugin() {
+  const copy = () => {
+    mkdirSync(path.dirname(updateAvailabilityDist), { recursive: true })
+    copyFileSync(updateAvailabilitySrc, updateAvailabilityDist)
+  }
+  const rewriteAbsoluteRequire = (code) =>
+    String(code).replace(
+      /require\((["'])[^"']*updateAvailability\.js\1\)/g,
+      'require("./updateAvailability.js")'
+    )
+
+  return {
+    name: 'copy-update-availability',
+    buildStart: copy,
+    writeBundle: copy,
+    closeBundle: copy,
+    generateBundle(_options, bundle) {
+      for (const item of Object.values(bundle)) {
+        if (item.type === 'chunk' && typeof item.code === 'string') {
+          item.code = rewriteAbsoluteRequire(item.code)
+        }
+      }
+      copy()
+    },
+  }
+}
+
+function isElectronExternal(id) {
+  const externals = new Set([
+    'electron',
+    'http',
+    'url',
+    'path',
+    'https',
+    'net',
+    'fs',
+    'child_process',
+    'electron-updater',
+  ])
+  if (externals.has(id)) return true
+  // Relative or absolute path to the updater helper must stay a runtime require.
+  if (/updateAvailability(\.js)?$/.test(String(id).replace(/\\/g, '/'))) return true
+  return false
+}
 
 // https://vite.dev/config/
 export default defineConfig(() => {
@@ -39,14 +87,16 @@ export default defineConfig(() => {
             options.reload()
           },
           vite: {
+            plugins: [copyUpdateAvailabilityPlugin()],
             build: {
               rollupOptions: {
+                makeAbsoluteExternalsRelative: true,
                 output: {
                   // FORCE CommonJS format to match .cjs extension
                   format: 'cjs',
                   entryFileNames: 'main.cjs'
                 },
-                external: ['electron', 'http', 'url', 'path', 'https', 'net', 'fs', 'child_process', 'electron-updater']
+                external: isElectronExternal,
               }
             }
           }

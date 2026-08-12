@@ -813,6 +813,7 @@
     "manual_with_warnings": "Manual with warnings",
     "actions": "Actions",
     "import_ms_project": "Import MS Project XML",
+    "export_ms_project": "Export to Microsoft Project",
     "weather_schedule_impact": "Weather / schedule impact",
     "pm_actions": {
       "menu": "PM Actions",
@@ -1152,17 +1153,28 @@
     "check_for_updates": "Check for updates",
     "checking": "Checking...",
     "latest_version": "You're on the latest version.",
+    "latest_version_detail": "You're up to date. Installed v{{current}}; latest v{{latest}}.",
     "check_failed": "Check failed",
+    "offline": "Can't reach the update server right now. Check your internet and try again.",
+    "dev_disabled": "Update checks run in packaged builds only.",
     "update_ready_title": "Update Ready to Install",
     "update_ready_desc": "A new version has been downloaded. Restart the app to apply the update.",
     "restart_install": "Restart & Install",
     "later": "Later",
+    "remind_later": "Remind me later",
+    "view_update": "View update",
     "update_available_title": "Update Available",
+    "update_available_desc": "A newer SiteWeave version is available. Download it now so you stay on the latest release.",
+    "version_compare": "Installed v{{current}} → v{{latest}}",
     "download_failed": "Download failed: {{error}}",
     "retrying": "Retrying...",
     "try_again": "Try Again",
     "downloading": "Downloading update… {{percent}}%",
-    "downloading_background": "Downloading update in the background…"
+    "downloading_background": "Downloading update in the background…",
+    "preparing_download": "Preparing download…",
+    "download_installer": "Download installer",
+    "install_failed_title": "Update Did Not Install",
+    "install_failed_desc": "SiteWeave tried to install an update but is still on the previous version. Try again or download the installer."
   },
   "progressReports": {
     "edit_title": "Edit Progress Report",
@@ -1470,6 +1482,8 @@
     "drag_to_pan": "Drag chart to pan",
     "drag_to_pan_title": "Use the mouse on the chart area",
     "export_csv": "Export CSV",
+    "export_ms_project": "Export to Microsoft Project",
+    "export_ms_project_title": "Download a Microsoft Project XML schedule",
     "show_critical_path": "Show critical path",
     "critical_count_one": "({{count}} task)",
     "critical_count_other": "({{count}} tasks)",
@@ -2063,6 +2077,14 @@
     "warn_multi_emails": "{{count}} rows have multiple emails; the first email will be used.",
     "warn_missing_emails": "{{count}} contacts have no email.",
     "warn_skipped_incomplete": "{{count}} empty or incomplete rows will be skipped."
+  },
+  "ms_export": {
+    "exporting": "Exporting…",
+    "success": "Downloaded {{filename}}",
+    "success_with_warnings_one": "Downloaded {{filename}}. One schedule value needed a safe fallback; review dates or task hierarchy in SiteWeave.",
+    "success_with_warnings_other": "Downloaded {{filename}}. {{count}} schedule values needed safe fallbacks; review dates or task hierarchy in SiteWeave.",
+    "error": "Could not export: {{message}}",
+    "error_generic": "Export failed"
   },
   "ms_import": {
     "title": "Import MS Project Schedule",

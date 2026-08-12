@@ -813,6 +813,7 @@
     "manual_with_warnings": "Manual con avisos",
     "actions": "Acciones",
     "import_ms_project": "Importar XML de MS Project",
+    "export_ms_project": "Exportar a Microsoft Project",
     "weather_schedule_impact": "Clima / impacto en el cronograma",
     "pm_actions": {
       "menu": "Acciones de PM",
@@ -1159,17 +1160,28 @@
     "check_for_updates": "Buscar actualizaciones",
     "checking": "Buscando...",
     "latest_version": "Tienes la versión más reciente.",
+    "latest_version_detail": "Estás al día. Instalada v{{current}}; última v{{latest}}.",
     "check_failed": "Error en la búsqueda",
+    "offline": "No se puede llegar al servidor de actualizaciones. Revisa tu internet e inténtalo de nuevo.",
+    "dev_disabled": "Las comprobaciones de actualización solo funcionan en builds empaquetados.",
     "update_ready_title": "Actualización lista para instalar",
     "update_ready_desc": "Se descargó una nueva versión. Reinicia la app para aplicar la actualización.",
     "restart_install": "Reiniciar e instalar",
     "later": "Después",
+    "remind_later": "Recordármelo más tarde",
+    "view_update": "Ver actualización",
     "update_available_title": "Actualización disponible",
+    "update_available_desc": "Hay una versión más nueva de SiteWeave. Descárgala ahora para mantenerte al día.",
+    "version_compare": "Instalada v{{current}} → v{{latest}}",
     "download_failed": "Error en la descarga: {{error}}",
     "retrying": "Reintentando...",
     "try_again": "Reintentar",
     "downloading": "Descargando actualización… {{percent}}%",
-    "downloading_background": "Descargando actualización en segundo plano…"
+    "downloading_background": "Descargando actualización en segundo plano…",
+    "preparing_download": "Preparando descarga…",
+    "download_installer": "Descargar instalador",
+    "install_failed_title": "La actualización no se instaló",
+    "install_failed_desc": "SiteWeave intentó instalar una actualización, pero sigue en la versión anterior. Reintenta o descarga el instalador."
   },
   "progressReports": {
     "edit_title": "Editar informe de progreso",
@@ -1477,6 +1489,8 @@
     "drag_to_pan": "Arrastra el gráfico para desplazarte",
     "drag_to_pan_title": "Usa el ratón en el área del gráfico",
     "export_csv": "Exportar CSV",
+    "export_ms_project": "Exportar a Microsoft Project",
+    "export_ms_project_title": "Descargar un cronograma XML de Microsoft Project",
     "show_critical_path": "Mostrar ruta crítica",
     "critical_count_one": "({{count}} tarea)",
     "critical_count_other": "({{count}} tareas)",
@@ -2068,6 +2082,14 @@
     "warn_multi_emails": "{{count}} filas tienen varios correos; se usará el primero.",
     "warn_missing_emails": "{{count}} contactos no tienen correo.",
     "warn_skipped_incomplete": "{{count}} filas vacías o incompletas se omitirán."
+  },
+  "ms_export": {
+    "exporting": "Exportando…",
+    "success": "Descargado {{filename}}",
+    "success_with_warnings_one": "Se descargó {{filename}}. Un valor del cronograma usó una alternativa segura; revisa las fechas o la jerarquía de tareas en SiteWeave.",
+    "success_with_warnings_other": "Se descargó {{filename}}. {{count}} valores del cronograma usaron alternativas seguras; revisa las fechas o la jerarquía de tareas en SiteWeave.",
+    "error": "No se pudo exportar: {{message}}",
+    "error_generic": "Error al exportar"
   },
   "ms_import": {
     "title": "Importar cronograma de MS Project",

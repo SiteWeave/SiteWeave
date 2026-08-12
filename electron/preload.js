@@ -2,11 +2,17 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 console.log('Preload script loading...');
 
+function invokeOrReject(channel, ...args) {
+  try {
+    return ipcRenderer.invoke(channel, ...args);
+  } catch (error) {
+    console.error(`Error invoking ${channel}:`, error);
+    return Promise.reject(error);
+  }
+}
+
 try {
-  // Expose protected methods that allow the renderer process to use
-  // the ipcRenderer without exposing the entire object
   contextBridge.exposeInMainWorld('electronAPI', {
-    // OAuth callbacks
     onOAuthCallback: (callback) => {
       try {
         ipcRenderer.on('oauth-callback', (event, data) => callback(data));
@@ -15,7 +21,6 @@ try {
       }
     },
 
-    // Update notifications
     onUpdateAvailable: (callback) => {
       try {
         ipcRenderer.on('update-available', (event, payload) => callback(payload));
@@ -50,13 +55,36 @@ try {
 
     onUpdateNotAvailable: (callback) => {
       try {
-        ipcRenderer.on('update-not-available', callback);
+        ipcRenderer.on('update-not-available', (event, payload) => callback(payload));
       } catch (error) {
         console.error('Error setting up update not available callback:', error);
       }
     },
 
-    // Menu actions
+    onUpdateOffline: (callback) => {
+      try {
+        ipcRenderer.on('update-offline', (event, payload) => callback(payload));
+      } catch (error) {
+        console.error('Error setting up update offline callback:', error);
+      }
+    },
+
+    onUpdateCheckResult: (callback) => {
+      try {
+        ipcRenderer.on('update-check-result', (event, payload) => callback(payload));
+      } catch (error) {
+        console.error('Error setting up update check result callback:', error);
+      }
+    },
+
+    onUpdateInstallFailed: (callback) => {
+      try {
+        ipcRenderer.on('update-install-failed', (event, payload) => callback(payload));
+      } catch (error) {
+        console.error('Error setting up update install failed callback:', error);
+      }
+    },
+
     onMenuAction: (callback) => {
       try {
         ipcRenderer.on('menu-new-project', callback);
@@ -74,36 +102,20 @@ try {
       }
     },
 
-    // App info
-    getAppVersion: () => {
-      try {
-        return ipcRenderer.invoke('get-app-version');
-      } catch (error) {
-        console.error('Error getting app version:', error);
-        return '1.0.0';
-      }
-    },
+    getAppVersion: () => invokeOrReject('get-app-version'),
 
-    // Update actions
-    installUpdate: () => {
-      try {
-        return ipcRenderer.invoke('install-update');
-      } catch (error) {
-        console.error('Error installing update:', error);
-        return Promise.resolve();
-      }
-    },
-    
-    checkForUpdates: () => {
-      try {
-        return ipcRenderer.invoke('check-for-updates');
-      } catch (error) {
-        console.error('Error checking for updates:', error);
-        return Promise.resolve();
-      }
-    },
+    installUpdate: () => invokeOrReject('install-update'),
 
-    /** Tell main process that update listeners are ready so it can run the first check (avoids missing update-available) */
+    checkForUpdates: () => invokeOrReject('check-for-updates'),
+
+    downloadUpdate: () => invokeOrReject('download-update'),
+
+    openUpdateInstaller: (version) => invokeOrReject('open-update-installer', version),
+
+    getPendingUpdateStatus: () => invokeOrReject('get-pending-update-status'),
+
+    clearPendingUpdate: () => invokeOrReject('clear-pending-update'),
+
     notifyUpdateListenersReady: () => {
       try {
         ipcRenderer.send('update-listeners-ready');
@@ -112,77 +124,27 @@ try {
       }
     },
 
-    // OAuth server control
-    startOAuthServer: () => {
-      try {
-        return ipcRenderer.invoke('start-oauth-server');
-      } catch (error) {
-        console.error('Error starting OAuth server:', error);
-        return Promise.resolve();
-      }
-    },
-    
-    stopOAuthServer: () => {
-      try {
-        return ipcRenderer.invoke('stop-oauth-server');
-      } catch (error) {
-        console.error('Error stopping OAuth server:', error);
-        return Promise.resolve();
-      }
-    },
+    startOAuthServer: () => invokeOrReject('start-oauth-server'),
 
-    // External links — validated https-only in the main process.
-    openExternal: (url) => {
-      try {
-        return ipcRenderer.invoke('open-external', url);
-      } catch (error) {
-        console.error('Error opening external link:', error);
-        return Promise.resolve(false);
-      }
-    },
+    stopOAuthServer: () => invokeOrReject('stop-oauth-server'),
 
-    /** Save full HTML document as a real PDF via Chromium print (avoids window.open / about: issues). */
-    saveHtmlAsPdf: (payload) => {
-      try {
-        return ipcRenderer.invoke('save-html-as-pdf', payload);
-      } catch (error) {
-        console.error('Error saving HTML as PDF:', error);
-        return Promise.resolve({ success: false, error: String(error) });
-      }
-    },
+    openExternal: (url) => invokeOrReject('open-external', url),
 
-    // OAuth callback sender
-    sendOAuthCallback: (data) => {
-      try {
-        return ipcRenderer.invoke('send-oauth-callback', data);
-      } catch (error) {
-        console.error('Error sending OAuth callback:', error);
-        return Promise.resolve();
-      }
-    },
+    saveHtmlAsPdf: (payload) => invokeOrReject('save-html-as-pdf', payload),
 
-    // Exchange OAuth token from main process (avoids CORS/origin issues)
-    exchangeOAuthToken: (params) => {
-      try {
-        return ipcRenderer.invoke('exchange-oauth-token', params);
-      } catch (error) {
-        console.error('Error exchanging OAuth token:', error);
-        return Promise.reject(error);
-      }
-    },
+    sendOAuthCallback: (data) => invokeOrReject('send-oauth-callback', data),
 
-    // Platform detection
+    exchangeOAuthToken: (params) => invokeOrReject('exchange-oauth-token', params),
+
     platform: process.platform,
 
-    // Environment
-    isElectron: true
+    isElectron: true,
   });
 
   console.log('Preload script loaded successfully');
 } catch (error) {
   console.error('Error in preload script:', error);
-  
-  // Fallback: create a minimal electronAPI
+
   contextBridge.exposeInMainWorld('electronAPI', {
     isElectron: true,
     platform: process.platform,
@@ -191,15 +153,26 @@ try {
     onUpdateDownloaded: () => {},
     onUpdateError: () => {},
     onUpdateDownloadProgress: () => {},
+    onUpdateNotAvailable: () => {},
+    onUpdateOffline: () => {},
+    onUpdateCheckResult: () => {},
+    onUpdateInstallFailed: () => {},
     onMenuAction: () => {},
-    getAppVersion: () => '1.0.0',
-    installUpdate: () => Promise.resolve(),
-    checkForUpdates: () => Promise.resolve(),
+    getAppVersion: () => Promise.reject(new Error('Preload fallback: getAppVersion unavailable')),
+    installUpdate: () => Promise.reject(new Error('Preload fallback: installUpdate unavailable')),
+    checkForUpdates: () =>
+      Promise.reject(new Error('Preload fallback: checkForUpdates unavailable')),
+    downloadUpdate: () => Promise.reject(new Error('Preload fallback: downloadUpdate unavailable')),
+    openUpdateInstaller: () => Promise.resolve(false),
+    getPendingUpdateStatus: () => Promise.resolve(null),
+    clearPendingUpdate: () => Promise.resolve({ success: false }),
+    notifyUpdateListenersReady: () => {},
     startOAuthServer: () => Promise.resolve(),
     stopOAuthServer: () => Promise.resolve(),
     openExternal: (url) => ipcRenderer.invoke('open-external', url).catch(() => false),
     saveHtmlAsPdf: () => Promise.resolve({ unsupported: true }),
     sendOAuthCallback: () => Promise.resolve(),
-    exchangeOAuthToken: () => Promise.reject(new Error('exchangeOAuthToken not available in fallback'))
+    exchangeOAuthToken: () =>
+      Promise.reject(new Error('exchangeOAuthToken not available in fallback')),
   });
 }
