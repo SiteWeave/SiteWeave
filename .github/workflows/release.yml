@@ -149,19 +149,18 @@ jobs:
         cat release/win-unpacked/resources/app-update.yml
         if [ -d "release/win-unpacked/resources/app.asar.unpacked/node_modules/electron-updater" ] || \
            [ -d "release/win-unpacked/resources/app/node_modules/electron-updater" ] || \
-           find release/win-unpacked -path '*node_modules/electron-updater/package.json' 2>/dev/null | grep -q .; then
+           find release/win-unpacked -path '*node_modules/electron-updater*' 2>/dev/null | grep -q .; then
           echo "OK: electron-updater found in packaged tree"
         elif [ -f "release/win-unpacked/resources/app.asar" ] && \
-             npx --yes asar extract-file release/win-unpacked/resources/app.asar node_modules/electron-updater/package.json /tmp/eu-pkg.json 2>/dev/null; then
+             npx --yes asar list release/win-unpacked/resources/app.asar | grep -Ei 'node_modules[/\\]+electron-updater([/\\]|$)' | head -n 5 | grep -q .; then
           echo "OK: electron-updater found inside app.asar"
-        elif [ -f "release/win-unpacked/resources/app.asar" ] && \
-             npx --yes asar list release/win-unpacked/resources/app.asar | grep -q 'node_modules/electron-updater'; then
-          echo "OK: electron-updater found inside app.asar (list)"
+          npx --yes asar list release/win-unpacked/resources/app.asar | grep -Ei 'node_modules[/\\]+electron-updater([/\\]|$)' | head -n 5
         else
           echo "ERROR: electron-updater missing from packaged app — would cause updater-unavailable in production"
-          echo "Listing app.asar top-level node_modules (if any):"
+          echo "Listing app.asar node_modules entries matching updater/babel:"
           if [ -f "release/win-unpacked/resources/app.asar" ]; then
-            npx --yes asar list release/win-unpacked/resources/app.asar | grep 'node_modules' | head -n 40 || true
+            npx --yes asar list release/win-unpacked/resources/app.asar | grep -Ei 'node_modules[/\\]+(electron-updater|builder-util-runtime)([/\\]|$)' | head -n 40 || true
+            npx --yes asar list release/win-unpacked/resources/app.asar | grep -Ei 'node_modules[/\\]+[^/\\]+$' | head -n 40 || true
           fi
           exit 1
         fi
