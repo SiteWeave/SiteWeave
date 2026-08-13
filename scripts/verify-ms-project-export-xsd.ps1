@@ -27,11 +27,54 @@ if (-not (Test-Path $sourceXsdPath)) {
     Invoke-WebRequest -Uri $schemaUrl -OutFile $sourceXsdPath
 }
 
-# Microsoft Project files use the stable, unversioned document namespace.
-# The published Project 2007 XSD uses a versioned target namespace, so normalize
-# only that namespace identifier before validating the otherwise unchanged XSD.
 $xsd = Get-Content $sourceXsdPath -Raw
 $xsd = $xsd.Replace($schemaNamespace, $documentNamespace)
+
+# Project 2010+ scheduling fields are read by Microsoft Project but absent from the
+# published 2007 XSD. Inject them so SaveVersion 14 exports still validate.
+if ($xsd -notmatch 'name="NewTasksAreManual"') {
+    $xsd = [regex]::Replace(
+        $xsd,
+        '(<xsd:element name="NewTasksEstimated"[\s\S]*?</xsd:element>)\s*(<xsd:element name="SplitsInProgressTasks")',
+        @'
+$1
+        <xsd:element name="NewTasksAreManual" type="xsd:boolean" default="true" minOccurs="0">
+          <xsd:annotation>
+            <xsd:documentation>Whether new tasks are created as manually scheduled.</xsd:documentation>
+          </xsd:annotation>
+        </xsd:element>
+        $2
+'@,
+        1
+    )
+}
+
+if ($xsd -notmatch 'name="Manual"') {
+    $xsd = [regex]::Replace(
+        $xsd,
+        '(<xsd:element name="Summary" type="xsd:boolean" minOccurs="0">\s*<xsd:annotation>\s*<xsd:documentation>Whether the task is a summary task\.</xsd:documentation>\s*</xsd:annotation>\s*</xsd:element>)\s*(<xsd:element name="Critical" type="xsd:boolean" minOccurs="0">)',
+        @'
+$1
+                    <xsd:element name="Manual" type="xsd:boolean" minOccurs="0">
+                      <xsd:annotation>
+                        <xsd:documentation>Whether the task is manually scheduled.</xsd:documentation>
+                      </xsd:annotation>
+                    </xsd:element>
+                    <xsd:element name="Active" type="xsd:boolean" minOccurs="0">
+                      <xsd:annotation>
+                        <xsd:documentation>Whether the task is active.</xsd:documentation>
+                      </xsd:annotation>
+                    </xsd:element>
+                    $2
+'@,
+        1
+    )
+}
+
+if ($xsd -notmatch 'name="NewTasksAreManual"' -or $xsd -notmatch 'name="Manual"') {
+    throw 'Failed to inject Project 2010+ Manual/Active schema extensions into MSPDI XSD.'
+}
+
 Set-Content $normalizedXsdPath $xsd -Encoding UTF8
 
 $schemas = [System.Xml.Schema.XmlSchemaSet]::new()

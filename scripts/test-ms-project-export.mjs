@@ -224,7 +224,7 @@ const xml = built.xml;
 
 assert(xml.startsWith('<?xml version="1.0" encoding="UTF-8"'), 'XML declaration present');
 assert(xml.includes(`xmlns="${'http://schemas.microsoft.com/project'}"`), 'MSP namespace present');
-assert(xml.includes('<SaveVersion>12</SaveVersion>'), 'declares Project 2007 MSPDI dialect');
+assert(xml.includes('<SaveVersion>14</SaveVersion>'), 'declares Project 2010+ MSPDI dialect');
 assert(xml.includes('<Name>Alpha &amp; Beta &lt;HQ&gt;</Name>'), 'project name escaped');
 assert(xml.includes(`<CalendarUID>${SITEWEAVE_CALENDAR_UID}</CalendarUID>`), 'project calendar referenced');
 assert(xml.includes('<MinutesPerDay>480</MinutesPerDay>'), 'MinutesPerDay=480');
@@ -233,8 +233,10 @@ assert(xml.includes('<DefaultFinishTime>17:00:00</DefaultFinishTime>'), 'default
 assert(xml.includes('<FromTime>08:00:00</FromTime>'), 'working morning window');
 assert(xml.includes('<ToTime>17:00:00</ToTime>'), 'working afternoon window');
 assert(xml.includes('<Exceptions>'), 'holiday exceptions section present');
-assert(!xml.includes('<Manual>'), 'does not emit unsupported Manual task element');
-assert(!xml.includes('<Active>'), 'does not emit unsupported Active task element');
+assert(xml.includes('<NewTasksAreManual>0</NewTasksAreManual>'), 'new tasks default to auto-scheduled');
+assert(xml.includes('<NewTasksEstimated>0</NewTasksEstimated>'), 'new tasks are not estimated');
+assert(xml.includes('<Manual>0</Manual>'), 'tasks are auto-scheduled');
+assert(xml.includes('<Active>1</Active>'), 'tasks are active');
 assert(!xml.includes('<DaysPerWeek>'), 'does not emit unsupported DaysPerWeek project element');
 assert(built.filename.includes('schedule.xml'), 'filename ends with schedule.xml');
 
@@ -279,6 +281,9 @@ assert(mob && child(mob, 'ActualDuration') === 'PT12H0M0S', '50% actual duration
 assert(mob && child(mob, 'PercentComplete') === '50', 'percent complete');
 assert(mob && child(mob, 'PercentWorkComplete') === '50', 'percent work complete');
 assert(mob && child(mob, 'ActualStart') === '2026-06-01T08:00:00', 'partial progress has ActualStart');
+assert(mob && child(mob, 'Manual') === '0', 'task is auto-scheduled');
+assert(mob && child(mob, 'ConstraintType') === '4', 'dated task uses SNET constraint');
+assert(mob && child(mob, 'ConstraintDate') === '2026-06-01T08:00:00', 'SNET uses task start');
 assert(mob && child(mob, 'Contact') === 'Casey &amp; Co', 'assignee contact escaped');
 
 const mile = tasks.find((t) => child(t, 'Name') === 'Slab complete');

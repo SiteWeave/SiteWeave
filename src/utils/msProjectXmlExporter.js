@@ -589,6 +589,10 @@ function renderTaskNode(node, indent = 4) {
     lines.push(el('Estimated', '0', indent + 2));
     lines.push(el('Milestone', isMilestone ? '1' : '0', indent + 2));
     lines.push(el('Summary', node.summary ? '1' : '0', indent + 2));
+    // Project 2010+ defaults to Manual when omitted; that freezes dates and
+    // turns ignored/zero durations into stacked milestones.
+    lines.push(el('Manual', '0', indent + 2));
+    lines.push(el('Active', '1', indent + 2));
     lines.push(el('FixedCostAccrual', '3', indent + 2));
     lines.push(el('PercentComplete', String(percentComplete), indent + 2));
     lines.push(el('PercentWorkComplete', String(percentComplete), indent + 2));
@@ -608,13 +612,24 @@ function renderTaskNode(node, indent = 4) {
     lines.push(el('Estimated', '0', indent + 2));
     lines.push(el('Milestone', isMilestone ? '1' : '0', indent + 2));
     lines.push(el('Summary', node.summary ? '1' : '0', indent + 2));
+    lines.push(el('Manual', '0', indent + 2));
+    lines.push(el('Active', '1', indent + 2));
     lines.push(el('FixedCostAccrual', '3', indent + 2));
     lines.push(el('PercentComplete', String(percentComplete), indent + 2));
     lines.push(el('PercentWorkComplete', String(percentComplete), indent + 2));
   }
 
-  lines.push(el('ConstraintType', '0', indent + 2));
+  // Anchor dated tasks with SNET so Auto Schedule keeps SiteWeave starts
+  // while still honoring predecessors for successors.
+  if (sched.start && !node.summary) {
+    lines.push(el('ConstraintType', '4', indent + 2)); // Start No Earlier Than
+  } else {
+    lines.push(el('ConstraintType', '0', indent + 2)); // As Soon As Possible
+  }
   lines.push(el('CalendarUID', String(SITEWEAVE_CALENDAR_UID), indent + 2));
+  if (sched.start && !node.summary) {
+    lines.push(el('ConstraintDate', toMsDateTime(sched.start, '08:00:00'), indent + 2));
+  }
 
   for (const pred of node.predecessors || []) {
     lines.push(`${pad}  <PredecessorLink>`);
@@ -689,7 +704,7 @@ export function buildMsProjectXml(input) {
   const xml = [
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
     `<Project xmlns="${MSP_NS}">`,
-    el('SaveVersion', '12', 2),
+    el('SaveVersion', '14', 2),
     el('Name', projectXmlName, 2),
     el('Title', title, 2),
     el('Company', escapeXml('SiteWeave'), 2),
@@ -703,6 +718,11 @@ export function buildMsProjectXml(input) {
     el('MinutesPerDay', String(MINUTES_PER_DAY), 2),
     el('MinutesPerWeek', String(MINUTES_PER_DAY * DAYS_PER_WEEK), 2),
     el('DaysPerMonth', '20', 2),
+    el('DefaultTaskType', '1', 2), // Fixed Duration
+    el('HonorConstraints', '1', 2),
+    el('NewTasksEstimated', '0', 2),
+    el('NewTasksAreManual', '0', 2),
+    el('ProjectExternallyEdited', '0', 2),
     calendarXml,
     '  <Tasks>',
     taskXml,
