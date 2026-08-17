@@ -55,12 +55,14 @@ try {
   copyPackage('core-logic');
   copyPackage('i18n');
   copyPackage('onboarding-ui');
+  copyPackage('design-tokens');
 
   const pkgPath = path.join(dest, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   pkg.dependencies['@siteweave/core-logic'] = 'file:./packages/core-logic';
   pkg.dependencies['@siteweave/i18n'] = 'file:./packages/i18n';
   pkg.dependencies['@siteweave/onboarding-ui'] = 'file:./packages/onboarding-ui';
+  pkg.dependencies['@siteweave/design-tokens'] = 'file:./packages/design-tokens';
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
   const vitePath = path.join(dest, 'vite.config.ts');
@@ -76,6 +78,14 @@ try {
   vite = vite.replaceAll(
     "path.resolve(__dirname, '../../packages/onboarding-ui/src/index.js')",
     "path.resolve(__dirname, 'packages/onboarding-ui/src/index.js')",
+  );
+  vite = vite.replaceAll(
+    "path.resolve(__dirname, '../../packages/design-tokens/src/index.js')",
+    "path.resolve(__dirname, 'packages/design-tokens/src/index.js')",
+  );
+  vite = vite.replaceAll(
+    "path.resolve(__dirname, '../../packages/design-tokens/src/mobile.js')",
+    "path.resolve(__dirname, 'packages/design-tokens/src/mobile.js')",
   );
   fs.writeFileSync(vitePath, vite);
 
