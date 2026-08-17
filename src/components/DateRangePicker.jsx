@@ -64,7 +64,14 @@ function DateRangePicker({
 }) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
   const [numberOfMonths, setNumberOfMonths] = useState(1);
-  const [popoverStyle, setPopoverStyle] = useState(null);
+  const [popoverStyle, setPopoverStyle] = useState({
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: 'max-content',
+    visibility: 'hidden',
+    pointerEvents: 'none',
+  });
   const [month, setMonth] = useState(() => new Date());
   const rootRef = useRef(null);
   const triggerRef = useRef(null);
@@ -136,10 +143,12 @@ function DateRangePicker({
       position: 'fixed',
       top: `${top}px`,
       left: `${left}px`,
-      width: compact || size === 'sm' ? `${Math.min(popoverWidth, window.innerWidth - VIEWPORT_PADDING * 2)}px` : undefined,
+      width: 'max-content',
+      maxWidth: `${window.innerWidth - VIEWPORT_PADDING * 2}px`,
       zIndex: elevated ? 70 : 50,
+      visibility: 'visible',
     });
-  }, [compact, elevated, size]);
+  }, [elevated]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -222,12 +231,12 @@ function DateRangePicker({
       : {}),
   };
 
-  const popoverClassName = `overflow-visible border border-gray-200 bg-white shadow-xl ${
+  const popoverClassName = `w-max overflow-visible border border-gray-200 bg-white shadow-xl ${
     sm
       ? 'min-w-[240px] max-w-[min(100vw-1rem,320px)] rounded-lg p-2'
       : compact
-        ? 'min-w-[280px] rounded-xl p-2.5'
-        : 'max-w-[calc(100vw-2rem)] rounded-xl p-3'
+        ? 'min-w-[280px] max-w-[min(100vw-1rem,22rem)] rounded-xl p-2.5'
+        : 'max-w-[min(100vw-2rem,40rem)] rounded-xl p-3'
   }`;
 
   const popoverContent = open ? (
@@ -250,7 +259,7 @@ function DateRangePicker({
           {presetContent}
         </div>
       ) : null}
-      <div className={`relative z-0 ${sm ? '' : `overflow-x-auto ${compact ? 'pr-0.5' : ''}`}`}>
+      <div className={`relative z-0 w-max max-w-full ${sm ? '' : `overflow-x-auto ${compact ? 'pr-0.5' : ''}`}`}>
         <DayPicker
           mode="range"
           selected={selected}

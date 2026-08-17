@@ -28,18 +28,9 @@ function PhasesEmptyState({
                     <p className="mt-0.5 text-sm text-gray-600">
                         {t('projectDetail.phases_empty_description')}
                     </p>
-                    {count > 0 ? (
-                        <p className="mt-1 text-xs text-gray-500">
-                            {t(
-                                count === 1
-                                    ? 'projectDetail.phases_empty_unassigned_hint_one'
-                                    : 'projectDetail.phases_empty_unassigned_hint_other',
-                                { count },
-                            )}
-                        </p>
-                    ) : (
+                    {count === 0 ? (
                         <p className="mt-1 text-xs text-gray-500">{t('projectDetail.phase_template_hint')}</p>
-                    )}
+                    ) : null}
                 </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:shrink-0">

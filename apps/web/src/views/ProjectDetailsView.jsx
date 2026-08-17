@@ -25,12 +25,13 @@ import {
     computeProjectScheduleTimeline,
 } from '@siteweave/core-logic';
 import TaskItem from '../components/TaskItem';
+import Tooltip from '../components/ui/Tooltip';
 import TaskPingModal from '../components/TaskPingModal';
 import TaskModal from '../components/TaskModal';
 import TaskPhotosModal from '../components/TaskPhotosModal';
 import TaskDiscussionModal from '../components/TaskDiscussionModal';
 import PhaseTaskSection from '../components/PhaseTaskSection';
-import BuildPath, { PhaseModal } from '../components/BuildPath';
+import { PhaseModal } from '../components/BuildPath';
 import PhasesToolbar from '../components/phases/PhasesToolbar';
 import PhasesSummaryStrip from '../components/phases/PhasesSummaryStrip';
 import PhasesEmptyState from '../components/phases/PhasesEmptyState';
@@ -283,8 +284,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
     const [projectDependencyMode, setProjectDependencyMode] = useState('auto');
     const [photoModalTaskId, setPhotoModalTaskId] = useState(null);
     const [discussionModalTaskId, setDiscussionModalTaskId] = useState(null);
-    const [showPhasesModal, setShowPhasesModal] = useState(false);
-    const [phasesModalEditing, setPhasesModalEditing] = useState(false);
     const [showAddPhaseModal, setShowAddPhaseModal] = useState(false);
     const [draggedPhaseId, setDraggedPhaseId] = useState(null);
     const [phaseDragOver, setPhaseDragOver] = useState(null);
@@ -2894,8 +2893,12 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
         <div className="view-fade-in" data-testid="project-details-view">
             <header className="mb-8 flex flex-wrap items-start justify-between gap-4" data-onboarding="project-header">
                 <div className="min-w-0 flex-1">
-                    <h1 className="text-3xl font-bold text-gray-900 ui-ellipsis-1" title={project.name}>{project.name}</h1>
-                    <p className="text-gray-500 ui-ellipsis-1" title={project.address}>{project.address}</p>
+                    <Tooltip content={project.name}>
+                        <h1 className="text-3xl font-bold text-gray-900 ui-ellipsis-1">{project.name}</h1>
+                    </Tooltip>
+                    <Tooltip content={project.address}>
+                        <p className="text-gray-500 ui-ellipsis-1">{project.address}</p>
+                    </Tooltip>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2 lg:gap-3">
                     <PermissionGuard 
@@ -2964,7 +2967,9 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             <div className="flex -space-x-2">
                                 {crewMembers.slice(0, 5).map(member => (
                                     member.avatar_url ? (
-                                        <img key={member.id} src={member.avatar_url} alt={member.name || ''} title={member.name} className="w-8 h-8 rounded-full" />
+                                        <Tooltip key={member.id} content={member.name}>
+                                        <img src={member.avatar_url} alt={member.name || ''} className="w-8 h-8 rounded-full" />
+                                        </Tooltip>
                                     ) : (
                                         <Avatar key={member.id} name={member.name} size="sm" />
                                     )
@@ -2981,7 +2986,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         <button type="button"
                             onClick={() => setShowProjectModal(true)}
                             className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
-                            title={t('projectDetail.edit_project_title')}
                         >
                             {t('projectDetail.edit_project')}
                         </button>
@@ -2990,7 +2994,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                         <button type="button" 
                             onClick={() => setShowSaveAsTemplateModal(true)}
                             className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
-                            title={t('projectDetail.save_as_template_title')}
                         >
                             {t('projectDetail.save_as_template')}
                         </button>
@@ -2999,7 +3002,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                     <button type="button" 
                         onClick={() => setShowShare(true)}
                         className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg shadow-xs hover:bg-gray-200 transition-colors"
-                        title={t('projectDetail.manage_crew_title')}
                     >
                         {t('projectDetail.manage_crew')}
                     </button>
@@ -3014,7 +3016,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                 setShowProgressReportModal(true);
                             }}
                             className="px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-lg shadow-xs hover:bg-green-700 transition-colors flex items-center gap-2 relative"
-                            title={t('projectDetail.progress_reports_title')}
                         >
                             {!canProgressReports && (
                                 <svg className="w-3 h-3 absolute -top-1 -right-1 text-amber-600" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
@@ -3229,16 +3230,17 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                     <div className="flex min-w-0 flex-wrap items-center gap-3">
                                         <h2 className="text-xl font-bold">{t('projectTabs.tasks_heading', { count: Math.max(allTasks.length, ganttTasks.length) })}</h2>
                                         <div className="relative">
+                                            <Tooltip content={t('projectTabs.sort_tasks')}>
                                             <button
                                                 type="button"
                                                 onClick={() => setToolbarMenu((current) => current === 'sort' ? null : 'sort')}
-                                                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-xs hover:bg-gray-50 hover:text-gray-900"
-                                                title={t('projectTabs.sort_tasks')}
+                                                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                                                 aria-label={t('projectTabs.sort_tasks')}
                                                 aria-expanded={toolbarMenu === 'sort'}
                                             >
                                                 <Icon path="M3 6h13.5M3 12h9m-9 6h6m9-10.5 3 3m0 0 3-3m-3 3V3m0 18-3-3m3 3 3-3" className="h-4 w-4" />
                                             </button>
+                                            </Tooltip>
                                             {toolbarMenu === 'sort' && (
                                                 <div className="absolute left-0 top-12 z-20 w-44 rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
                                                     {[
@@ -3268,56 +3270,11 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                         </div>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-2">
-                                        <PermissionGuard permission="can_edit_projects">
-                                            <div className="relative">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setToolbarMenu((current) => current === 'settings' ? null : 'settings')}
-                                                    className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-xs hover:bg-gray-50 hover:text-gray-900"
-                                                    title={t('projectTabs.task_settings')}
-                                                    aria-label={t('projectTabs.task_settings')}
-                                                    aria-expanded={toolbarMenu === 'settings'}
-                                                >
-                                                    <Icon path="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z M15 12a3 3 0 11-6 0 3 3 0 016 0z" className="h-4 w-4" />
-                                                </button>
-                                                {toolbarMenu === 'settings' && (
-                                                    <div className="absolute right-0 top-12 z-20 w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
-                                                        <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                                            {t('projectDetail.dependency_scheduling')}
-                                                        </div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => updateDependencyMode('auto')}
-                                                            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm text-left ${
-                                                                projectDependencyMode === 'auto'
-                                                                    ? 'bg-blue-50 text-blue-700'
-                                                                    : 'text-gray-700 hover:bg-gray-50'
-                                                            }`}
-                                                        >
-                                                            <span>{t('projectDetail.auto_shift_dates')}</span>
-                                                            {projectDependencyMode === 'auto' && <Icon path="M5 13l4 4L19 7" className="h-4 w-4" />}
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => updateDependencyMode('manual')}
-                                                            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm text-left ${
-                                                                projectDependencyMode === 'manual'
-                                                                    ? 'bg-blue-50 text-blue-700'
-                                                                    : 'text-gray-700 hover:bg-gray-50'
-                                                            }`}
-                                                        >
-                                                            <span>{t('projectDetail.manual_with_warnings')}</span>
-                                                            {projectDependencyMode === 'manual' && <Icon path="M5 13l4 4L19 7" className="h-4 w-4" />}
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </PermissionGuard>
                                         <div className="relative">
                                                 <button
                                                     type="button"
                                                     onClick={() => setToolbarMenu((current) => current === 'actions' ? null : 'actions')}
-                                                    className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-xs hover:bg-gray-50"
+                                                    className="inline-flex min-h-10 items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                                                     aria-expanded={toolbarMenu === 'actions'}
                                                 >
                                                     <span>{t('projectDetail.actions')}</span>
@@ -3342,7 +3299,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                                             disabled={exportingMsProject}
                                                             aria-busy={exportingMsProject}
                                                             aria-label={t('gantt.export_ms_project_title')}
-                                                            title={t('gantt.export_ms_project_title')}
                                                             onClick={() => {
                                                                 setToolbarMenu(null);
                                                                 handleExportMsProject();
@@ -3383,7 +3339,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                         </div>
                                         <PermissionGuard permission="can_edit_projects">
                                             <PhasesToolbar
-                                                onOpenSchedule={() => setShowPhasesModal(true)}
                                                 onAddPhase={() => setShowAddPhaseModal(true)}
                                             />
                                         </PermissionGuard>
@@ -3833,9 +3788,11 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                                     <p className="mt-1 text-sm text-gray-600">
                                         See what this task depends on and what depends on it.
                                     </p>
-                                    <p className="mt-2 ui-ellipsis-1 text-sm font-medium text-gray-500" title={dependencyDrawerTask.text}>
+                                    <Tooltip content={dependencyDrawerTask.text}>
+                                    <p className="mt-2 ui-ellipsis-1 text-sm font-medium text-gray-500">
                                         {dependencyDrawerTask.text}
                                     </p>
+                                    </Tooltip>
                                 </div>
                                 <button
                                     type="button"
@@ -4115,74 +4072,6 @@ function ProjectDetailsView({ routeTab, onTabChange } = {}) {
                             : null
                     }
                 />
-            )}
-
-            {showPhasesModal && project && (
-                <ModalOverlay
-                    onClose={() => {
-                        setShowPhasesModal(false);
-                        setPhasesModalEditing(false);
-                    }}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="phases-modal-title"
-                >
-                    <div className={`bg-white rounded-xl shadow-2xl max-w-2xl w-full ${MODAL_PANEL_MAX_H} flex flex-col overflow-hidden`}>
-                        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 bg-white">
-                            <div className="min-w-0">
-                                <h2 id="phases-modal-title" className="text-lg font-bold text-gray-900">
-                                    {t('projectDetail.project_schedule')}
-                                </h2>
-                                <p className="text-sm text-gray-500 mt-0.5">
-                                    {t('projectDetail.project_schedule_subtitle')}
-                                </p>
-                            </div>
-                            {canEditProjects ? (
-                                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowAddPhaseModal(true)}
-                                        className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
-                                    >
-                                        + {t('build_path.add_phase')}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setPhasesModalEditing((v) => !v)}
-                                        className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
-                                    >
-                                        {phasesModalEditing ? t('common.done') : t('common.edit')}
-                                    </button>
-                                </div>
-                            ) : null}
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-4 min-h-[min(480px,50vh)] max-h-[calc(90vh-8rem)]">
-                            <BuildPath
-                                project={project}
-                                phaseControl={phaseControl}
-                                tasks={allTasks}
-                                embedded
-                                hideEmbeddedToolbar
-                                isEditing={phasesModalEditing}
-                                onEditingChange={setPhasesModalEditing}
-                                onAddPhase={() => setShowAddPhaseModal(true)}
-                                onPhasesChange={() => phaseControl.refresh()}
-                            />
-                        </div>
-                        <div className="sticky bottom-0 border-t border-gray-200 bg-white px-5 py-4 flex justify-end">
-                            <button
-                                type="button"
-                                className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 rounded-full hover:bg-blue-700"
-                                onClick={() => {
-                                    setShowPhasesModal(false);
-                                    setPhasesModalEditing(false);
-                                }}
-                            >
-                                {t('projectDetail.schedule_done')}
-                            </button>
-                        </div>
-                    </div>
-                </ModalOverlay>
             )}
 
             <ConfirmDialog

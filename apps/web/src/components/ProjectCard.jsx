@@ -6,6 +6,7 @@ import Icon from './Icon';
 import Avatar from './Avatar';
 import ProjectProgressCard from './ProjectProgressCard';
 import PermissionGuard from './PermissionGuard';
+import Tooltip from './ui/Tooltip';
 
 const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete, progressData }) {
     const { i18n, t } = useTranslation();
@@ -63,8 +64,12 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete, progr
             }}
         >
             <div className="min-w-0 pr-14">
-                <h3 className="text-xl font-bold ui-clamp-2" title={project.name}>{project.name}</h3>
-                <p className="mt-1 text-xs text-gray-500 ui-ellipsis-1" title={project.project_type}>{project.project_type}</p>
+                <Tooltip content={project.name}>
+                    <h3 className="text-xl font-bold ui-clamp-2">{project.name}</h3>
+                </Tooltip>
+                <Tooltip content={project.project_type}>
+                    <p className="mt-1 text-xs text-gray-500 ui-ellipsis-1">{project.project_type}</p>
+                </Tooltip>
                 {project.notification_count > 0 && (
                     <div className="mt-2 flex h-5 min-w-5 w-fit items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold text-white">
                         {project.notification_count}
@@ -72,13 +77,14 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete, progr
                 )}
             </div>
             <div>
-                <p className="text-xs text-gray-400 font-semibold">{t('projectCard.next_milestone')}</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t('projectCard.next_milestone')}</p>
+                <Tooltip content={typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || t('projectCard.no_milestone'))}>
                 <p
                     className="text-sm font-medium ui-clamp-2"
-                    title={typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || t('projectCard.no_milestone'))}
                 >
                     {typeof project.next_milestone === 'string' ? project.next_milestone : (project.next_milestone?.name || project.next_milestone?.title || t('projectCard.no_milestone'))}
                 </p>
+                </Tooltip>
             </div>
             
             {/* Progress Status */}
@@ -86,7 +92,7 @@ const ProjectCard = memo(function ProjectCard({ project, onEdit, onDelete, progr
             
             <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100">
                 <div className="min-w-0">
-                    <p className="text-xs text-gray-400 font-semibold">{t('projectCard.due_date')}</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t('projectCard.due_date')}</p>
                     <p className="text-sm font-medium ui-clamp-2">{formatDate(project.due_date)}</p>
                 </div>
                 <div className="flex shrink-0 -space-x-2">

@@ -2,11 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAppContext, supabaseClient, useLazyDataLoader } from '../context/AppContext';
+import Tooltip from '../components/ui/Tooltip';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
 import ProjectModal from '../components/ProjectModal';
 import CreateFromTemplateModal from '../components/CreateFromTemplateModal';
 import MyDaySidebar from '../components/MyDaySidebar';
+import { trashProject, restoreProject } from '@siteweave/core-logic';
 import ConfirmDialog from '../components/ConfirmDialog';
 import DashboardStats from '../components/DashboardStats';
 import ProgressReportModal from '../components/ProgressReportModal';
@@ -17,12 +19,8 @@ import ProjectListView from '../components/ProjectListView';
 import PermissionGuard from '../components/PermissionGuard';
 import ProjectLimitReachedModal from '../components/ProjectLimitReachedModal';
 import UpgradeRequiredModal from '../components/UpgradeRequiredModal';
-import { trashProject, restoreProject } from '@siteweave/core-logic';
-import { ROUTE_PATHS } from '../config/routes';
-import { logProjectCreated } from '../utils/activityLogger';
-import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import { useProjectShortcuts } from '../hooks/useKeyboardShortcuts';
-import { calculateProjectsProgressMap } from '../utils/projectHelpers';
+import { useWorkspaceTier } from '../hooks/useWorkspaceTier';
 import {
   canCreateProject,
   isPersonalWorkspace,
@@ -33,6 +31,7 @@ import {
   ensureOrganizationForWrites,
   isOrganizationRlsError,
 } from '../utils/organizationContext';
+import { calculateProjectsProgressMap } from '../utils/projectHelpers';
 import {
   ActivationChecklist,
   getChecklistDismissed,
@@ -42,6 +41,8 @@ import {
   useOfficeActivationState,
   useBrandingPrimaryColor,
 } from '@siteweave/onboarding-ui';
+import { ROUTE_PATHS } from '../config/routes';
+import { logProjectCreated } from '../utils/activityLogger';
 
 const PENDING_PROJECT_TAB_KEY = 'siteweave_pending_project_tab';
 
@@ -219,10 +220,11 @@ function DashboardView() {
             }
             dispatch({ type: 'SET_PROJECT', payload: projectId });
             dispatch({ type: 'SET_VIEW', payload: 'Projects' });
+            navigate(`/projects/${projectId}/gantt`);
             return;
         }
         if (itemId === 'team') {
-            dispatch({ type: 'SET_VIEW', payload: 'Organization' });
+            navigate(ROUTE_PATHS.organization);
             return;
         }
         if (itemId === 'report') {
@@ -629,7 +631,7 @@ function DashboardView() {
 
     return (
         <>
-            <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 h-full view-fade-in">
+            <div className="grid grid-cols-1 xl:grid-cols-4 gap-8 xl:gap-10 h-full view-fade-in">
                 <div className="xl:col-span-3">
                     <header className="mb-8 app-card p-5" data-onboarding="dashboard-welcome" data-testid="dashboard-view">
                         <div className="flex min-w-0 items-center gap-4">
@@ -647,12 +649,13 @@ function DashboardView() {
                                             </>
                                         )}
                                     </h1>
-                                    <p
-                                        className="app-section-subtitle truncate"
-                                        title={isGuestOnly ? t('dashboard.guest_subtitle') : t('dashboard.subtitle')}
-                                    >
-                                        {isGuestOnly ? t('dashboard.guest_subtitle') : t('dashboard.subtitle')}
-                                    </p>
+                                    <Tooltip content={isGuestOnly ? t('dashboard.guest_subtitle') : t('dashboard.subtitle')}>
+                                        <p
+                                            className="app-section-subtitle truncate"
+                                        >
+                                            {isGuestOnly ? t('dashboard.guest_subtitle') : t('dashboard.subtitle')}
+                                        </p>
+                                    </Tooltip>
                                 </div>
                             </div>
                             <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -660,16 +663,14 @@ function DashboardView() {
                                 <PermissionGuard permission="can_create_projects">
                                     <button type="button"
                                         onClick={() => tryOpenTemplateModal()}
-                                        title={t('dashboard.create_from_template_title')}
                                         data-onboarding="template-btn"
-                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-secondary"
+                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs app-action-secondary"
                                     >
                                         {t('dashboard.template')}
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => tryOpenMsImportModal()}
-                                        title={t('dashboard.import_ms_project_title')}
                                         className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-slate-700 text-white hover:bg-slate-800"
                                     >
                                         {t('dashboard.import_xml')}
@@ -685,7 +686,6 @@ function DashboardView() {
                                             }
                                             setShowProgressReportModal(true);
                                         }}
-                                        title={t('dashboard.org_reports_title')}
                                         data-onboarding="progress-reports"
                                         className="relative whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-emerald-600 text-white hover:bg-emerald-700"
                                     >
@@ -701,7 +701,7 @@ function DashboardView() {
                                     <button type="button"
                                         onClick={() => tryOpenCreateProject()}
                                         data-onboarding="new-project-btn"
-                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth app-action-primary"
+                                        className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs app-action-primary"
                                     >
                                         + {t('dashboard.new_project')}
                                     </button>
@@ -820,7 +820,7 @@ function DashboardView() {
                             {!isGuestOnly && (
                             <button type="button" 
                                 onClick={() => tryOpenCreateProject()}
-                                className="px-6 py-3 rounded-lg transition-colors font-medium text-sm app-action-primary btn-smooth"
+                                className="px-6 py-3 rounded-lg font-medium text-sm app-action-primary"
                                 data-testid="dashboard-create-first-project"
                             >
                                 {t('dashboard.create_first_project')}

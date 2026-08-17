@@ -18,7 +18,7 @@ import {
 import { logWeatherImpactRecorded, logWeatherImpactScheduleApplied } from '../utils/activityLogger';
 import { applyScheduleToWeatherImpact } from '../utils/weatherScheduleApply';
 import LoadingSpinner from './LoadingSpinner';
-import { addDaysIso, localDateIso } from '../utils/dateHelpers';
+import { addDaysIso, formatLocalDateOnly, localDateIso } from '../utils/dateHelpers';
 import ModalOverlay, { MODAL_PANEL_MAX_H } from './ModalOverlay';
 
 /**
@@ -33,6 +33,13 @@ function maxScheduleEndAmongTasks(tasks) {
     return max;
 }
 
+function formatPreviewRange(start, end, locale) {
+    const from = start ? formatLocalDateOnly(start, locale, { year: 'numeric' }) : '';
+    const to = end ? formatLocalDateOnly(end, locale, { year: 'numeric' }) : '';
+    if (from && to && from !== to) return `${from} – ${to}`;
+    return from || to || '—';
+}
+
 function WeatherImpactModal({
     project,
     allTasks,
@@ -43,7 +50,7 @@ function WeatherImpactModal({
     onClose,
     onApplied,
 }) {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const { state, dispatch } = useAppContext();
     const { addToast } = useToast();
     const user = state.user;
@@ -95,7 +102,7 @@ function WeatherImpactModal({
         setDescription(editingImpact.description || '');
         setStartDate(editingImpact.start_date || '');
         setEndDate(editingImpact.end_date || '');
-        setApplyScheduleShift(false);
+        setApplyScheduleShift(editingImpact.schedule_shift_applied === true);
     }, [editingImpact]);
 
     const suggestedSelection = useMemo(
@@ -128,23 +135,39 @@ function WeatherImpactModal({
         });
         const taskById = new Map(allTasks.map((task) => [task.id, task]));
         const phaseById = new Map(projectPhases.map((phase) => [phase.id, phase]));
+        const locale = i18n.language;
+        const hiddenTasks = Math.max(0, directTaskUpdates.length - 3);
+        const hiddenPhases = Math.max(0, directPhaseUpdates.length - 2);
         const previewRows = [
-            ...directTaskUpdates.slice(0, 3).map((row) => ({
-                id: row.taskId,
-                label: taskById.get(row.taskId)?.text || t('weather.task_label'),
-                before: `${taskById.get(row.taskId)?.start_date || '—'} to ${taskById.get(row.taskId)?.due_date || '—'}`,
-                after: `${row.start_date || taskById.get(row.taskId)?.start_date || '—'} to ${row.due_date || taskById.get(row.taskId)?.due_date || '—'}`,
-            })),
-            ...directPhaseUpdates.slice(0, 2).map((row) => ({
-                id: row.phaseId,
-                label: t('weather.phase_label', { name: phaseById.get(row.phaseId)?.name || t('weather.phase_fallback') }),
-                before: `${phaseById.get(row.phaseId)?.start_date || '—'} to ${phaseById.get(row.phaseId)?.end_date || '—'}`,
-                after: `${row.start_date || phaseById.get(row.phaseId)?.start_date || '—'} to ${row.end_date || phaseById.get(row.phaseId)?.end_date || '—'}`,
-            })),
+            ...directTaskUpdates.slice(0, 3).map((row) => {
+                const task = taskById.get(row.taskId);
+                return {
+                    id: row.taskId,
+                    label: task?.text || t('weather.task_label'),
+                    before: formatPreviewRange(task?.start_date, task?.due_date, locale),
+                    after: formatPreviewRange(
+                        row.start_date || task?.start_date,
+                        row.due_date || task?.due_date,
+                        locale,
+                    ),
+                };
+            }),
+            ...directPhaseUpdates.slice(0, 2).map((row) => {
+                const phase = phaseById.get(row.phaseId);
+                return {
+                    id: row.phaseId,
+                    label: t('weather.phase_label', { name: phase?.name || t('weather.phase_fallback') }),
+                    before: formatPreviewRange(phase?.start_date, phase?.end_date, locale),
+                    after: formatPreviewRange(
+                        row.start_date || phase?.start_date,
+                        row.end_date || phase?.end_date,
+                        locale,
+                    ),
+                };
+            }),
         ];
         return {
-            directTasks: directTaskUpdates.length,
-            directPhases: directPhaseUpdates.length,
+            hiddenCount: hiddenTasks + hiddenPhases,
             previewRows,
         };
     }, [
@@ -155,6 +178,8 @@ function WeatherImpactModal({
         suggestedSelection.selectedPhaseIds,
         computedDaysLost,
         projectDependencyMode,
+        i18n.language,
+        t,
     ]);
 
     const datePresets = (
@@ -297,12 +322,13 @@ function WeatherImpactModal({
             addToast(t('weather.title_required'), 'warning');
             return;
         }
-        if (applyScheduleShift && (!startDate || !endDate)) {
+        if (applyScheduleShift && editingImpact?.schedule_shift_applied !== true && (!startDate || !endDate)) {
             addToast(t('weather.dates_required'), 'warning');
             return;
         }
         if (
             applyScheduleShift &&
+            editingImpact?.schedule_shift_applied !== true &&
             suggestedSelection.selectedTaskIds.length === 0 &&
             suggestedSelection.selectedPhaseIds.length === 0
         ) {
@@ -592,54 +618,59 @@ function WeatherImpactModal({
                                     </p>
                                 )}
 
-                                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                                    <label className="flex items-center gap-2 text-sm font-medium text-gray-800">
+                                <div className="rounded-lg border border-gray-200 p-3">
+                                    <label className={`flex items-start gap-2 text-sm font-medium text-gray-800 ${
+                                        editingImpact?.schedule_shift_applied ? 'cursor-default' : ''
+                                    }`}>
                                         <input
                                             type="checkbox"
+                                            className="mt-0.5"
                                             checked={applyScheduleShift}
+                                            disabled={editingImpact?.schedule_shift_applied === true}
                                             onChange={(ev) => setApplyScheduleShift(ev.target.checked)}
                                         />
-                                        {t('weather.apply_schedule_shift')}
+                                        <span>
+                                            {t('weather.apply_schedule_shift')}
+                                            <span className="mt-1 block text-xs font-normal text-gray-600">
+                                                {editingImpact?.schedule_shift_applied
+                                                    ? t('weather.schedule_shift_applied_hint')
+                                                    : t('weather.schedule_shift_hint')}
+                                            </span>
+                                        </span>
                                     </label>
-                                    {applyScheduleShift && (
-                                        <p className="mt-2 text-xs text-gray-600">
-                                            {t('weather.schedule_shift_hint')}
-                                        </p>
+                                    {applyScheduleShift && editingImpact?.schedule_shift_applied !== true && (
+                                        <div className="mt-3 border-t border-gray-200 pt-3">
+                                            {preview.previewRows.length === 0 ? (
+                                                <p className="text-sm text-gray-600">{t('weather.will_shift_none')}</p>
+                                            ) : (
+                                                <>
+                                                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                                        {t('weather.date_preview')}
+                                                    </p>
+                                                    <ul className="space-y-2.5">
+                                                        {preview.previewRows.map((row) => (
+                                                            <li key={row.id}>
+                                                                <p className="text-sm font-medium text-gray-900">{row.label}</p>
+                                                                <p className="mt-0.5 text-xs tabular-nums text-gray-500">
+                                                                    {row.before}
+                                                                </p>
+                                                                <p className="text-xs tabular-nums text-gray-900">
+                                                                    <span className="mr-1 text-gray-400" aria-hidden>→</span>
+                                                                    {row.after}
+                                                                </p>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                    {preview.hiddenCount > 0 && (
+                                                        <p className="mt-2 text-xs text-gray-500">
+                                                            {t('weather.will_shift_more', { count: preview.hiddenCount })}
+                                                        </p>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
-
-                                {applyScheduleShift && (
-                                    <>
-                                        <p className="rounded border border-blue-100 bg-blue-50 p-2 text-xs text-blue-800">
-                                            {t('weather.will_shift_dates', {
-                                                tasks: suggestedSelection.selectedTaskIds.length,
-                                                phases: suggestedSelection.selectedPhaseIds.length,
-                                            })}
-                                        </p>
-                                        <p className="text-xs text-gray-600">
-                                            {t('weather.preview_summary', {
-                                                tasks: preview.directTasks,
-                                                phases: preview.directPhases,
-                                            })}
-                                        </p>
-                                        {preview.previewRows.length > 0 && (
-                                            <div className="rounded border border-gray-200 bg-white p-2">
-                                                <p className="mb-1 text-xs font-medium text-gray-700">{t('weather.date_preview')}</p>
-                                                <ul className="space-y-1 text-xs text-gray-600">
-                                                    {preview.previewRows.map((row) => (
-                                                        <li key={row.id}>
-                                                            <span className="font-medium text-gray-800">{row.label}</span>
-                                                            {': '}
-                                                            {row.before}
-                                                            {' -> '}
-                                                            {row.after}
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </div>
-                                        )}
-                                    </>
-                                )}
 
                                 <div className="flex justify-end gap-2 pt-2">
                                     {editingImpact && (

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAppContext, supabaseClient, useLazyDataLoader } from '../context/AppContext';
+import Tooltip from '../components/ui/Tooltip';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
 import ProjectModal from '../components/ProjectModal';
@@ -630,7 +631,7 @@ function DashboardView() {
 
     return (
         <>
-            <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 h-full view-fade-in">
+            <div className="grid grid-cols-1 xl:grid-cols-4 gap-8 xl:gap-10 h-full view-fade-in">
                 <div className="xl:col-span-3">
                     <header className="mb-8 app-card p-5" data-onboarding="dashboard-welcome" data-testid="dashboard-view">
                         <div className="flex min-w-0 items-center gap-4">
@@ -648,12 +649,13 @@ function DashboardView() {
                                             </>
                                         )}
                                     </h1>
-                                    <p
-                                        className="app-section-subtitle truncate"
-                                        title={isGuestOnly ? t('dashboard.guest_subtitle') : t('dashboard.subtitle')}
-                                    >
-                                        {isGuestOnly ? t('dashboard.guest_subtitle') : t('dashboard.subtitle')}
-                                    </p>
+                                    <Tooltip content={isGuestOnly ? t('dashboard.guest_subtitle') : t('dashboard.subtitle')}>
+                                        <p
+                                            className="app-section-subtitle truncate"
+                                        >
+                                            {isGuestOnly ? t('dashboard.guest_subtitle') : t('dashboard.subtitle')}
+                                        </p>
+                                    </Tooltip>
                                 </div>
                             </div>
                             <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -661,7 +663,6 @@ function DashboardView() {
                                 <PermissionGuard permission="can_create_projects">
                                     <button type="button"
                                         onClick={() => tryOpenTemplateModal()}
-                                        title={t('dashboard.create_from_template_title')}
                                         data-onboarding="template-btn"
                                         className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs app-action-secondary"
                                     >
@@ -670,7 +671,6 @@ function DashboardView() {
                                     <button
                                         type="button"
                                         onClick={() => tryOpenMsImportModal()}
-                                        title={t('dashboard.import_ms_project_title')}
                                         className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-slate-700 text-white hover:bg-slate-800"
                                     >
                                         {t('dashboard.import_xml')}
@@ -686,7 +686,6 @@ function DashboardView() {
                                             }
                                             setShowProgressReportModal(true);
                                         }}
-                                        title={t('dashboard.org_reports_title')}
                                         data-onboarding="progress-reports"
                                         className="relative whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold shadow-xs btn-smooth bg-emerald-600 text-white hover:bg-emerald-700"
                                     >
